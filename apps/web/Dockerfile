@@ -10,7 +10,7 @@ RUN bun install --frozen-lockfile
 FROM base AS dev
 # Source files are volume-mounted at runtime; copy here for standalone use
 COPY apps/web/ .
-EXPOSE 5173
+EXPOSE 8080
 # --host makes Vite bind to 0.0.0.0 so Docker port-mapping works
 CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
 

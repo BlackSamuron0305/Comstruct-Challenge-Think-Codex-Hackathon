@@ -3,7 +3,7 @@ import 'dotenv/config';
 export const config = {
   port: Number(process.env.SERVICE_PORT ?? 8001),
   logLevel: process.env.LOG_LEVEL ?? 'info',
-  corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173').split(','),
+  corsOrigin: (process.env.CORS_ORIGIN ?? 'http://localhost:8080').split(','),
 
   internalSecret: process.env.INTERNAL_SHARED_SECRET ?? 'dev-secret',
   jwtPrivateKeyPath: process.env.JWT_PRIVATE_KEY_PATH ?? '/run/secrets/jwt_private.pem',

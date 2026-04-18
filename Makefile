@@ -19,7 +19,7 @@ up:
 	@if [ ! -f .env ]; then cp .env.example .env; echo ">> Created .env from template. Edit it and re-run."; exit 1; fi
 	@if [ ! -f infra/keys/jwt_private.pem ]; then $(MAKE) gen-keys; fi
 	docker compose up --build -d
-	@echo ">> Stack up. Gateway: http://localhost:3000  Web: http://localhost:5173  MinIO: http://localhost:9001"
+	@echo ">> Stack up. Gateway: http://localhost:8001  Web: http://localhost:8080  MinIO: http://localhost:9001"
 
 down:
 	docker compose down -v

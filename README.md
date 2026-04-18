@@ -75,7 +75,7 @@ make seed                  # demo users + sample C-materials
 
 | Service | URL |
 |---------|-----|
-| Web dashboard | http://localhost:5173 |
+| Web dashboard | http://localhost:8080 |
 | API gateway | http://localhost:8001 |
 | Order service | http://localhost:8002 |
 | Catalog service | http://localhost:8003 |
@@ -197,4 +197,3 @@ tests/
 ## License
 
 Hackathon project — not licensed for production use.
-
