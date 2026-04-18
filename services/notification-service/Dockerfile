@@ -1,6 +1,7 @@
 FROM node:20-alpine AS base
 RUN apk add --no-cache curl
 WORKDIR /app
+RUN apk add --no-cache curl
 
 FROM base AS deps
 COPY package.json ./
