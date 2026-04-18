@@ -13,8 +13,12 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install -e ".[dev]"
 
-COPY . /app
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 
+COPY . /app
+RUN chown -R appuser:appuser /app
+
+USER appuser
 EXPOSE 8002
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/src", "--reload-delay", "2"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir /app/src --reload-delay 2"]

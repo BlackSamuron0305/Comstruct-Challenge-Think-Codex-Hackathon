@@ -1,27 +1,80 @@
 # comstruct C-Materials Platform
 
-Hackathon build for **thinc! April 2026 — "Ordering for the construction site"**.
+> **thinc! Hackathon — April 2026 · "Ordering for the construction site"**
 
-End-to-end ordering platform for *C-materials* (low-value, high-variety construction site consumables — screws, gloves, foam cans, etc.):
+End-to-end ordering platform for **C-materials** — low-value, high-variety construction site consumables (screws, gloves, foam cans, cable ties). Built for [Comstruct](https://comstruct.com), the Swiss/German construction-tech company automating procure-to-pay.
 
-- Flutter mobile app for foremen with AI-powered task search and `+/–` stepper ordering
-- React web dashboard for procurement (approval queue, spend analytics, AI catalog import)
-- Fastify API gateway + JWT auth + Redis-backed WebSocket order status
-- Python microservices: order-service (state machine + approval engine), catalog-service (pgvector search)
-- Standalone AI service (Anthropic Claude + OpenAI embeddings) for column mapping, C-material classification, and semantic search
+## Architecture
+
+```
+┌──────────────┐  ┌──────────────┐
+│  Flutter App │  │ React Web    │
+│  (Foreman)   │  │ (Procurement)│
+└──────┬───────┘  └──────┬───────┘
+       │     HTTPS/WSS   │
+       └────────┬────────┘
+                ▼
+      ┌──────────────────┐
+      │   API Gateway    │  Fastify · RS256 JWT · Rate-limit · Helmet
+      │   :8001          │  WebSocket bridge (Redis pub/sub → client)
+      └──┬────┬────┬─────┘
+         │    │    │   X-Internal-Secret + X-User-* headers
+    ┌────┘    │    └────────┐
+    ▼         ▼             ▼
+┌────────┐ ┌────────┐ ┌──────────┐  ┌────────────────┐
+│ Order  │ │Catalog │ │   AI     │  │ Notification   │
+│Service │ │Service │ │ Service  │  │ Service        │
+│:8002   │ │:8003   │ │:8005     │  │ :8004          │
+│FastAPI │ │FastAPI │ │FastAPI   │  │ Fastify        │
+└───┬────┘ └───┬────┘ └────┬─────┘  └────────────────┘
+    │          │           │
+    ▼          ▼           ▼
+┌──────────────────────────────┐   ┌─────────┐  ┌─────────┐
+│  PostgreSQL 16 (pgvector)    │   │  Redis  │  │  MinIO  │
+│  5 schemas: auth, catalog,   │   │ Pub/Sub │  │   S3    │
+│  orders, procurement, audit  │   │ + Cart  │  │  Docs   │
+└──────────────────────────────┘   └─────────┘  └─────────┘
+                                        ▲
+                                   ┌────┘
+                                   │
+                              ┌─────────┐
+                              │ Ollama  │
+                              │gemma3:4b│
+                              └─────────┘
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Mobile | Flutter 3 · Dart · Riverpod |
+| Web | React 18 · TypeScript · Vite · Tailwind CSS |
+| Gateway | Fastify 4 · jose (RS256 JWT) · Helmet · @fastify/rate-limit |
+| Backend | FastAPI · SQLAlchemy 2 (async) · Alembic · Pydantic v2 |
+| AI/LLM | Ollama (gemma3:4b, local) · pgvector embeddings |
+| Database | PostgreSQL 16 + pgvector · Redis 7 |
+| Storage | MinIO (S3-compatible) |
+| Infra | Docker Compose · Turborepo · Melos · Makefile |
 
 ## Quickstart
 
 ```bash
-cp .env.example .env       # fill in ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
-make gen-keys              # RS256 JWT keypair
-make up                    # docker compose up the full stack
+# 1. Clone and configure
+git clone https://github.com/BlackSamuron0305/Comstruct-Challenge-Think-Codex-Hackathon.git
+cd Comstruct-Challenge-Think-Codex-Hackathon
+cp .env.example .env       # fill in API keys if using external LLMs
+
+# 2. Generate JWT keypair & start stack
+make gen-keys
+make up                    # docker compose up --build -d
+
+# 3. Run migrations & seed demo data
 make migrate               # alembic upgrade head on order + catalog
-make seed                  # load 8 sample C-materials + demo users
+make seed                  # demo users + sample C-materials
 ```
 
 | Service | URL |
-|---|---|
+|---------|-----|
 | Web dashboard | http://localhost:5173 |
 | API gateway | http://localhost:8001 |
 | Order service | http://localhost:8002 |
@@ -29,60 +82,119 @@ make seed                  # load 8 sample C-materials + demo users
 | Notification service | http://localhost:8004 |
 | AI service | http://localhost:8005 |
 | MinIO console | http://localhost:9001 |
-| Postgres | `localhost:5432` |
+| PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6379` |
 
-## Demo accounts (after `make seed`)
+## Demo Accounts (after `make seed`)
 
 | Role | Email | Password |
-|---|---|---|
+|------|-------|----------|
 | Foreman | `foreman@brueckesg.ch` | `comstruct-demo` |
-| Project manager | `pm@brueckesg.ch` | `comstruct-demo` |
-| Procurement admin | `procurement@comstruct.com` | `comstruct-demo` |
+| Project Manager | `pm@brueckesg.ch` | `comstruct-demo` |
+| Procurement Admin | `procurement@comstruct.com` | `comstruct-demo` |
 
-## Demo flow (spec §14)
+## Demo Flow
 
-1. Procurement admin logs into web → uploads `sample.csv` → reviews AI column mapping → confirms.
+1. **Procurement admin** logs into web → uploads `acme_catalog.csv` → reviews AI column mapping → confirms.
 2. AI classifies all rows; only C-materials are upserted to catalog.
-3. Foreman opens mobile, picks project "Brücke St. Gallen", taps **Order supplies**.
-4. Types *"gloves and screws for steel work"* → AI returns Work gloves ×10 + Screws TX20 ×200.
-5. Cart total 25.00 EUR → **auto-approved** (below 200 CHF default threshold).
-6. Adds LED site lamp ×10 (290 EUR) → triggers approval workflow; status pill flips to *Pending approval*.
-7. Procurement clicks **Approve** in web → foreman receives WS update + push notification → status flips to *Approved*.
+3. **Foreman** opens mobile, picks project "Brücke St. Gallen", taps **Order supplies**.
+4. Types *"gloves and screws for steel work"* → AI returns Work Gloves ×10 + Screws TX20 ×200.
+5. Cart total 25.00 CHF → **auto-approved** (below 200 CHF default threshold).
+6. Adds LED site lamp ×10 (290 CHF) → triggers approval workflow; status pill flips to *Pending approval*.
+7. **Procurement** clicks **Approve** in web → foreman receives WebSocket update + push notification → status flips to *Approved*.
 
-## Compliance
+## Testing
 
-- All user PII stored only in `eu-central-1`. Order history retained 10 years (DE/CH/AT construction).
-- RS256 JWT (60-min access, 30-day refresh rotation).
-- Service-to-service calls require `X-Internal-Secret` header.
-- Audit log every order state transition with actor, timestamp, IP.
+```bash
+# Unit tests (no Docker required)
+make test
 
-See [docs/compliance.md](docs/compliance.md) for full GDPR posture, sub-processor list, and AI governance.
+# Or run per-service:
+cd services/order-service && pytest tests/ -v    # state machine, approval, security, workflow
+cd services/ai-service && pytest tests/ -v       # classification, embeddings, golden tests
+cd services/catalog-service && pytest tests/ -v  # health, security
 
-## Repo layout
+# Integration tests (requires running Docker stack)
+pytest tests/test_integration.py -v              # auth, gateway proxy, AI pipeline
+```
+
+**Test coverage:**
+- **Order service**: state machine transitions, approval engine (4 branches), cart workflow, security headers, query bounds, error sanitisation, auth validation
+- **AI service**: JSON extraction, deterministic embeddings, classification heuristics, golden A-material tests, workflow logic
+- **Catalog service**: health, security headers
+- **Integration**: login/refresh JWT, gateway proxy, AI chat/classify, service health
+
+## Security
+
+All services implement defense-in-depth security controls:
+
+- **RS256 JWT** with 15-min access + 30-day refresh tokens
+- **X-Internal-Secret** gateway boundary — backend services reject direct calls
+- **RBAC** enforced per-service (foreman / PM / procurement_admin), not just at gateway
+- **Company isolation** — all queries scoped by `company_id`; cross-company access blocked
+- **Security headers** on all services: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, CSP via Helmet
+- **Rate limiting**: 200 req/min global, 10 req/min on auth endpoints
+- **Input validation**: Pydantic (Python) + Zod (TypeScript) at every boundary; query params bounded
+- **Bcrypt** password hashing (cost 12)
+- **Non-root Docker containers** — all services run as `appuser` (UID 1000)
+- **Atomic Redis operations** — cart uses Lua scripts to prevent race conditions
+- **Audit logging** — structured middleware on all mutating requests
+- **WebSocket auth** — message-based JWT with 10s timeout
+
+See [docs/compliance.md](docs/compliance.md) for full GDPR posture, OWASP Top 10 mapping, and AI governance.
+
+## Project Structure
 
 ```
 apps/
-  mobile/                 # Flutter — foreman app
+  mobile/                 # Flutter — foreman app (task search, cart, order tracking)
   web/                    # React + Vite + Tailwind — procurement dashboard
 services/
-  api-gateway/            # Fastify + RS256 JWT + WebSocket bridge
-  catalog-service/        # FastAPI + pgvector
-  order-service/          # FastAPI — cart, orders, approval engine, audit
-  notification-service/   # Fastify — Resend email + FCM push
-  ai-service/             # FastAPI — Anthropic + OpenAI (mapping, classify, recommend)
-samples/
-  acme_catalog.csv        # Demo supplier catalog (mix of C + A materials)
-scripts/
-  demo.ps1 / demo.sh      # End-to-end smoke walk-through
+  api-gateway/            # Fastify — RS256 JWT, rate-limit, WebSocket bridge, proxy
+  order-service/          # FastAPI — cart, orders, approval engine, state machine, audit
+  catalog-service/        # FastAPI — product CRUD, pgvector search, bulk upsert
+  ai-service/             # FastAPI — Ollama LLM, classification, recommendations, scraper
+  notification-service/   # Fastify — email (Resend) + push (FCM)
+packages/
+  dart-api-client/        # Generated Dart client for Flutter
+  ts-shared-types/        # Shared TypeScript types
+infra/
+  docker/init.sql         # PostgreSQL schema (5 namespaces, pgvector)
+  keys/                   # RS256 JWT keypair (git-ignored)
 docs/
-  compliance.md           # GDPR & AI governance
+  compliance.md           # GDPR, OWASP Top 10, AI governance
+samples/
+  acme_catalog.csv        # Demo supplier catalog
+scripts/
+  demo.ps1 / demo.sh     # End-to-end smoke walk-through
+tests/
+  test_integration.py     # Full-stack integration tests
 ```
 
-## Running the demo flow
+## Make Commands
 
-```bash
-make up && make migrate && make seed
-pwsh ./scripts/demo.ps1     # or:  bash ./scripts/demo.sh
-```
+| Command | Description |
+|---------|-------------|
+| `make up` | Build and start the full Docker stack |
+| `make down` | Stop stack and remove volumes |
+| `make restart` | Restart all containers |
+| `make logs` | Tail all service logs |
+| `make gen-keys` | Generate RS256 JWT keypair |
+| `make migrate` | Run Alembic migrations (order + catalog) |
+| `make seed` | Seed demo users + sample products |
+| `make test` | Run all test suites |
+| `make lint` | Run linters (ruff + eslint) |
+| `make clean` | Full cleanup (volumes, node_modules, caches) |
+
+## Key Design Decisions
+
+- **Local LLM (Ollama)** — All AI inference runs on-premise via Ollama with gemma3:4b. No procurement data leaves the infrastructure. Deterministic fallback ensures the platform works without LLM.
+- **A-material hard block** — Items >500 CHF or matching structural keywords (Beton, Stahl, Bewehrung, Schacht, Träger) are never classified as C-material, regardless of LLM output.
+- **State machine enforcement** — Order lifecycle (`draft → pending_approval → approved → ordered → in_transit → delivered`) is enforced by a strict transition map with exhaustive tests.
+- **Cart in Redis** — Atomic Lua-scripted cart operations for sub-millisecond performance. 7-day TTL auto-cleanup.
+- **Approval engine** — Rule-based: per-company thresholds + restricted category lists. Auto-approve below threshold, require PM approval above.
+
+## License
+
+Hackathon project — not licensed for production use.
 

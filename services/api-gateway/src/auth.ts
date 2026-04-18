@@ -6,7 +6,7 @@ import { signAccessToken, signRefreshToken, verifyToken } from './jwt.js';
 
 const LoginBody = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
+  password: z.string().min(8),
 });
 
 const RefreshBody = z.object({
@@ -91,7 +91,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     email: z.string().email(),
     password: z.string().min(8),
     full_name: z.string().min(1),
-    role: z.enum(['foreman', 'project_manager', 'supplier_admin']),
+    role: z.enum(['construction_worker', 'foreman', 'procurement_worker']),
     phone: z.string().optional(),
     company_name: z.string().optional(),
     company_id: z.string().uuid().optional(),

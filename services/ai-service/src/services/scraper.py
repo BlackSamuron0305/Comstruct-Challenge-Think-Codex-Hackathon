@@ -3,6 +3,7 @@
 Scrapes configured supplier websites and extracts product prices.
 Runs as a scheduled job or on-demand via API.
 """
+import json
 import logging
 import re
 import uuid
@@ -188,7 +189,7 @@ async def run_scrape_job(supplier_id: str, urls: list[str]) -> dict:
         """,
             "completed" if not errors else "partial",
             total_products,
-            __import__("json").dumps(errors),
+            json.dumps(errors),
             datetime.now(timezone.utc),
             job_id,
         )

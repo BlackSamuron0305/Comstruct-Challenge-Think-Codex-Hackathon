@@ -26,14 +26,24 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
-              const Text('comstruct', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: ComstructColors.brand)),
+              const Text('Comstruct',
+                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: ComstructColors.brand)),
               const SizedBox(height: 8),
-              const Text('Schnell bestellen. Sicher liefern.',
+              const Text('Order fast. Deliver safe.',
                   style: TextStyle(fontSize: 16, color: Colors.black54)),
               const SizedBox(height: 36),
-              TextField(controller: _email, decoration: const InputDecoration(labelText: 'E-Mail')),
+              TextField(
+                controller: _email,
+                decoration: const InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+              ),
               const SizedBox(height: 12),
-              TextField(controller: _password, obscureText: true, decoration: const InputDecoration(labelText: 'Passwort')),
+              TextField(
+                controller: _password,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Password'),
+              ),
               const SizedBox(height: 20),
               if (auth.state.error != null)
                 Text(auth.state.error!, style: const TextStyle(color: ComstructColors.err)),
@@ -42,11 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: auth.state.busy
                     ? null
                     : () => auth.login(_email.text.trim(), _password.text),
-                child: Text(auth.state.busy ? 'Anmelden…' : 'Anmelden'),
+                child: Text(auth.state.busy ? 'Signing in…' : 'Sign In'),
               ),
               const SizedBox(height: 24),
               const Text(
-                'Demo-Konten (Passwort: comstruct-demo)\n'
+                'Demo accounts (password: comstruct-demo)\n'
                 '• foreman@brueckesg.ch\n'
                 '• pm@brueckesg.ch\n'
                 '• procurement@comstruct.com',

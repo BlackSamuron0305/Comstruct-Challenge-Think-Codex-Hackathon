@@ -84,4 +84,4 @@ class ApprovalRuleUpsert(BaseModel):
     threshold_amount: Decimal
     auto_approve_below: bool = True
     restricted_categories: list[str] = []
-    approver_role: str = "project_manager"
+    approver_role: str = "foreman"

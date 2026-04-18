@@ -43,8 +43,8 @@ def current_user(
             company_id=UUID(x_company_id),
             ip=x_forwarded_for,
         )
-    except ValueError as e:
-        raise HTTPException(400, f"Invalid user context: {e}") from e
+    except ValueError:
+        raise HTTPException(400, "Invalid request format")
 
 
 def require_role(*roles: str):

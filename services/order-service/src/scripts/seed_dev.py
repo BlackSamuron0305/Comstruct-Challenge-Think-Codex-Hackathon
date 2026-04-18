@@ -1,4 +1,4 @@
-"""Seed orders/auth/audit dev data: company, project, 3 demo users, default approval rule."""
+"""Seed orders/auth/audit dev data: company, project, procurement user, default approval rule."""
 import asyncio
 from decimal import Decimal
 from uuid import UUID
@@ -23,8 +23,8 @@ DEMO_PASSWORD = "comstruct-demo"
 
 USERS = [
     (FOREMAN_ID, "foreman@brueckesg.ch", "Marco Brunner", UserRole.FOREMAN.value, "+41 79 100 0001"),
-    (PM_ID,      "pm@brueckesg.ch",      "Anna Steiner",  UserRole.PROJECT_MANAGER.value, "+41 79 100 0002"),
-    (PROC_ID,    "procurement@comstruct.com", "Lukas Weber", UserRole.PROCUREMENT_ADMIN.value, "+41 79 100 0003"),
+    (PM_ID, "pm@brueckesg.ch", "Anna Steiner", UserRole.PROCUREMENT_WORKER.value, "+41 79 100 0002"),
+    (PROC_ID, "procurement@comstruct.com", "Lukas Weber", UserRole.PROCUREMENT_WORKER.value, "+41 79 100 0003"),
 ]
 
 
@@ -61,7 +61,7 @@ async def seed():
                 threshold_amount=Decimal("200.00"),
                 auto_approve_below=True,
                 restricted_categories=[],
-                approver_role=UserRole.PROCUREMENT_ADMIN.value,
+                approver_role=UserRole.PROCUREMENT_WORKER.value,
             ))
             print("  + default approval rule (threshold 200 CHF)")
 

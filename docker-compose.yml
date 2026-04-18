@@ -51,76 +51,6 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - comstruct-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
-      mc mb -p local/${S3_BUCKET} || true;
-      mc anonymous set download local/${S3_BUCKET} || true;
-      exit 0;
-      "
-    restart: "no"
-    networks:
-      - comstruct-net
-
-  # ── Ollama (local LLM) ──────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - comstruct-net
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 6G
-
-  ollama-init:
-    image: curlimages/curl:latest
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      echo 'Pulling Ollama model...';
-      curl -s http://ollama:11434/api/pull -d '{\"name\": \"gemma4:2b\"}' | tail -1;
-      echo 'Model pull complete';
-      "
-    restart: "no"
-    networks:
-      - comstruct-net
-
   # ── AI Service ───────────────────────────────────────────────
   ai-service:
     build:
@@ -130,8 +60,8 @@ services:
       - .env
     environment:
       SERVICE_PORT: 8005
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: gemma4:2b
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: gemma3:4b
     ports:
       - "8005:8005"
     depends_on:
@@ -139,8 +69,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./services/ai-service/src:/app/src
       - ./infra/keys:/run/secrets:ro
@@ -280,8 +210,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
-  ollama_data:
 
 networks:
   comstruct-net:

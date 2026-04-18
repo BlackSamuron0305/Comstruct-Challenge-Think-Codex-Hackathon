@@ -22,7 +22,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str
-    role: str  # foreman, project_manager, supplier_admin
+    role: str  # construction_worker, foreman, procurement_worker
     phone: str | None = None
     company_name: str | None = None  # for new companies
     company_id: str | None = None  # join existing company
@@ -116,10 +116,10 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_session
         full_name=user.full_name,
         role=user.role,
         company_id=str(company_id),
-        requires_approval=body.role != UserRole.FOREMAN.value,
+        requires_approval=body.role != UserRole.CONSTRUCTION_WORKER.value,
         message="Registration successful" + (
             ". Account requires admin approval before full access."
-            if body.role != UserRole.FOREMAN.value else "."
+            if body.role != UserRole.CONSTRUCTION_WORKER.value else "."
         ),
     )
 

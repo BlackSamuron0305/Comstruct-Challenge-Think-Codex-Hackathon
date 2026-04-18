@@ -4,11 +4,17 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential libpq-dev curl && rm -rf /var/lib/apt/lists/*
+      build-essential libpq-dev curl \
+      tesseract-ocr tesseract-ocr-deu tesseract-ocr-fra && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
 RUN pip install -e .
 
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser
+
 COPY . .
+RUN chown -R appuser:appuser /app
+
+USER appuser
 EXPOSE 8005
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8005"]

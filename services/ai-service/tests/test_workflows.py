@@ -119,7 +119,7 @@ async def test_auto_approve_small_order(client):
             "total_amount": 50.0,
             "currency": "CHF",
             "company_id": "test-company",
-            "requester_role": "foreman",
+            "requester_role": "construction_worker",
             "approval_threshold": 200.0,
         })
         assert r.status_code == 200
@@ -138,7 +138,7 @@ async def test_auto_approve_large_order_needs_review(client):
             "total_amount": 9000.0,
             "currency": "CHF",
             "company_id": "test-company",
-            "requester_role": "foreman",
+            "requester_role": "construction_worker",
             "approval_threshold": 200.0,
         })
         assert r.status_code == 200

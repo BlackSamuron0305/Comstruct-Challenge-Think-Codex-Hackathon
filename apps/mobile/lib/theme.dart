@@ -52,7 +52,7 @@ ThemeData buildComstructTheme() {
         borderSide: const BorderSide(color: ComstructColors.line),
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 0,
       shape: RoundedRectangleBorder(

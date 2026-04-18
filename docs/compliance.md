@@ -25,41 +25,66 @@ No special-category personal data (GDPR Art. 9) is processed.
 
 | Service       | Purpose                          | Region        | DPA                    |
 |---------------|----------------------------------|---------------|------------------------|
-| Anthropic     | LLM (Claude Sonnet 4.5)          | US            | Standard contractual clauses required |
-| OpenAI        | Embeddings (text-embedding-3)    | US            | SCC required           |
+| Ollama (local)| LLM inference (gemma3:4b)        | On-premise    | No external data transfer |
 | Resend        | Transactional email              | EU            | DPA on file            |
 | Firebase FCM  | Push notifications               | US            | Google Cloud DPA       |
 
-**Data minimisation at LLM boundary**: the AI service sends only product names/categories/prices and the foreman's free-text task description — never user email, project address or supplier contact details.
+**Data minimisation at LLM boundary**: the AI service sends only product names/categories/prices and the foreman's free-text task description — never user email, project address or supplier contact details. LLM runs locally via Ollama — no data leaves the infrastructure.
 
-## 4. Security controls
+## 4. OWASP Top 10 mapping
+
+| # | Category | Status | Implementation |
+|---|----------|--------|----------------|
+| A01 | Broken Access Control | ✅ Mitigated | RBAC per service, company_id isolation, project ownership checks, `X-Internal-Secret` gateway boundary |
+| A02 | Cryptographic Failures | ✅ Mitigated | RS256 JWT (asymmetric), bcrypt cost-12 passwords, secrets via env vars |
+| A03 | Injection | ✅ Mitigated | SQLAlchemy ORM (parameterised queries), Pydantic/Zod input validation |
+| A04 | Insecure Design | ✅ Mitigated | Defense-in-depth: gateway auth + per-service secret + role checks, A-material hard block |
+| A05 | Security Misconfiguration | ✅ Mitigated | Security headers on all services (X-Content-Type-Options, X-Frame-Options, Referrer-Policy), Helmet on gateway, restrictive CORS, TrustedHostMiddleware |
+| A06 | Vulnerable Components | ⚠️ Partial | Pinned base images (Python 3.12-slim, Node 20-alpine); production needs Dependabot/Snyk |
+| A07 | Auth Failures | ✅ Mitigated | min-8 password login, rate-limited auth endpoints (10/min), WebSocket message-based auth |
+| A08 | Data Integrity Failures | ✅ Mitigated | Append-only audit log, state machine enforcing valid transitions |
+| A09 | Logging & Monitoring | ✅ Mitigated | Structured audit middleware on all Python services, correlation via `x-user-id` |
+| A10 | SSRF | ✅ Mitigated | Internal services only reachable via Docker network, no user-controlled URLs in backend calls |
+
+## 5. Security controls
 
 - **Auth**: RS256 JWT with 15-minute access token + rotating refresh token. Internal services trust only requests bearing `X-Internal-Secret` from the gateway.
-- **Transport**: TLS terminated at the gateway in production (Caddy/Traefik). Internal mesh is plaintext but bound to the docker network.
+- **Transport**: TLS terminated at the gateway in production (Caddy/Traefik). Internal mesh is plaintext but bound to the Docker network.
 - **Secrets**: `.env` is git-ignored; production uses Azure Key Vault / AWS Secrets Manager.
 - **Password storage**: bcrypt (cost 12) via `passlib`.
-- **Input validation**: Pydantic (Python) and Zod (TypeScript) at every public boundary.
-- **AuthZ**: Role-based (foreman / pm / procurement_admin) enforced in each service, not just the gateway.
-- **Rate limiting**: `@fastify/rate-limit` on the gateway (60 req/min/IP default).
+- **Input validation**: Pydantic (Python) and Zod (TypeScript) at every public boundary. Query parameters bounded (`limit ≤ 200`, `offset ≥ 0`).
+- **AuthZ**: Role-based (foreman / pm / procurement_admin) enforced in each service, not just the gateway. Cross-company access blocked by `company_id` checks.
+- **Rate limiting**: `@fastify/rate-limit` on the gateway (200 req/min/IP default, 10 req/min on auth endpoints).
 - **Audit log**: Every order state transition, approval, rejection and rule edit is recorded with actor, timestamp, before/after.
+- **Security headers**: All services return `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`. Gateway adds CSP + HSTS via Helmet.
+- **Container hardening**: All Docker containers run as non-root user (`appuser`, UID 1000).
+- **Error sanitisation**: Internal error details (UUIDs, stack traces) are never returned to clients.
+- **WebSocket auth**: Message-based JWT auth with 10-second timeout; URL token deprecated but supported for backward compatibility.
+- **Cart atomicity**: Redis Lua script ensures atomic read-modify-write for concurrent cart operations.
 
-## 5. AI governance
+## 6. AI governance
 
-- All Claude responses are returned as **suggestions only** — never auto-checkout. Foreman explicitly taps "Add to cart".
-- ABC classifier prompt (`src/prompts/c_material_classifier.py`) enforces hard rules: items > 500 CHF or matching structural keywords (Beton, Stahl, Bewehrung, Schacht, Träger) are *never* C-material.
-- The classifier has an offline deterministic fallback so the platform degrades gracefully if the LLM API is unavailable.
-- Golden tests (`services/ai-service/tests/test_classifier_golden.py`) lock in the two known regression cases (Betonrohr Ø80cm @ 151.68 CHF, Kabelschacht @ 1376 CHF) to prevent silent prompt drift.
+- All LLM responses are returned as **suggestions only** — never auto-checkout. Foreman explicitly taps "Add to cart".
+- ABC classifier prompt enforces hard rules: items > 500 CHF or matching structural keywords (Beton, Stahl, Bewehrung, Schacht, Träger) are *never* C-material.
+- The classifier has an offline deterministic fallback so the platform degrades gracefully if the LLM is unavailable.
+- Golden tests (`services/ai-service/tests/test_classifier_golden.py`) lock in known regression cases to prevent silent prompt drift.
+- LLM inference runs locally via Ollama — no procurement data leaves the infrastructure.
 
-## 6. Audit & monitoring
+## 7. Audit & monitoring
 
 - `order.audit_log` is append-only.
 - `actor_role` and `actor_id` recorded on every mutation.
+- Structured audit middleware logs method, path, user, status, and duration for all mutating requests.
 - WebSocket events are read-only; the channel cannot be used to mutate state.
 
-## 7. Open items for production
+## 8. Open items for production
 
 - [ ] Penetration test
 - [ ] Disaster-recovery runbook & quarterly restore drill
 - [ ] Sub-processor DPA signatures
 - [ ] DPIA for AI processing
-- [ ] Optional EU LLM provider (Mistral / Aleph Alpha) for customers requiring data residency
+- [ ] Token revocation / blacklist (Redis-backed)
+- [ ] MFA for procurement-admin and project-manager roles
+- [ ] Request correlation IDs across service boundaries
+- [ ] Database encryption at rest
+- [ ] Dependency vulnerability scanning (Snyk/Dependabot CI integration)

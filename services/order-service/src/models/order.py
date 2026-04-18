@@ -30,10 +30,9 @@ class OrderStatus(str, enum.Enum):
 
 
 class UserRole(str, enum.Enum):
+    CONSTRUCTION_WORKER = "construction_worker"
     FOREMAN = "foreman"
-    PROJECT_MANAGER = "project_manager"
-    PROCUREMENT_ADMIN = "procurement_admin"
-    SUPPLIER_ADMIN = "supplier_admin"
+    PROCUREMENT_WORKER = "procurement_worker"
 
 
 # ── auth schema ───────────────────────────────────────────────────────
@@ -88,7 +87,7 @@ class ApprovalRule(Base):
     restricted_categories: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, server_default="{}"
     )
-    approver_role: Mapped[str] = mapped_column(String(32), default=UserRole.PROJECT_MANAGER.value)
+    approver_role: Mapped[str] = mapped_column(String(32), default=UserRole.FOREMAN.value)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

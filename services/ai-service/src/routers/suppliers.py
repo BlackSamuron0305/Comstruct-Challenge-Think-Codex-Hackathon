@@ -5,6 +5,9 @@ Provides endpoints for:
 - Getting supplier score breakdowns
 - Triggering web scraping jobs
 - Auto-approval recommendations
+- Web search for supplier info
+- Supplier proposals (search → score → propose → approve/reject)
+- Preferred suppliers management
 """
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -12,6 +15,15 @@ from pydantic import BaseModel
 from ..dependencies import require_internal_secret
 from ..services.scoring import compare_suppliers, compute_supplier_score
 from ..services.scraper import run_scrape_job, scrape_supplier_page
+from ..services.web_search import search_supplier_info, search_web
+from ..services.supplier_proposal import (
+    approve_proposal,
+    create_supplier_proposal,
+    get_proposal,
+    list_preferred_suppliers,
+    list_proposals,
+    reject_proposal,
+)
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -140,3 +152,123 @@ async def scrape_preview(supplier_id: str, body: ScrapeRequest):
         products = await scrape_supplier_page(url, supplier_id)
         all_products.extend(products)
     return ScrapePreviewResponse(products=all_products, count=len(all_products))
+
+
+# ── Web search ────────────────────────────────────────────────────────
+class WebSearchRequest(BaseModel):
+    query: str
+    num_results: int = 10
+
+
+@router.post(
+    "/web-search",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def web_search(body: WebSearchRequest):
+    """Search the web for supplier information."""
+    results = await search_web(body.query, body.num_results)
+    return {"query": body.query, "results": results, "count": len(results)}
+
+
+@router.get(
+    "/{supplier_id}/web-info",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def get_supplier_web_info(supplier_id: str, name: str = Query(...)):
+    """Search the web for a specific supplier's reputation and reviews."""
+    return await search_supplier_info(name, supplier_id)
+
+
+# ── Supplier proposals ────────────────────────────────────────────────
+class ProposalRequest(BaseModel):
+    company_id: str
+    product_query: str
+    category: str | None = None
+
+
+@router.post(
+    "/proposals",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def create_proposal(body: ProposalRequest):
+    """Create a supplier proposal: web search → score → rank → propose."""
+    return await create_supplier_proposal(
+        body.company_id, body.product_query, body.category,
+    )
+
+
+@router.get(
+    "/proposals/{proposal_id}",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def get_proposal_detail(proposal_id: str):
+    """Get details of a specific proposal."""
+    result = await get_proposal(proposal_id)
+    if not result:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return result
+
+
+@router.get(
+    "/proposals/by-company/{company_id}",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def list_company_proposals(
+    company_id: str,
+    status: str | None = Query(default=None),
+):
+    """List all proposals for a company."""
+    return await list_proposals(company_id, status)
+
+
+class ApproveProposalRequest(BaseModel):
+    supplier_index: int
+    approved_by: str
+    notes: str | None = None
+
+
+@router.post(
+    "/proposals/{proposal_id}/approve",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def approve_proposal_endpoint(proposal_id: str, body: ApproveProposalRequest):
+    """Approve a proposal and save chosen supplier to preferred_suppliers."""
+    result = await approve_proposal(
+        proposal_id, body.supplier_index, body.approved_by, body.notes,
+    )
+    if "error" in result:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+class RejectProposalRequest(BaseModel):
+    rejected_by: str
+    reason: str | None = None
+
+
+@router.post(
+    "/proposals/{proposal_id}/reject",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def reject_proposal_endpoint(proposal_id: str, body: RejectProposalRequest):
+    """Reject a proposal."""
+    result = await reject_proposal(proposal_id, body.rejected_by, body.reason)
+    if "error" in result:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+# ── Preferred suppliers ───────────────────────────────────────────────
+@router.get(
+    "/preferred/{company_id}",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def get_preferred_suppliers(
+    company_id: str,
+    active_only: bool = Query(default=True),
+):
+    """List all preferred/approved suppliers for a company."""
+    return await list_preferred_suppliers(company_id, active_only)

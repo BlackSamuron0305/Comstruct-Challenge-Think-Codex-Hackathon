@@ -1,43 +1,84 @@
-/// Lightweight API client (avoid build_runner dependency at hackathon time).
-import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+/// API client with secure token storage, auto-refresh, retry, and offline cache.
+import 'dart:convert';
 
+import 'package:dio/dio.dart';
+import 'package:dio_smart_retry/dio_smart_retry.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
+
+import 'config.dart';
+
+// ─── Secure Token Storage ─────────────────────────────────────────────
 class TokenStore {
   static const _kAccess = 'comstruct.access';
   static const _kRefresh = 'comstruct.refresh';
+  final _storage = const FlutterSecureStorage();
   String? access;
   String? refresh;
 
   Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
-    access = p.getString(_kAccess);
-    refresh = p.getString(_kRefresh);
+    access = await _storage.read(key: _kAccess);
+    refresh = await _storage.read(key: _kRefresh);
   }
 
   Future<void> save({String? access, String? refresh}) async {
-    final p = await SharedPreferences.getInstance();
     if (access != null) {
       this.access = access;
-      await p.setString(_kAccess, access);
+      await _storage.write(key: _kAccess, value: access);
     }
     if (refresh != null) {
       this.refresh = refresh;
-      await p.setString(_kRefresh, refresh);
+      await _storage.write(key: _kRefresh, value: refresh);
     }
   }
 
   Future<void> clear() async {
-    final p = await SharedPreferences.getInstance();
     access = null;
     refresh = null;
-    await p.remove(_kAccess);
-    await p.remove(_kRefresh);
+    await _storage.delete(key: _kAccess);
+    await _storage.delete(key: _kRefresh);
   }
 }
 
+// ─── Offline Cache ────────────────────────────────────────────────────
+class OfflineCache {
+  static Box? _box;
+
+  static Future<void> init() async {
+    _box = await Hive.openBox('api_cache');
+  }
+
+  static Future<void> put(String key, dynamic data, {Duration ttl = const Duration(hours: 4)}) async {
+    _box?.put(key, jsonEncode({'data': data, 'expires': DateTime.now().add(ttl).toIso8601String()}));
+  }
+
+  static dynamic get(String key) {
+    final raw = _box?.get(key);
+    if (raw == null) return null;
+    try {
+      final map = jsonDecode(raw as String) as Map<String, dynamic>;
+      if (DateTime.parse(map['expires'] as String).isAfter(DateTime.now())) {
+        return map['data'];
+      }
+      _box?.delete(key);
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<void> clear() async => _box?.clear();
+}
+
+// ─── API Client ───────────────────────────────────────────────────────
 class ApiClient {
   ApiClient({required this.baseUrl, required this.tokens})
-      : dio = Dio(BaseOptions(baseUrl: baseUrl, connectTimeout: const Duration(seconds: 10), receiveTimeout: const Duration(seconds: 30))) {
+      : dio = Dio(BaseOptions(
+          baseUrl: baseUrl,
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 30),
+          sendTimeout: const Duration(seconds: 15),
+        )) {
+    // JWT interceptor
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (opts, h) {
         if (tokens.access != null) {
@@ -62,15 +103,30 @@ class ApiClient {
         h.next(e);
       },
     ));
+
+    // Smart retry with exponential backoff
+    dio.interceptors.add(RetryInterceptor(
+      dio: dio,
+      retries: 3,
+      retryDelays: const [
+        Duration(seconds: 1),
+        Duration(seconds: 3),
+        Duration(seconds: 5),
+      ],
+    ));
   }
 
   final String baseUrl;
   final TokenStore tokens;
   final Dio dio;
+  final _uuid = const Uuid();
 
   Future<bool> _tryRefresh() async {
     try {
-      final r = await Dio().post(
+      final r = await Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      )).post(
         '$baseUrl/auth/refresh',
         data: {'refresh_token': tokens.refresh},
       );
@@ -83,8 +139,12 @@ class ApiClient {
 
   // ── Auth ───────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final r = await Dio().post(
-      '$baseUrl/auth/login',
+    final r = await Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 15),
+    )).post(
+      '/auth/login',
       data: {'email': email, 'password': password},
     );
     final data = Map<String, dynamic>.from(r.data as Map);
@@ -95,45 +155,106 @@ class ApiClient {
     return data['user'] as Map<String, dynamic>;
   }
 
-  // ── Catalog ────────────────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> products({String? q, String? category}) async {
-    final r = await dio.get('/api/products', queryParameters: {
-      if (q != null && q.isNotEmpty) 'q': q,
-      if (category != null) 'category': category,
-    });
-    return List<Map<String, dynamic>>.from(r.data as List);
+  // ── Catalog (with offline cache + pagination) ──────────────────────
+  Future<List<Map<String, dynamic>>> products({
+    String? q,
+    String? category,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final cacheKey = 'products:${q ?? ''}:${category ?? ''}:$page';
+    try {
+      final r = await dio.get('/api/products', queryParameters: {
+        if (q != null && q.isNotEmpty) 'q': q,
+        if (category != null) 'category': category,
+        'page': page,
+        'page_size': pageSize,
+      });
+      final result = List<Map<String, dynamic>>.from(r.data as List);
+      await OfflineCache.put(cacheKey, r.data);
+      return result;
+    } catch (_) {
+      final cached = OfflineCache.get(cacheKey);
+      if (cached != null) return List<Map<String, dynamic>>.from(cached as List);
+      rethrow;
+    }
   }
 
   // ── Cart ───────────────────────────────────────────────────────────
-  Future<Map<String, dynamic>> getCart() async => Map<String, dynamic>.from((await dio.get('/api/cart')).data as Map);
+  Future<Map<String, dynamic>> getCart() async {
+    try {
+      final r = await dio.get('/api/cart');
+      final result = Map<String, dynamic>.from(r.data as Map);
+      await OfflineCache.put('cart', r.data, ttl: const Duration(minutes: 30));
+      return result;
+    } catch (_) {
+      final cached = OfflineCache.get('cart');
+      if (cached != null) return Map<String, dynamic>.from(cached as Map);
+      rethrow;
+    }
+  }
 
   Future<Map<String, dynamic>> addToCart(String productId, num quantity) async {
     final r = await dio.post('/api/cart/add', data: {
       'product_id': productId,
       'quantity': quantity,
     });
-    return Map<String, dynamic>.from(r.data as Map);
+    final result = Map<String, dynamic>.from(r.data as Map);
+    await OfflineCache.put('cart', r.data, ttl: const Duration(minutes: 30));
+    return result;
   }
 
   Future<void> removeFromCart(String productId) async {
     await dio.delete('/api/cart/$productId');
   }
 
-  // ── Orders ─────────────────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> orders() async =>
-      List<Map<String, dynamic>>.from((await dio.get('/api/orders')).data as List);
+  // ── Orders (with idempotency) ──────────────────────────────────────
+  Future<List<Map<String, dynamic>>> orders({int page = 1, int pageSize = 50}) async {
+    final cacheKey = 'orders:$page';
+    try {
+      final r = await dio.get('/api/orders', queryParameters: {
+        'page': page,
+        'page_size': pageSize,
+      });
+      final result = List<Map<String, dynamic>>.from(r.data as List);
+      await OfflineCache.put(cacheKey, r.data, ttl: const Duration(minutes: 5));
+      return result;
+    } catch (_) {
+      final cached = OfflineCache.get(cacheKey);
+      if (cached != null) return List<Map<String, dynamic>>.from(cached as List);
+      rethrow;
+    }
+  }
 
-  Future<Map<String, dynamic>> checkout({required String projectId, String? notes}) async {
-    final r = await dio.post('/api/orders/checkout', data: {
-      'project_id': projectId,
-      if (notes != null) 'notes': notes,
-    });
+  Future<Map<String, dynamic>> checkout({
+    required String projectId,
+    String? notes,
+    String? idempotencyKey,
+  }) async {
+    final key = idempotencyKey ?? _uuid.v4();
+    final r = await dio.post('/api/orders/checkout',
+      data: {
+        'project_id': projectId,
+        if (notes != null) 'notes': notes,
+      },
+      options: Options(headers: {'Idempotency-Key': key}),
+    );
     return Map<String, dynamic>.from(r.data as Map);
   }
 
-  // ── Projects ───────────────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> projects() async =>
-      List<Map<String, dynamic>>.from((await dio.get('/api/projects')).data as List);
+  // ── Projects (cached) ──────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> projects() async {
+    try {
+      final r = await dio.get('/api/projects');
+      final result = List<Map<String, dynamic>>.from(r.data as List);
+      await OfflineCache.put('projects', r.data, ttl: const Duration(hours: 12));
+      return result;
+    } catch (_) {
+      final cached = OfflineCache.get('projects');
+      if (cached != null) return List<Map<String, dynamic>>.from(cached as List);
+      rethrow;
+    }
+  }
 
   // ── AI ─────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> recommend(String task, {String? projectName, String? trade}) async {
@@ -141,7 +262,86 @@ class ApiClient {
       'task': task,
       if (projectName != null) 'project': projectName,
       if (trade != null) 'trade': trade,
+      'language': 'en',
     });
     return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> chat(String message, {Map<String, dynamic>? context, String language = 'en'}) async {
+    final r = await dio.post('/api/ai/chat', data: {
+      'message': message,
+      if (context != null) 'context': context,
+      'language': language,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> uploadImage(
+    String filePath, {
+    String? context,
+    String? projectId,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+      if (context != null) 'context': context,
+      if (projectId != null) 'project_id': projectId,
+    });
+    final r = await dio.post('/api/ai/upload-image', data: formData);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> transcribeAudio(
+    String filePath, {
+    String language = 'en',
+    String? context,
+    bool respond = true,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+      'language': language,
+      if (context != null) 'context': context,
+      'respond': respond.toString(),
+    });
+    final r = await dio.post('/api/ai/transcribe-audio', data: formData);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> analyzePhoto(String description, {String? projectId}) async {
+    final r = await dio.post('/api/ai/analyze-photo', data: {
+      'description': description,
+      if (projectId != null) 'project_id': projectId,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  // ── Supplier Proposals ────────────────────────────────────────────
+  Future<Map<String, dynamic>> createSupplierProposal(String companyId, String productQuery, {String? category}) async {
+    final r = await dio.post('/api/supplier-scoring/proposals', data: {
+      'company_id': companyId,
+      'product_query': productQuery,
+      if (category != null) 'category': category,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> listProposals(String companyId, {String? status}) async {
+    final r = await dio.get('/api/supplier-scoring/proposals/by-company/$companyId', queryParameters: {
+      if (status != null) 'status': status,
+    });
+    return List<Map<String, dynamic>>.from(r.data as List);
+  }
+
+  Future<Map<String, dynamic>> approveProposal(String proposalId, int supplierIndex, String approvedBy, {String? notes}) async {
+    final r = await dio.post('/api/supplier-scoring/proposals/$proposalId/approve', data: {
+      'supplier_index': supplierIndex,
+      'approved_by': approvedBy,
+      if (notes != null) 'notes': notes,
+    });
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> preferredSuppliers(String companyId) async {
+    final r = await dio.get('/api/supplier-scoring/preferred/$companyId');
+    return List<Map<String, dynamic>>.from(r.data as List);
   }
 }

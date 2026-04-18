@@ -24,7 +24,7 @@ async def get_rule(
 @router.put("/rule", response_model=ApprovalRuleOut)
 async def upsert_rule(
     body: ApprovalRuleUpsert,
-    user: CurrentUser = Depends(require_role(UserRole.PROCUREMENT_ADMIN.value)),
+    user: CurrentUser = Depends(require_role(UserRole.PROCUREMENT_WORKER.value)),
     db: AsyncSession = Depends(get_session),
 ):
     rows = await db.execute(

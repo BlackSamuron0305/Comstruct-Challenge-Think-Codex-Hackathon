@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..dependencies import CurrentUser, current_user, require_role
-from ..models import Order, OrderItem, OrderStatus, UserRole
+from ..models import Order, OrderItem, OrderStatus, Project, UserRole
 from ..schemas import CheckoutRequest, OrderOut, RejectRequest
 from ..services import (
     ApprovalEngine,
@@ -29,13 +29,13 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 async def list_orders(
     status: str | None = Query(default=None),
     project_id: UUID | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user: CurrentUser = Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
     stmt = select(Order).where(Order.company_id == user.company_id)
-    if user.role == UserRole.FOREMAN.value:
+    if user.role == UserRole.CONSTRUCTION_WORKER.value:
         stmt = stmt.where(Order.foreman_id == user.id)
     if status:
         stmt = stmt.where(Order.status == status)
@@ -55,7 +55,7 @@ async def get_order(
     order = await db.get(Order, order_id)
     if not order or order.company_id != user.company_id:
         raise HTTPException(404, "Order not found")
-    if user.role == UserRole.FOREMAN.value and order.foreman_id != user.id:
+    if user.role == UserRole.CONSTRUCTION_WORKER.value and order.foreman_id != user.id:
         raise HTTPException(403, "Forbidden")
     return order
 
@@ -67,6 +67,11 @@ async def checkout(
     user: CurrentUser = Depends(current_user),
     db: AsyncSession = Depends(get_session),
 ):
+    # Validate project belongs to user's company
+    project = await db.get(Project, body.project_id)
+    if not project or project.company_id != user.company_id:
+        raise HTTPException(404, "Project not found")
+
     lines = await cart_get(user.id)
     if not lines:
         raise HTTPException(400, "Cart is empty")
@@ -149,7 +154,7 @@ async def checkout(
 async def approve_order(
     order_id: UUID,
     user: CurrentUser = Depends(require_role(
-        UserRole.PROJECT_MANAGER.value, UserRole.PROCUREMENT_ADMIN.value
+        UserRole.FOREMAN.value, UserRole.PROCUREMENT_WORKER.value
     )),
     db: AsyncSession = Depends(get_session),
 ):
@@ -188,7 +193,7 @@ async def reject_order(
     order_id: UUID,
     body: RejectRequest,
     user: CurrentUser = Depends(require_role(
-        UserRole.PROJECT_MANAGER.value, UserRole.PROCUREMENT_ADMIN.value
+        UserRole.FOREMAN.value, UserRole.PROCUREMENT_WORKER.value
     )),
     db: AsyncSession = Depends(get_session),
 ):
@@ -225,12 +230,12 @@ async def reject_order(
 async def mark_in_transit(
     order_id: UUID,
     user: CurrentUser = Depends(require_role(
-        UserRole.SUPPLIER_ADMIN.value, UserRole.PROCUREMENT_ADMIN.value
+        UserRole.PROCUREMENT_WORKER.value
     )),
     db: AsyncSession = Depends(get_session),
 ):
     order = await db.get(Order, order_id)
-    if not order:
+    if not order or order.company_id != user.company_id:
         raise HTTPException(404, "Order not found")
     try:
         assert_transition(order.status, OrderStatus.IN_TRANSIT.value)
@@ -252,12 +257,12 @@ async def mark_in_transit(
 async def mark_delivered(
     order_id: UUID,
     user: CurrentUser = Depends(require_role(
-        UserRole.FOREMAN.value, UserRole.SUPPLIER_ADMIN.value, UserRole.PROCUREMENT_ADMIN.value
+        UserRole.CONSTRUCTION_WORKER.value, UserRole.FOREMAN.value, UserRole.PROCUREMENT_WORKER.value
     )),
     db: AsyncSession = Depends(get_session),
 ):
     order = await db.get(Order, order_id)
-    if not order:
+    if not order or order.company_id != user.company_id:
         raise HTTPException(404, "Order not found")
     try:
         assert_transition(order.status, OrderStatus.DELIVERED.value)

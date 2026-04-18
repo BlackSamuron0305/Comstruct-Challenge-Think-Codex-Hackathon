@@ -16,10 +16,9 @@ export const MaterialClass = z.enum(['A', 'B', 'C']);
 export type MaterialClass = z.infer<typeof MaterialClass>;
 
 export const UserRole = z.enum([
+  'construction_worker',
   'foreman',
-  'project_manager',
-  'procurement_admin',
-  'supplier_admin',
+  'procurement_worker',
 ]);
 export type UserRole = z.infer<typeof UserRole>;
 

@@ -10,8 +10,8 @@ from .catalog_client import search_by_vector
 def _stub_recommend(task: str, candidates: list[dict]) -> dict:
     chosen = candidates[:3]
     return {
-        "language": "de",
-        "summary": f"Vorschlag für: {task[:80]}" if chosen else "Keine passenden C-Materialien gefunden.",
+        "language": "en",
+        "summary": f"Suggestion for: {task[:80]}" if chosen else "No matching C-materials found.",
         "items": [
             {
                 "product_id": c["product_id"],

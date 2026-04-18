@@ -1,7 +1,7 @@
 """Supplier scoring engine.
 
 Computes composite scores from price history, delivery performance,
-and interaction history. Stores results in procurement.supplier_scores.
+interaction history, and web reputation. Stores results in procurement.supplier_scores.
 """
 import logging
 import uuid
@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 
 # Weight configuration for composite scoring
 SCORE_WEIGHTS = {
-    "price": 0.35,
-    "delivery": 0.30,
-    "trust": 0.20,
-    "quality": 0.15,
+    "price": 0.25,
+    "delivery": 0.25,
+    "trust": 0.15,
+    "quality_web": 0.20,   # from web search reputation
+    "specs_fit": 0.15,      # how well supplier specs match requirements
 }
 
 
@@ -99,12 +100,34 @@ async def compute_supplier_score(supplier_id: str) -> dict:
                     max(0, min(100, 80 - dispute_rate * 100 + experience_bonus)), 2
                 )))
 
+        # Quality score from web search reputation
+        quality_web_score = Decimal("50.0")  # neutral default
+        web_cache_row = await conn.fetchrow("""
+            SELECT results FROM procurement.web_search_cache
+            WHERE supplier_id = $1
+            ORDER BY searched_at DESC LIMIT 1
+        """, uuid.UUID(supplier_id))
+
+        if web_cache_row and web_cache_row["results"]:
+            import json
+            try:
+                cached = json.loads(web_cache_row["results"])
+                rep = cached.get("reputation_score", 50)
+                quality_web_score = Decimal(str(max(0, min(100, rep))))
+            except Exception:
+                pass
+
+        # Specs fit score: placeholder — will be computed by AI when comparing
+        # against specific product requirements. Default neutral.
+        specs_fit_score = Decimal("50.0")
+
         # Composite
         overall = (
             price_score * Decimal(str(SCORE_WEIGHTS["price"]))
             + delivery_score * Decimal(str(SCORE_WEIGHTS["delivery"]))
             + trust_score * Decimal(str(SCORE_WEIGHTS["trust"]))
-            + Decimal("50.0") * Decimal(str(SCORE_WEIGHTS["quality"]))  # placeholder
+            + quality_web_score * Decimal(str(SCORE_WEIGHTS["quality_web"]))
+            + specs_fit_score * Decimal(str(SCORE_WEIGHTS["specs_fit"]))
         )
 
         now = datetime.now(timezone.utc)
@@ -112,6 +135,8 @@ async def compute_supplier_score(supplier_id: str) -> dict:
             "price": price_score,
             "delivery": delivery_score,
             "trust": trust_score,
+            "quality_web": quality_web_score,
+            "specs_fit": specs_fit_score,
             "overall": overall.quantize(Decimal("0.01")),
         }
 

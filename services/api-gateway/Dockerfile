@@ -29,6 +29,7 @@ COPY --from=build /workspace/services/api-gateway/dist ./services/api-gateway/di
 COPY --from=build /workspace/packages/ts-shared-types/dist ./packages/ts-shared-types/dist
 COPY services/api-gateway/package.json ./services/api-gateway/package.json
 COPY packages/ts-shared-types/package.json ./packages/ts-shared-types/package.json
+USER node
 WORKDIR /workspace/services/api-gateway
 EXPOSE 8001
 CMD ["node", "dist/index.js"]
