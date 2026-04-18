@@ -1,15 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { BarChart3, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { BarChart3, Minus, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api';
-
-interface SupplierScore {
-  supplier_id: string;
-  score_type: string;
-  score_value: string;
-  sample_size: number;
-  computed_at: string;
-}
 
 interface Comparison {
   supplier_id: string;
@@ -44,23 +36,37 @@ export function SupplierScoringPage(): JSX.Element {
   });
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-5">
-        <BarChart3 size={24} className="text-brand" />
-        <h1 className="text-2xl font-bold">Supplier Scoring</h1>
-      </div>
+    <div className="space-y-6">
+      <section className="card p-6 lg:p-8">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-brand text-brand-surface">
+            <BarChart3 size={22} />
+          </div>
+          <div>
+            <div className="panel-title">Supplier scoring</div>
+            <h1 className="mt-2 text-[30px] font-bold tracking-[-0.03em] text-slate-900">
+              Compare supplier fit before ordering
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+              Review unit price and computed performance score side by side to support
+              better sourcing decisions for catalog items.
+            </p>
+          </div>
+        </div>
+      </section>
 
-      {/* Comparison tool */}
-      <div className="card p-5 mb-6">
-        <h2 className="font-semibold mb-3">Compare Suppliers by Product</h2>
-        <div className="flex gap-3 items-end">
+      <section className="card p-5">
+        <h2 className="text-base font-semibold text-slate-900">Compare suppliers by product</h2>
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex-1">
-            <label className="text-xs font-medium text-slate-600">Product ID</label>
+            <label className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+              Product ID
+            </label>
             <input
-              className="mt-1 w-full rounded-md border border-brand-line px-3 py-2 text-sm font-mono"
+              className="mt-2 w-full rounded-[12px] border border-brand-line px-4 py-3 text-sm font-mono"
               placeholder="Enter product UUID"
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onChange={(event) => setProductId(event.target.value)}
             />
           </div>
           <button
@@ -71,52 +77,57 @@ export function SupplierScoringPage(): JSX.Element {
             Compare
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Results table */}
       {comparison.data && (
         <div className="card overflow-hidden">
+          <div className="border-b border-brand-line px-6 py-5">
+            <div className="text-base font-semibold text-slate-900">Comparison results</div>
+            <div className="mt-1 text-sm text-slate-500">
+              Ranked supplier options for the selected catalog product
+            </div>
+          </div>
           <table className="w-full text-sm">
-            <thead className="text-left bg-brand-surface text-xs uppercase text-slate-500">
+            <thead className="bg-brand-surface text-left text-xs uppercase tracking-[0.14em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Supplier</th>
                 <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3">Overall Score</th>
-                <th className="px-4 py-3">Composite Rank</th>
+                <th className="px-4 py-3">Overall score</th>
+                <th className="px-4 py-3">Composite rank</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {comparison.data.comparisons.map((c, i) => (
+              {comparison.data.comparisons.map((comparisonItem) => (
                 <tr
-                  key={c.supplier_id}
+                  key={comparisonItem.supplier_id}
                   className={`border-t border-brand-line ${
-                    c.supplier_id === comparison.data?.recommendation
-                      ? 'bg-emerald-50'
+                    comparisonItem.supplier_id === comparison.data.recommendation
+                    ? 'bg-brand/15'
                       : ''
                   }`}
                 >
                   <td className="px-4 py-3 font-mono text-xs">
-                    {c.supplier_id.slice(0, 8)}
-                    {c.supplier_id === comparison.data?.recommendation && (
-                      <span className="ml-2 badge bg-emerald-100 text-emerald-800">
+                    {comparisonItem.supplier_id.slice(0, 8)}
+                    {comparisonItem.supplier_id === comparison.data.recommendation && (
+                      <span className="ml-2 badge bg-brand-ok text-brand-text">
                         Recommended
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono">
-                    {Number(c.unit_price).toFixed(2)} {c.currency}
+                    {Number(comparisonItem.unit_price).toFixed(2)} {comparisonItem.currency}
                   </td>
                   <td className="px-4 py-3">
-                    <ScoreBadge score={c.overall_score} />
+                    <ScoreBadge score={comparisonItem.overall_score} />
                   </td>
                   <td className="px-4 py-3 font-mono">
-                    {c.composite_rank?.toFixed(1) ?? '-'}
+                    {comparisonItem.composite_rank?.toFixed(1) ?? '-'}
                   </td>
                   <td className="px-4 py-3">
                     <button
                       className="btn-ghost text-xs"
-                      onClick={() => recompute.mutate(c.supplier_id)}
+                      onClick={() => recompute.mutate(comparisonItem.supplier_id)}
                       disabled={recompute.isPending}
                     >
                       <RefreshCw size={14} /> Recompute
@@ -137,9 +148,7 @@ export function SupplierScoringPage(): JSX.Element {
       )}
 
       {comparison.isError && (
-        <div className="text-sm text-brand-err mt-2">
-          Failed to load comparison data.
-        </div>
+        <div className="text-sm text-brand-err">Failed to load comparison data.</div>
       )}
     </div>
   );
@@ -147,18 +156,20 @@ export function SupplierScoringPage(): JSX.Element {
 
 function ScoreBadge({ score }: { score: string | null }): JSX.Element {
   if (!score) return <span className="text-slate-400">—</span>;
-  const val = Number(score);
+
+  const numeric = Number(score);
   const color =
-    val >= 75
-      ? 'text-emerald-700 bg-emerald-100'
-      : val >= 50
-        ? 'text-amber-700 bg-amber-100'
-        : 'text-red-700 bg-red-100';
-  const Icon = val >= 60 ? TrendingUp : val >= 40 ? Minus : TrendingDown;
+    numeric >= 75
+      ? 'text-brand-text bg-brand-ok'
+      : numeric >= 50
+        ? 'text-brand-text bg-brand-accent'
+        : 'text-brand-surface bg-brand-err';
+  const Icon = numeric >= 60 ? TrendingUp : numeric >= 40 ? Minus : TrendingDown;
+
   return (
-    <span className={`badge ${color} inline-flex items-center gap-1`}>
+    <span className={`badge inline-flex items-center gap-1 ${color}`}>
       <Icon size={12} />
-      {val.toFixed(1)}
+      {numeric.toFixed(1)}
     </span>
   );
 }

@@ -1,6 +1,7 @@
 FROM node:20-alpine AS base
 WORKDIR /workspace
 RUN corepack enable
+RUN apk add --no-cache curl
 
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml turbo.json ./

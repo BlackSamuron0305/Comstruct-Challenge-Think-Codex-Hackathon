@@ -19,14 +19,32 @@ interface AuthState {
   tryRefresh: () => Promise<boolean>;
 }
 
+const TEMP_AUTH_BYPASS = true;
+
+const PREVIEW_USER: User = {
+  id: 'preview-user',
+  email: 'procurement@comstruct.com',
+  full_name: 'Procurement Preview',
+  role: 'procurement_admin',
+  company_id: 'preview-company',
+};
+
 export const useAuthStore = create<AuthState>()(
   persist<AuthState>(
     (set, get) => ({
-      user: null,
+      user: TEMP_AUTH_BYPASS ? PREVIEW_USER : null,
       accessToken: null,
       refreshToken: null,
 
       login: async (email, password) => {
+        if (TEMP_AUTH_BYPASS) {
+          set({
+            user: { ...PREVIEW_USER, email },
+            accessToken: null,
+            refreshToken: null,
+          });
+          return;
+        }
         const r = await axios.post('/auth/login', { email, password });
         set({
           user: r.data.user,
@@ -35,9 +53,15 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      logout: () => set({ user: null, accessToken: null, refreshToken: null }),
+      logout: () =>
+        set({
+          user: TEMP_AUTH_BYPASS ? PREVIEW_USER : null,
+          accessToken: null,
+          refreshToken: null,
+        }),
 
       tryRefresh: async () => {
+        if (TEMP_AUTH_BYPASS) return true;
         const rt = get().refreshToken;
         if (!rt) return false;
         try {
