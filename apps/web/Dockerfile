@@ -1,18 +1,27 @@
-FROM node:20-alpine AS dev
-WORKDIR /workspace
-
-RUN corepack enable
-ENV NODE_ENV=development
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
-COPY apps/web/package.json ./apps/web/package.json
-COPY packages/ts-shared-types/package.json ./packages/ts-shared-types/package.json
-
-RUN pnpm install --filter @comstruct/web... --no-frozen-lockfile
-
-COPY apps/web ./apps/web
-COPY packages/ts-shared-types ./packages/ts-shared-types
-
-EXPOSE 5173
+# ─── base: install dependencies ───────────────────────────────────────────────
+FROM oven/bun:1-alpine AS base
 WORKDIR /workspace/apps/web
-CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173"]
+
+# Copy only the lockfile + manifest first so Docker can cache the layer
+COPY apps/web/package.json apps/web/bun.lockb ./
+RUN bun install --frozen-lockfile
+
+# ─── dev: hot-reload dev server (used by docker-compose target: dev) ──────────
+FROM base AS dev
+# Source files are volume-mounted at runtime; copy here for standalone use
+COPY apps/web/ .
+EXPOSE 5173
+# --host makes Vite bind to 0.0.0.0 so Docker port-mapping works
+CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
+
+# ─── build: produce the production bundle ─────────────────────────────────────
+FROM base AS build
+COPY apps/web/ .
+RUN bun run build
+
+# ─── prod: serve the production bundle locally via Vite preview ───────────────
+FROM base AS prod
+COPY apps/web/ .
+COPY --from=build /workspace/apps/web/dist ./dist
+EXPOSE 4173
+CMD ["bun", "run", "preview", "--host", "0.0.0.0"]
