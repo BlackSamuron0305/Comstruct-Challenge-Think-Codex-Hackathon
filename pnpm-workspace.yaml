@@ -1,0 +1,5 @@
+packages:
+  - "apps/web"
+  - "packages/ts-shared-types"
+  - "services/api-gateway"
+  - "services/notification-service"

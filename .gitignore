@@ -1,0 +1,60 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+infra/keys/*.pem
+infra/keys/*.json
+infra/keys/*.p8
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+*.log
+.npm/
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Flutter / Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+apps/mobile/ios/Pods/
+apps/mobile/ios/Podfile.lock
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/.fvm/
+
+# Docker
+docker-volumes/
+
+# Generated
+packages/dart-api-client/lib/src/generated/
+**/*.g.dart
+**/*.freezed.dart

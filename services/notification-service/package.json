@@ -1,0 +1,35 @@
+{
+  "name": "@comstruct/notification-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/sensible": "^5.5.0",
+    "@parse/node-apn": "^6.4.0",
+    "dotenv": "^16.6.1",
+    "fastify": "^4.28.0",
+    "firebase-admin": "^12.1.0",
+    "ioredis": "^5.4.0",
+    "pino": "^9.0.0",
+    "resend": "^3.2.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "eslint": "^8.57.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.5.0"
+  }
+}

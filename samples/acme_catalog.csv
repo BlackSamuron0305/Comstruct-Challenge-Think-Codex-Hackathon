@@ -1,0 +1,21 @@
+sku,name,description,manufacturer,unit,unit_price,currency,category,minimum_order_qty,pack_size
+ACME-SCR-6X40,"Holzschraube 6×40 mm verzinkt","Universal Holzschraube, gelb verzinkt, Pk 200",ACME,box,18.50,CHF,fasteners,1,200
+ACME-SCR-8X80,"Holzschraube 8×80 mm verzinkt","Universal Holzschraube, gelb verzinkt, Pk 100",ACME,box,22.30,CHF,fasteners,1,100
+ACME-SIL-NEU-310,"Silikon Neutral 310ml weiss","Sanitär-Silikon, schimmelhemmend",ACME,piece,8.40,CHF,sealants,1,1
+ACME-GLOVES-NIT-L,"Nitril-Handschuhe L","Einweg, puderfrei, 100 Stk Box",ACME,box,11.90,CHF,ppe,1,100
+ACME-DUCT-TAPE-50,"Gewebeband 50mm × 50m","Reissfest, silber",ACME,roll,6.20,CHF,consumables,1,1
+ACME-CABLE-TIES-200,"Kabelbinder 200×4.8mm schwarz","Pk 100",ACME,pack,4.10,CHF,electrical_consumables,1,100
+ACME-DRILL-BIT-6,"HSS-Bohrer 6mm","Metallbohrer, einzeln",ACME,piece,3.80,CHF,tools,1,1
+ACME-WATER-1L,"Trinkwasser 1L Flasche","Karton 12 Flaschen",ACME,case,9.60,CHF,consumables,1,12
+ACME-MARKER-BLK,"Permanent-Marker schwarz","Pk 10",ACME,pack,12.00,CHF,consumables,1,10
+ACME-PVC-PIPE-32,"PVC-Rohr DN32 1m","Abwasser",ACME,piece,5.40,CHF,plumbing_consumables,1,1
+ACME-SAFETY-GLASSES,"Schutzbrille klar","Einzeln",ACME,piece,4.80,CHF,ppe,1,1
+ACME-DUST-MASK-FFP2,"Staubmaske FFP2","Pk 20",ACME,pack,18.00,CHF,ppe,1,20
+ACME-CLEANER-1L,"Allzweckreiniger 1L","Konzentrat",ACME,piece,7.50,CHF,cleaning,1,1
+ACME-WIPE-MICRO,"Mikrofasertuch","Pk 10",ACME,pack,9.20,CHF,cleaning,1,10
+ACME-SCREW-TX-CLIP,"Torx-Bit T20","Pk 5",ACME,pack,6.00,CHF,tools,1,5
+ACME-EXTCORD-25M,"Verlängerungskabel 25m IP44","H07RN-F 3G1.5",ACME,piece,89.00,CHF,electrical_consumables,1,1
+ACME-CONCRETE-RING-80,"Betonrohr Ø80cm DN800","Schachtring, Höhe 50cm",ACME,piece,151.68,CHF,structural_concrete,1,1
+ACME-CABLE-SHAFT-1000,"Kabelschacht 1000×600 PE","Befahrbar Klasse B125",ACME,piece,1376.00,CHF,civil_works,1,1
+ACME-REBAR-12-6M,"Bewehrungsstahl B500B Ø12mm 6m","Stabstahl",ACME,bundle,228.00,CHF,structural_steel,1,10
+ACME-STEEL-BEAM-IPE200,"Stahlträger IPE 200 6m","S235",ACME,piece,612.00,CHF,structural_steel,1,1

@@ -1,0 +1,19 @@
+name: comstruct
+packages:
+  - apps/mobile
+  - packages/dart-api-client
+
+command:
+  bootstrap:
+    runPubGetInParallel: true
+
+scripts:
+  analyze:
+    description: Run flutter analyze in all packages
+    run: flutter analyze
+  test:
+    description: Run flutter test in all packages
+    run: flutter test
+  format:
+    description: Format all dart code
+    run: dart format .

@@ -1,0 +1,30 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { name: ai-service,           context: services/ai-service }
+          - { name: order-service,        context: services/order-service }
+          - { name: catalog-service,      context: services/catalog-service }
+          - { name: notification-service, context: services/notification-service }
+          - { name: api-gateway,          context: services/api-gateway }
+          - { name: web,                  context: apps/web }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: comstruct/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
