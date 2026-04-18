@@ -33,12 +33,12 @@ export function LoginPage(): JSX.Element {
 
         <label className="text-xs font-medium text-slate-600">Email</label>
         <input className="mt-1 mb-3 w-full rounded-md border border-brand-line px-3 py-2 text-sm"
-               value={email} onChange={(e) => setEmail(e.target.value)} required />
+          value={email} onChange={(e) => setEmail(e.target.value)} required />
 
         <label className="text-xs font-medium text-slate-600">Password</label>
         <input type="password"
-               className="mt-1 mb-4 w-full rounded-md border border-brand-line px-3 py-2 text-sm"
-               value={password} onChange={(e) => setPassword(e.target.value)} required />
+          className="mt-1 mb-4 w-full rounded-md border border-brand-line px-3 py-2 text-sm"
+          value={password} onChange={(e) => setPassword(e.target.value)} required />
 
         {error && <div className="text-sm text-brand-err mb-3">{error}</div>}
 

@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl build-essential libpq-dev \
+    curl build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

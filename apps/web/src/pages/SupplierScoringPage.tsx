@@ -90,11 +90,10 @@ export function SupplierScoringPage(): JSX.Element {
               {comparison.data.comparisons.map((c, i) => (
                 <tr
                   key={c.supplier_id}
-                  className={`border-t border-brand-line ${
-                    c.supplier_id === comparison.data?.recommendation
+                  className={`border-t border-brand-line ${c.supplier_id === comparison.data?.recommendation
                       ? 'bg-emerald-50'
                       : ''
-                  }`}
+                    }`}
                 >
                   <td className="px-4 py-3 font-mono text-xs">
                     {c.supplier_id.slice(0, 8)}

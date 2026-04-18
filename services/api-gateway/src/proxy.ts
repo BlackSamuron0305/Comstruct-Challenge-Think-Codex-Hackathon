@@ -25,20 +25,20 @@ interface UpstreamSpec {
 
 const UPSTREAMS: UpstreamSpec[] = [
   // catalog (read-mostly, public-ish for product browsing — auth still required)
-  { prefix: '/api/products',  upstream: config.upstream.catalog, rewritePrefix: '/products',  requireAuth: true },
+  { prefix: '/api/products', upstream: config.upstream.catalog, rewritePrefix: '/products', requireAuth: true },
   { prefix: '/api/suppliers', upstream: config.upstream.catalog, rewritePrefix: '/suppliers', requireAuth: true },
   { prefix: '/api/categories', upstream: config.upstream.catalog, rewritePrefix: '/categories', requireAuth: true },
 
   // orders
-  { prefix: '/api/cart',           upstream: config.upstream.order, rewritePrefix: '/cart',           requireAuth: true },
-  { prefix: '/api/orders',         upstream: config.upstream.order, rewritePrefix: '/orders',         requireAuth: true },
-  { prefix: '/api/projects',       upstream: config.upstream.order, rewritePrefix: '/projects',       requireAuth: true },
-  { prefix: '/api/approvals',      upstream: config.upstream.order, rewritePrefix: '/approvals',      requireAuth: true },
+  { prefix: '/api/cart', upstream: config.upstream.order, rewritePrefix: '/cart', requireAuth: true },
+  { prefix: '/api/orders', upstream: config.upstream.order, rewritePrefix: '/orders', requireAuth: true },
+  { prefix: '/api/projects', upstream: config.upstream.order, rewritePrefix: '/projects', requireAuth: true },
+  { prefix: '/api/approvals', upstream: config.upstream.order, rewritePrefix: '/approvals', requireAuth: true },
 
   // ai
-  { prefix: '/api/ai',                 upstream: config.upstream.ai, rewritePrefix: '/ai',        requireAuth: true },
-  { prefix: '/api/ingest',             upstream: config.upstream.ai, rewritePrefix: '/ingest',    requireAuth: true },
-  { prefix: '/api/supplier-scoring',   upstream: config.upstream.ai, rewritePrefix: '/suppliers', requireAuth: true },
+  { prefix: '/api/ai', upstream: config.upstream.ai, rewritePrefix: '/ai', requireAuth: true },
+  { prefix: '/api/ingest', upstream: config.upstream.ai, rewritePrefix: '/ingest', requireAuth: true },
+  { prefix: '/api/supplier-scoring', upstream: config.upstream.ai, rewritePrefix: '/suppliers', requireAuth: true },
 ];
 
 export async function registerProxies(app: FastifyInstance): Promise<void> {
@@ -55,8 +55,8 @@ export async function registerProxies(app: FastifyInstance): Promise<void> {
       },
       preHandler: spec.requireAuth
         ? async (req: FastifyRequest, reply: FastifyReply) => {
-            if (!req.user) reply.code(401).send({ error: 'unauthorized' });
-          }
+          if (!req.user) reply.code(401).send({ error: 'unauthorized' });
+        }
         : undefined,
     });
   }

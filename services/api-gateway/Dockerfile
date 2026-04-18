@@ -20,6 +20,7 @@ WORKDIR /workspace/services/api-gateway
 RUN pnpm build
 
 FROM base AS runtime
+RUN apk add --no-cache curl
 ENV NODE_ENV=production
 COPY --from=deps /workspace/node_modules /workspace/node_modules
 COPY --from=deps /workspace/services/api-gateway/node_modules /workspace/services/api-gateway/node_modules

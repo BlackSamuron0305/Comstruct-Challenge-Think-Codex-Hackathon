@@ -86,6 +86,41 @@ services:
     networks:
       - comstruct-net
 
+  # ── Ollama (local LLM) ──────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - comstruct-net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  ollama-init:
+    image: curlimages/curl:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Pulling Ollama model...';
+      curl -s http://ollama:11434/api/pull -d '{\"name\": \"gemma4:2b\"}' | tail -1;
+      echo 'Model pull complete';
+      "
+    restart: "no"
+    networks:
+      - comstruct-net
+
   # ── AI Service ───────────────────────────────────────────────
   ai-service:
     build:
@@ -95,6 +130,8 @@ services:
       - .env
     environment:
       SERVICE_PORT: 8005
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: gemma4:2b
     ports:
       - "8005:8005"
     depends_on:
@@ -102,6 +139,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_started
     volumes:
       - ./services/ai-service/src:/app/src
       - ./infra/keys:/run/secrets:ro
@@ -242,6 +281,7 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  ollama_data:
 
 networks:
   comstruct-net:

@@ -135,11 +135,10 @@ export function AIAssistantPage(): JSX.Element {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[75%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
-                msg.role === 'user'
+              className={`max-w-[75%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${msg.role === 'user'
                   ? 'bg-brand text-white'
                   : 'bg-brand-surface text-slate-800 border border-brand-line'
-              }`}
+                }`}
             >
               {msg.content}
             </div>

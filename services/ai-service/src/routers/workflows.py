@@ -1,0 +1,218 @@
+"""Procurement workflow automation router.
+
+AI-driven workflows:
+- Auto-approval: evaluate orders against company policies + supplier scores
+- Price analysis: compare current prices against historical data
+- Reorder suggestion: predict when materials will run out
+- Compliance check: verify orders against project budgets and regulations
+"""
+import logging
+import json
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from ..dependencies import require_internal_secret
+from ..llm.ollama_client import call_ollama_json
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/ai", tags=["workflows"])
+
+
+# ── Auto-Approval ─────────────────────────────────────────────────
+class ApprovalRequest(BaseModel):
+    order_id: str
+    items: list[dict]  # [{name, quantity, unit_price, currency, supplier_id}]
+    total_amount: float
+    currency: str = "CHF"
+    company_id: str
+    requester_role: str
+    project_id: str | None = None
+    supplier_scores: dict | None = None  # {supplier_id: {overall: float, ...}}
+    approval_threshold: float = 200.0
+
+
+class ApprovalDecision(BaseModel):
+    order_id: str
+    decision: str  # auto_approved, requires_review, rejected
+    confidence: float
+    reason: str
+    risk_factors: list[str]
+    recommended_approver: str | None = None
+
+
+@router.post("/workflow/auto-approve", response_model=ApprovalDecision, dependencies=[Depends(require_internal_secret)])
+async def auto_approve(body: ApprovalRequest):
+    """AI-driven auto-approval for procurement orders."""
+    # Rule-based pre-checks
+    risk_factors = []
+    if body.total_amount > body.approval_threshold * 5:
+        risk_factors.append(f"High value order: {body.currency} {body.total_amount:.2f}")
+    if body.supplier_scores:
+        for sid, scores in body.supplier_scores.items():
+            if float(scores.get("overall", 100)) < 50:
+                risk_factors.append(f"Low-rated supplier: {sid}")
+
+    # Quick auto-approve for small, routine orders
+    if body.total_amount <= body.approval_threshold and not risk_factors:
+        return ApprovalDecision(
+            order_id=body.order_id,
+            decision="auto_approved",
+            confidence=0.95,
+            reason=f"Below threshold ({body.currency} {body.approval_threshold:.2f}), no risk factors.",
+            risk_factors=[],
+        )
+
+    # Use AI for complex decisions
+    result = await call_ollama_json(
+        system="""You are a procurement approval AI for Swiss construction companies.
+Evaluate the order and decide: auto_approved, requires_review, or rejected.
+Consider: total amount, supplier reliability, item types, company policies.
+
+Return JSON: {"decision": "auto_approved|requires_review|rejected", "confidence": 0.0-1.0, "reason": "...", "risk_factors": ["..."], "recommended_approver": "project_manager|procurement_admin|null"}""",
+        messages=[{"role": "user", "content": json.dumps({
+            "order_id": body.order_id,
+            "total_amount": body.total_amount,
+            "currency": body.currency,
+            "item_count": len(body.items),
+            "items_summary": [{"name": i.get("name", ""), "unit_price": i.get("unit_price")} for i in body.items[:10]],
+            "requester_role": body.requester_role,
+            "supplier_scores": body.supplier_scores,
+            "risk_factors": risk_factors,
+            "threshold": body.approval_threshold,
+        }, ensure_ascii=False)}],
+        max_tokens=512,
+        temperature=0.0,
+        stub={
+            "decision": "requires_review" if risk_factors else "auto_approved",
+            "confidence": 0.7,
+            "reason": "AI analysis pending" if risk_factors else "Within policy limits.",
+            "risk_factors": risk_factors,
+            "recommended_approver": "project_manager" if risk_factors else None,
+        },
+    )
+
+    return ApprovalDecision(
+        order_id=body.order_id,
+        decision=result.get("decision", "requires_review"),
+        confidence=result.get("confidence", 0.5),
+        reason=result.get("reason", ""),
+        risk_factors=result.get("risk_factors", risk_factors),
+        recommended_approver=result.get("recommended_approver"),
+    )
+
+
+# ── Price Analysis ────────────────────────────────────────────────
+class PriceAnalysisRequest(BaseModel):
+    product_name: str
+    current_price: float
+    currency: str = "CHF"
+    historical_prices: list[dict] | None = None  # [{price, date, supplier}]
+    supplier_id: str | None = None
+
+
+@router.post("/workflow/price-analysis", dependencies=[Depends(require_internal_secret)])
+async def price_analysis(body: PriceAnalysisRequest):
+    """Analyze price fairness using historical data and AI."""
+    result = await call_ollama_json(
+        system="""You are a construction materials pricing analyst.
+Analyze the current price against historical data and market knowledge.
+Consider Swiss construction material market conditions.
+
+Return JSON: {"assessment": "fair|high|low|suspicious", "confidence": 0.0-1.0, "market_range": {"low": ..., "high": ...}, "recommendation": "...", "savings_potential": ...}""",
+        messages=[{"role": "user", "content": json.dumps({
+            "product": body.product_name,
+            "current_price": body.current_price,
+            "currency": body.currency,
+            "historical": body.historical_prices or [],
+        }, ensure_ascii=False)}],
+        max_tokens=512,
+        temperature=0.1,
+        stub={
+            "assessment": "fair",
+            "confidence": 0.5,
+            "market_range": {"low": body.current_price * 0.8, "high": body.current_price * 1.2},
+            "recommendation": "Price analysis requires loaded Ollama model.",
+            "savings_potential": 0,
+        },
+    )
+    return result
+
+
+# ── Reorder Suggestions ──────────────────────────────────────────
+class ReorderCheckRequest(BaseModel):
+    project_id: str
+    materials: list[dict]  # [{name, current_stock, daily_usage, unit}]
+
+
+@router.post("/workflow/reorder-check", dependencies=[Depends(require_internal_secret)])
+async def reorder_check(body: ReorderCheckRequest):
+    """Predict material depletion and suggest reorders."""
+    result = await call_ollama_json(
+        system="""You are a construction project logistics AI.
+Given current stock levels and usage rates, identify materials that need reordering.
+Account for typical delivery times in Switzerland (2-5 business days for standard materials).
+
+Return JSON: {"alerts": [{"name": "...", "days_until_depleted": ..., "reorder_urgency": "immediate|soon|planned", "suggested_quantity": ..., "unit": "..."}], "summary": "..."}""",
+        messages=[{"role": "user", "content": json.dumps({
+            "project_id": body.project_id,
+            "materials": body.materials,
+        }, ensure_ascii=False)}],
+        max_tokens=1024,
+        temperature=0.1,
+        stub={
+            "alerts": [],
+            "summary": "Reorder analysis requires loaded Ollama model.",
+        },
+    )
+    return result
+
+
+# ── Compliance Check ──────────────────────────────────────────────
+class ComplianceCheckRequest(BaseModel):
+    order_items: list[dict]
+    project_id: str
+    project_budget: float | None = None
+    project_spent: float | None = None
+    currency: str = "CHF"
+
+
+@router.post("/workflow/compliance-check", dependencies=[Depends(require_internal_secret)])
+async def compliance_check(body: ComplianceCheckRequest):
+    """Check order against project budget and compliance rules."""
+    order_total = sum(
+        (i.get("unit_price", 0) or 0) * (i.get("quantity", 1) or 1)
+        for i in body.order_items
+    )
+
+    issues = []
+    if body.project_budget and body.project_spent is not None:
+        remaining = body.project_budget - body.project_spent
+        if order_total > remaining:
+            issues.append(f"Order ({body.currency} {order_total:.2f}) exceeds remaining budget ({body.currency} {remaining:.2f})")
+
+    result = await call_ollama_json(
+        system="""You are a procurement compliance checker for Swiss construction.
+Check the order against budget constraints and construction regulations.
+
+Return JSON: {"compliant": true/false, "issues": ["..."], "warnings": ["..."], "recommendation": "approve|review|block"}""",
+        messages=[{"role": "user", "content": json.dumps({
+            "order_total": order_total,
+            "currency": body.currency,
+            "item_count": len(body.order_items),
+            "project_budget": body.project_budget,
+            "project_spent": body.project_spent,
+            "pre_check_issues": issues,
+        }, ensure_ascii=False)}],
+        max_tokens=512,
+        temperature=0.0,
+        stub={
+            "compliant": len(issues) == 0,
+            "issues": issues,
+            "warnings": [],
+            "recommendation": "block" if issues else "approve",
+        },
+    )
+    return result

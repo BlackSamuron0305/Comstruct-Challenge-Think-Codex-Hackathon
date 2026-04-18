@@ -4,11 +4,11 @@ import { ClipboardList, ShoppingCart, Upload, BarChart3, Bot, LogOut } from 'luc
 import { useAuthStore } from '../store/auth';
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; roles?: string[] }> = [
-  { to: '/orders',     label: 'Orders',           icon: <ClipboardList size={18} /> },
-  { to: '/approvals',  label: 'Approvals',        icon: <ShoppingCart size={18} />, roles: ['project_manager', 'procurement_admin'] },
-  { to: '/ingest',     label: 'Ingest',           icon: <Upload size={18} />, roles: ['procurement_admin'] },
-  { to: '/scoring',    label: 'Supplier Scoring',  icon: <BarChart3 size={18} />, roles: ['procurement_admin', 'project_manager'] },
-  { to: '/ai',         label: 'AI Assistant',      icon: <Bot size={18} /> },
+  { to: '/orders', label: 'Orders', icon: <ClipboardList size={18} /> },
+  { to: '/approvals', label: 'Approvals', icon: <ShoppingCart size={18} />, roles: ['project_manager', 'procurement_admin'] },
+  { to: '/ingest', label: 'Ingest', icon: <Upload size={18} />, roles: ['procurement_admin'] },
+  { to: '/scoring', label: 'Supplier Scoring', icon: <BarChart3 size={18} />, roles: ['procurement_admin', 'project_manager'] },
+  { to: '/ai', label: 'AI Assistant', icon: <Bot size={18} /> },
 ];
 
 export function AppShell(): JSX.Element {
@@ -36,8 +36,7 @@ export function AppShell(): JSX.Element {
               key={n.to}
               to={n.to}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-md px-3 py-2 text-sm transition ${
-                  isActive ? 'bg-brand text-white' : 'text-slate-700 hover:bg-brand-line'
+                `flex items-center gap-3 rounded-md px-3 py-2 text-sm transition ${isActive ? 'bg-brand text-white' : 'text-slate-700 hover:bg-brand-line'
                 }`
               }
             >
@@ -50,7 +49,7 @@ export function AppShell(): JSX.Element {
           <div className="font-medium">{user.full_name}</div>
           <div className="text-xs text-slate-500 mb-2">{user.role}</div>
           <button onClick={() => { logout(); nav('/login'); }}
-                  className="btn-ghost w-full justify-start text-xs">
+            className="btn-ghost w-full justify-start text-xs">
             <LogOut size={14} /> Sign out
           </button>
         </div>

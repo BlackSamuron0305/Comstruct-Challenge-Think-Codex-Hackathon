@@ -4,12 +4,13 @@ import time
 from fastapi import FastAPI, Request, Response
 
 from .config import settings
-from .routers import ai, ingest, suppliers
+from .llm.ollama_client import check_ollama_health
+from .routers import ai, ingest, suppliers, chat, documents, workflows
 
 logging.basicConfig(level=str(settings.LOG_LEVEL).upper())
 logger = logging.getLogger("ai-service")
 
-app = FastAPI(title="comstruct ai-service", version="0.2.0")
+app = FastAPI(title="comstruct ai-service", version="0.3.0")
 
 
 @app.middleware("http")
@@ -34,13 +35,17 @@ async def audit_log_middleware(request: Request, call_next):
 app.include_router(ai.router)
 app.include_router(ingest.router)
 app.include_router(suppliers.router)
+app.include_router(chat.router)
+app.include_router(documents.router)
+app.include_router(workflows.router)
 
 
 @app.get("/health")
 async def health():
+    ollama = await check_ollama_health()
     return {
         "status": "ok",
         "service": "ai-service",
-        "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
-        "openai_configured": bool(settings.OPENAI_API_KEY),
+        "llm_backend": "ollama",
+        "ollama": ollama,
     }

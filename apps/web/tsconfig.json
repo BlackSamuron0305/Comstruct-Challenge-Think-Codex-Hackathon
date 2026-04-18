@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -17,5 +21,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -121,9 +121,8 @@ export function RegisterPage(): JSX.Element {
           {ROLES.map((r) => (
             <label
               key={r.value}
-              className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
-                form.role === r.value ? 'border-brand bg-brand/5' : 'border-brand-line hover:bg-brand-surface'
-              }`}
+              className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${form.role === r.value ? 'border-brand bg-brand/5' : 'border-brand-line hover:bg-brand-surface'
+                }`}
             >
               <input
                 type="radio"
