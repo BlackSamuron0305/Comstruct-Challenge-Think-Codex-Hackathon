@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, Clock3, PackageCheck, WalletCards } from 'lucide-react';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import {
   type OrderSummary,
   formatCompactMoney,
   formatDate,
@@ -141,7 +150,6 @@ const MOCK_ORDERS: OrderSummary[] = [
 
 export function DashboardPage(): JSX.Element {
   const [selectedProjectId, setSelectedProjectId] = useState(MOCK_PROJECTS[0]?.id ?? '');
-  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
   const projects = MOCK_PROJECTS;
   const data = useMemo(
     () => MOCK_ORDERS.filter((order) => order.project_id === selectedProjectId),
@@ -194,67 +202,59 @@ export function DashboardPage(): JSX.Element {
               Track pending approvals, live C-material spend and order activity one
               project at a time so the dashboard never blends site performance together.
             </p>
-            <div className="relative mt-5 max-w-xl">
-              <button
-                type="button"
-                onClick={() => setIsProjectMenuOpen((current) => !current)}
-                className="flex w-full items-center justify-between rounded-[22px] border border-brand-line bg-brand-surface px-5 py-4 text-left shadow-[0_14px_28px_rgba(15,23,42,0.06)] transition hover:border-brand/40 hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]"
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="mt-5 flex w-full max-w-xl items-center justify-between rounded-[22px] border border-brand-line px-5 py-4 text-left shadow-[0_14px_28px_rgba(15,23,42,0.06)] transition hover:border-brand/40 hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]"
+                  style={{ backgroundColor: 'var(--brand-white)' }}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Selected project
+                    </div>
+                    <div className="mt-1 truncate text-lg font-semibold text-slate-900">
+                      {selectedProjectName}
+                    </div>
+                    <div className="mt-1 truncate text-sm text-slate-500">
+                      {selectedProject?.trade ?? 'Project'} · {selectedProject?.site_address ?? 'No site address'}
+                    </div>
+                  </div>
+                  <div
+                    className="ml-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-brand"
+                    style={{ backgroundColor: 'var(--brand-white)' }}
+                  >
+                    <ChevronDown size={18} />
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-[min(32rem,calc(100vw-3rem))] border-brand-line"
+                style={{ backgroundColor: 'var(--brand-white)' }}
               >
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Selected project
-                  </div>
-                  <div className="mt-1 truncate text-lg font-semibold text-slate-900">
-                    {selectedProjectName}
-                  </div>
-                  <div className="mt-1 truncate text-sm text-slate-500">
-                    {selectedProject?.trade ?? 'Project'} · {selectedProject?.site_address ?? 'No site address'}
-                  </div>
-                </div>
-                <div className="ml-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-surface text-brand">
-                  <ChevronDown
-                    size={18}
-                    className={`transition ${isProjectMenuOpen ? 'rotate-180' : ''}`}
-                  />
-                </div>
-              </button>
-              {isProjectMenuOpen && (
-                <div className="absolute left-0 right-0 top-[calc(100%+12px)] z-20 overflow-hidden rounded-[24px] border border-brand-line bg-brand-surface shadow-[0_24px_60px_rgba(15,23,42,0.14)]">
-                  <div className="p-3">
-                    {projects.map((project) => {
-                      const active = project.id === selectedProjectId;
-                      return (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedProjectId(project.id);
-                            setIsProjectMenuOpen(false);
-                          }}
-                          className={`flex w-full items-start justify-between rounded-[18px] px-4 py-4 text-left transition ${
-                            active
-                              ? 'bg-brand text-brand-surface'
-                              : 'text-slate-700 hover:bg-brand-surface'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <div className={`font-semibold ${active ? 'text-brand-surface' : 'text-slate-900'}`}>
-                              {project.name}
-                            </div>
-                            <div className={`mt-1 text-sm ${active ? 'text-brand-surface/80' : 'text-slate-500'}`}>
-                              {project.trade ?? 'Project'} · {project.site_address ?? 'No site address'}
-                            </div>
-                          </div>
-                          <div className={`ml-4 text-xs font-semibold uppercase tracking-[0.14em] ${active ? 'text-brand-accent' : 'text-slate-400'}`}>
-                            {active ? 'Live' : 'Open'}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Projects</DropdownMenuLabel>
+                  {projects.map((project) => (
+                    <DropdownMenuItem
+                      key={project.id}
+                      onSelect={() => setSelectedProjectId(project.id)}
+                      className="items-start gap-3 rounded-[18px] px-4 py-4"
+                    >
+                      <div className="min-w-0 flex-1 pr-4">
+                        <div className="font-semibold text-slate-900">{project.name}</div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          {project.trade ?? 'Project'} · {project.site_address ?? 'No site address'}
+                        </div>
+                      </div>
+                      <DropdownMenuShortcut>
+                        {project.id === selectedProjectId ? 'Live' : 'Open'}
+                      </DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="rounded-[14px] bg-brand px-4 py-3 text-sm font-medium text-brand-surface">
             {view.pending.length > 0

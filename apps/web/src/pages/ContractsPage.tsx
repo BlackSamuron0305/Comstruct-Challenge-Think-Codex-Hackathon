@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 const CONTRACTS = [
   {
     id: 'RV-2024-WR-001',
@@ -49,6 +51,21 @@ const CONTRACTS = [
   },
 ];
 
+const PRICE_STRUCTURES = [
+  {
+    label: 'Contract baseline',
+    detail: 'Main supplier list price negotiated into the C-material catalog.',
+  },
+  {
+    label: 'Volume discount',
+    detail: 'Extra rebate rules tied to pack size, minimum order or threshold quantity.',
+  },
+  {
+    label: 'Project override',
+    detail: 'Project-specific exceptions for sites that negotiated better local pricing.',
+  },
+];
+
 const STATUS_STYLES: Record<string, string> = {
   Active: 'bg-brand-ok text-brand-text',
   Draft: 'bg-brand-card text-brand-text',
@@ -69,7 +86,9 @@ export function ContractsPage(): JSX.Element {
               Supplier agreements that feed the C-material catalog with contracted pricing.
             </p>
           </div>
-          <button className="btn-primary">Upload price list</button>
+          <Link to="/ingest" className="btn-primary">
+            Upload price list
+          </Link>
         </div>
       </section>
 
@@ -138,6 +157,23 @@ export function ContractsPage(): JSX.Element {
           </div>
         </div>
       </div>
+
+      <section className="card p-6">
+        <div className="panel-title">Price structures</div>
+        <h2 className="mt-2 text-lg font-bold text-slate-900">How pricing should land in the catalog</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+          Framework data is rarely a single flat number. Procurement can now review imports with contract pricing, discount logic and project-specific exceptions in mind before publishing products.
+        </p>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {PRICE_STRUCTURES.map((item) => (
+            <div key={item.label} className="rounded-[16px] border border-brand-line bg-brand-surface px-4 py-4">
+              <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

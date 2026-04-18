@@ -11,7 +11,6 @@ import { IngestPage } from './pages/IngestPage';
 import { SupplierScoringPage } from './pages/SupplierScoringPage';
 import { AIAssistantPage } from './pages/AIAssistantPage';
 import { ContractsPage } from './pages/ContractsPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { useAuthStore } from './store/auth';
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1 } } });
@@ -43,7 +42,6 @@ export function App(): JSX.Element {
             <Route path="ingest" element={<IngestPage />} />
             <Route path="contracts" element={<ContractsPage />} />
             <Route path="scoring" element={<SupplierScoringPage />} />
-            <Route path="settings" element={<SettingsPage />} />
             <Route path="ai" element={<AIAssistantPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

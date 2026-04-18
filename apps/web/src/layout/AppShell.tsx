@@ -2,15 +2,14 @@ import { type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
-  Bot,
   CheckCircle2,
   ClipboardList,
   FileSpreadsheet,
   FileText,
   LogOut,
   Receipt,
-  Settings,
 } from 'lucide-react';
+import { AIAssistantWidget } from '../components/AIAssistantWidget';
 import { useAuthStore } from '../store/auth';
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; roles?: string[] }> = [
@@ -35,13 +34,6 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; roles?: string[] 
     icon: <FileSpreadsheet size={18} />,
     roles: ['procurement_admin', 'project_manager'],
   },
-  {
-    to: '/settings',
-    label: 'Settings',
-    icon: <Settings size={18} />,
-    roles: ['procurement_admin', 'project_manager'],
-  },
-  { to: '/ai', label: 'AI Assistant', icon: <Bot size={18} /> },
 ];
 
 export function AppShell(): JSX.Element {
@@ -58,7 +50,7 @@ export function AppShell(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-brand-surface lg:flex">
-      <aside className="w-full border-b border-brand-line/40 bg-brand-sidebar lg:min-h-screen lg:w-60 lg:shrink-0 lg:border-b-0">
+      <aside className="w-full border-b border-brand-line/40 bg-brand-sidebar lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-60 lg:shrink-0 lg:self-start lg:flex-col lg:border-b-0">
         <div className="border-b border-brand-line/40 px-5 py-6">
           <Link to="/dashboard" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-brand-surface">
@@ -71,9 +63,6 @@ export function AppShell(): JSX.Element {
             </div>
             <div>
               <div className="text-base font-bold text-brand-card">comstruct</div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-brand-light/70">
-                Procurement
-              </div>
             </div>
           </Link>
         </div>
@@ -110,12 +99,6 @@ export function AppShell(): JSX.Element {
         </nav>
 
         <div className="mt-auto border-t border-brand-line/40 p-4 text-sm text-brand-light">
-          <div className="inline-flex rounded-[10px] bg-brand-light/20 px-3 py-2 font-medium text-brand-card">
-            {user.full_name}
-          </div>
-          <div className="mb-3 text-xs uppercase tracking-[0.12em] text-brand-light/80">
-            {user.role.replace('_', ' ')}
-          </div>
           <button
             onClick={() => {
               logout();
@@ -131,6 +114,8 @@ export function AppShell(): JSX.Element {
       <main className="flex-1 overflow-auto p-5 lg:p-8">
         <Outlet />
       </main>
+
+      <AIAssistantWidget />
     </div>
   );
 }
