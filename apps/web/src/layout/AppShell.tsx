@@ -3,14 +3,25 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
-  FileSpreadsheet,
   FileText,
+  FolderKanban,
   LogOut,
+  Search,
   Receipt,
 } from 'lucide-react';
-import { AIAssistantWidget } from '../components/AIAssistantWidget';
+import { useProjectContext } from '../context/ProjectContext';
 import { useAuthStore } from '../store/auth';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; roles?: string[] }> = [
   { to: '/dashboard', label: 'Dashboard', icon: <BarChart3 size={18} /> },
@@ -21,17 +32,17 @@ const NAV: Array<{ to: string; label: string; icon: ReactNode; roles?: string[] 
     roles: ['project_manager', 'procurement_admin'],
   },
   { to: '/orders', label: 'Orders', icon: <Receipt size={18} /> },
+  {
+    to: '/policies',
+    label: 'Policies',
+    icon: <FolderKanban size={18} />,
+    roles: ['project_manager', 'procurement_admin'],
+  },
   { to: '/ingest', label: 'Catalog', icon: <ClipboardList size={18} /> },
   {
     to: '/contracts',
     label: 'Contracts',
     icon: <FileText size={18} />,
-    roles: ['procurement_admin', 'project_manager'],
-  },
-  {
-    to: '/scoring',
-    label: 'Supplier Scoring',
-    icon: <FileSpreadsheet size={18} />,
     roles: ['procurement_admin', 'project_manager'],
   },
 ];
@@ -40,6 +51,7 @@ export function AppShell(): JSX.Element {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const nav = useNavigate();
+  const { projects, selectedProject, selectedProjectId, setSelectedProjectId } = useProjectContext();
 
   if (!user) {
     nav('/login');
@@ -65,6 +77,52 @@ export function AppShell(): JSX.Element {
               <div className="text-base font-bold text-brand-card">comstruct</div>
             </div>
           </Link>
+        </div>
+
+        <div className="border-b border-brand-line/40 px-4 py-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-light/75">
+            Project context
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="mt-3 flex w-full items-center justify-between rounded-2xl border border-brand-line/30 bg-white/5 px-3 py-3 text-left text-brand-light transition hover:border-brand-light/30 hover:bg-brand/15"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{selectedProject.name}</div>
+                  <div className="mt-1 truncate text-xs text-brand-light/75">{selectedProject.trade}</div>
+                </div>
+                <div className="ml-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/20 text-brand-light">
+                  <ChevronDown size={16} />
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[15rem] border-brand-line"
+              style={{ backgroundColor: 'var(--brand-sidebar)' }}
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-brand-light/75">Projects</DropdownMenuLabel>
+                {projects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onSelect={() => setSelectedProjectId(project.id)}
+                    className="items-start gap-3 rounded-[16px] px-3 py-3 text-brand-light focus:bg-brand/20 focus:text-brand-surface"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold">{project.name}</div>
+                      <div className="mt-1 truncate text-xs text-brand-light/75">{project.trade}</div>
+                    </div>
+                    <DropdownMenuShortcut className="text-brand-light/60">
+                      {project.id === selectedProjectId ? 'Active' : ''}
+                    </DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <nav className="space-y-1 px-3 py-4">
@@ -112,10 +170,31 @@ export function AppShell(): JSX.Element {
       </aside>
 
       <main className="flex-1 overflow-auto p-5 lg:p-8">
+        <div className="mb-6 flex flex-col gap-4 rounded-[20px] border border-brand-line bg-white/70 px-4 py-4 shadow-[0_16px_40px_rgba(15,23,42,0.06)] backdrop-blur lg:flex-row lg:items-center lg:justify-between lg:px-6">
+          <div className="relative w-full max-w-xl">
+            <Search
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+              size={16}
+            />
+            <input
+              aria-label="Global search"
+              placeholder="Search requests, suppliers, contracts or SKUs"
+              className="w-full rounded-full border border-brand-line bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
+            />
+          </div>
+          <div className="min-w-0 rounded-[18px] bg-brand-surface px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Active project
+            </div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-900">{selectedProject.name}</div>
+            <div className="truncate text-xs text-slate-500">
+              {selectedProject.trade} · {selectedProject.site_address}
+            </div>
+          </div>
+        </div>
+
         <Outlet />
       </main>
-
-      <AIAssistantWidget />
     </div>
   );
 }

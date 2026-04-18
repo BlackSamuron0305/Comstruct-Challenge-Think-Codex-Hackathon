@@ -1,89 +1,44 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-
-const CONTRACTS = [
-  {
-    id: 'RV-2024-WR-001',
-    supplier: 'Wurth',
-    status: 'Active',
-    signed: '01 Jan 2024',
-    expires: '31 Dec 2026',
-    discount: 5,
-    paymentDays: 30,
-    minOrder: 50,
-    projects: ['Bruecke St. Gallen', 'Neubau Zuerich Nord', 'Sanierung Basel'],
-    note: 'Framework agreement for fixings. Extra 2% from 500 EUR.',
-  },
-  {
-    id: 'RV-2024-FI-003',
-    supplier: 'Fischer',
-    status: 'Active',
-    signed: '15 Mar 2024',
-    expires: '30 Jun 2026',
-    discount: 3,
-    paymentDays: 14,
-    minOrder: 30,
-    projects: ['Bruecke St. Gallen', 'Sanierung Basel'],
-    note: 'Plastic anchors only. Lead time 2 workdays.',
-  },
-  {
-    id: 'RV-2025-UV-001',
-    supplier: 'Uvex',
-    status: 'Active',
-    signed: '01 Feb 2025',
-    expires: '31 Dec 2026',
-    discount: 7,
-    paymentDays: 30,
-    minOrder: 100,
-    projects: ['Bruecke St. Gallen', 'Neubau Zuerich Nord', 'Sanierung Basel'],
-    note: 'PPE agreement with volume pricing for helmets.',
-  },
-  {
-    id: 'RV-2023-TE-002',
-    supplier: 'Tesa',
-    status: 'Expired',
-    signed: '01 Apr 2023',
-    expires: '31 Mar 2026',
-    discount: 2,
-    paymentDays: 30,
-    minOrder: 20,
-    projects: ['Bruecke St. Gallen'],
-    note: 'Expired, renewal proposal pending.',
-  },
-];
-
-const PRICE_STRUCTURES = [
-  {
-    label: 'Contract baseline',
-    detail: 'Main supplier list price negotiated into the C-material catalog.',
-  },
-  {
-    label: 'Volume discount',
-    detail: 'Extra rebate rules tied to pack size, minimum order or threshold quantity.',
-  },
-  {
-    label: 'Project override',
-    detail: 'Project-specific exceptions for sites that negotiated better local pricing.',
-  },
-];
+import { FileText, ShieldCheck, TimerReset } from 'lucide-react';
+import { CONTRACTS, PROJECTS } from '../lib/mockData';
 
 const STATUS_STYLES: Record<string, string> = {
-  Active: 'bg-brand-ok text-brand-text',
-  Draft: 'bg-brand-card text-brand-text',
-  Expired: 'bg-brand-err text-brand-surface',
+  Active: 'bg-emerald-100 text-emerald-700',
+  Draft: 'bg-brand-surface text-slate-900',
+  Expired: 'bg-red-100 text-red-700',
 };
 
 export function ContractsPage(): JSX.Element {
+  const [selectedContractId, setSelectedContractId] = useState(CONTRACTS[0]?.id ?? '');
+  const selectedContract =
+    CONTRACTS.find((contract) => contract.id === selectedContractId) ?? CONTRACTS[0];
+
+  const summary = useMemo(() => {
+    const active = CONTRACTS.filter((contract) => contract.status === 'Active').length;
+    const expired = CONTRACTS.filter((contract) => contract.status === 'Expired').length;
+    const avgDiscount = Math.round(
+      CONTRACTS.reduce((sum, contract) => sum + contract.discount, 0) / CONTRACTS.length,
+    );
+
+    return { active, expired, avgDiscount };
+  }, []);
+
+  if (!selectedContract) {
+    return <div className="text-sm text-slate-500">No contracts available.</div>;
+  }
+
   return (
     <div className="space-y-6">
-      <section className="card p-6">
-        <div className="flex items-start justify-between gap-4">
+      <section className="card p-6 lg:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="panel-title">Contracts</div>
-            <h1 className="mt-2 text-[26px] font-bold tracking-[-0.03em] text-slate-900">
-              Framework contracts
+            <h1 className="mt-2 text-[30px] font-bold tracking-[-0.03em] text-slate-900">
+              Supplier agreements with clearer decision structure
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-              Supplier agreements that feed the C-material catalog with contracted pricing.
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+              Start from the contract summary, move into commercial details, then take the next procurement action.
             </p>
           </div>
           <Link to="/ingest" className="btn-primary">
@@ -92,86 +47,102 @@ export function ContractsPage(): JSX.Element {
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <SummaryCard label="Active contracts" value="3" tone="text-brand-ok" />
-        <SummaryCard label="Expired" value="1" tone="text-red-600" />
-        <SummaryCard label="Draft" value="0" tone="text-brand-text" />
-        <SummaryCard label="Avg. discount" value="5%" tone="text-brand" />
-      </div>
+      <section className="grid gap-4 md:grid-cols-3">
+        <SummaryCard icon={<ShieldCheck size={16} />} label="Active contracts" value={String(summary.active)} />
+        <SummaryCard icon={<TimerReset size={16} />} label="Expired contracts" value={String(summary.expired)} />
+        <SummaryCard icon={<FileText size={16} />} label="Average discount" value={`${summary.avgDiscount}%`} />
+      </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-3">
-          {CONTRACTS.map((contract) => (
-            <div key={contract.id} className="card p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-base font-bold text-slate-900">{contract.supplier}</div>
-                <span className={`badge ${STATUS_STYLES[contract.status]}`}>
-                  {contract.status}
-                </span>
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-[24px] border border-brand-line bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
+          <div className="px-2 pb-4">
+            <div className="text-base font-semibold text-slate-900">Contract list</div>
+            <div className="mt-1 text-sm text-slate-500">Choose an agreement to inspect details and actions.</div>
+          </div>
+          <div className="space-y-3">
+            {CONTRACTS.map((contract) => (
+              <button
+                key={contract.id}
+                type="button"
+                onClick={() => setSelectedContractId(contract.id)}
+                className={`w-full rounded-[20px] border px-4 py-4 text-left transition ${
+                  contract.id === selectedContract.id
+                    ? 'border-brand bg-brand-surface shadow-[0_12px_28px_rgba(15,23,42,0.08)]'
+                    : 'border-brand-line bg-white hover:bg-brand-surface/50'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-slate-900">{contract.supplier}</div>
+                    <div className="mt-1 font-mono text-xs text-slate-500">{contract.id}</div>
                   </div>
-                  <div className="mt-1 font-mono text-xs text-slate-400">{contract.id}</div>
+                  <span className={`badge ${STATUS_STYLES[contract.status]}`}>{contract.status}</span>
                 </div>
-                <div className="text-right">
-                  <div className="text-xs text-slate-400">Expires</div>
-                  <div className="text-sm font-medium text-slate-700">{contract.expires}</div>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                <ContractStat label="Discount" value={`${contract.discount}%`} tone="text-emerald-600" />
-                <ContractStat label="Projects" value={String(contract.projects.length)} />
-                <ContractStat label="Payment" value={`${contract.paymentDays}d`} />
-                <ContractStat label="Min order" value={`EUR ${contract.minOrder}`} />
-              </div>
-
-              <div className="mt-4 rounded-[10px] bg-brand-surface px-4 py-3 text-sm text-slate-600">
-                {contract.note}
-              </div>
-            </div>
-          ))}
+                <div className="mt-3 text-sm text-slate-600">{contract.summary}</div>
+                <div className="mt-3 text-xs text-slate-500">Expires {contract.expires}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="card p-6">
-          <div className="panel-title">Contract detail</div>
-          <h2 className="mt-2 text-lg font-bold text-slate-900">Wurth · RV-2024-WR-001</h2>
-          <div className="mt-5 space-y-3 text-sm text-slate-600">
-            <DetailRow label="Status" value="Active" />
-            <DetailRow label="Signed" value="01 Jan 2024" />
-            <DetailRow label="Expires" value="31 Dec 2026" />
-            <DetailRow label="Discount" value="5% off list price" />
-            <DetailRow label="Payment terms" value="Net 30 days" />
-            <DetailRow label="Min. order" value="EUR 50" />
+        <div className="space-y-4">
+          <div className="rounded-[24px] border border-brand-line bg-white p-5 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
+            <div className="panel-title">Summary</div>
+            <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  {selectedContract.supplier}
+                </h2>
+                <div className="mt-1 font-mono text-xs text-slate-500">{selectedContract.id}</div>
+                <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
+                  {selectedContract.summary}
+                </p>
+              </div>
+              <span className={`badge ${STATUS_STYLES[selectedContract.status]}`}>{selectedContract.status}</span>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              <ContractMetric label="Discount" value={`${selectedContract.discount}%`} />
+              <ContractMetric label="Payment" value={`${selectedContract.paymentDays} days`} />
+              <ContractMetric label="Min. order" value={`EUR ${selectedContract.minOrder}`} />
+              <ContractMetric label="Owner" value={selectedContract.owner} />
+            </div>
           </div>
 
-          <div className="mt-6">
-            <div className="panel-title">Linked projects</div>
-            <div className="mt-3 space-y-2">
-              {CONTRACTS[0].projects.map((project) => (
-                <div key={project} className="rounded-[10px] bg-brand-surface px-4 py-3 text-sm text-slate-700">
-                  {project}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-[24px] border border-brand-line bg-white p-5">
+              <div className="panel-title">Details</div>
+              <div className="mt-4 space-y-3">
+                <DetailRow label="Signed" value={selectedContract.signed} />
+                <DetailRow label="Expires" value={selectedContract.expires} />
+                {selectedContract.clauses.map((clause) => (
+                  <DetailRow key={clause.label} label={clause.label} value={clause.value} />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-brand-line bg-white p-5">
+              <div className="panel-title">Coverage</div>
+              <div className="mt-4 space-y-3">
+                {selectedContract.projects.map((projectId) => (
+                  <div key={projectId} className="rounded-[18px] bg-brand-surface px-4 py-3 text-sm text-slate-900">
+                    {PROJECTS.find((project) => project.id === projectId)?.name ?? projectId}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-brand-line bg-white p-5">
+            <div className="panel-title">Actions</div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {selectedContract.actions.map((action) => (
+                <div key={action} className="rounded-[18px] bg-brand-surface px-4 py-4 text-sm font-medium text-slate-900">
+                  {action}
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      </div>
-
-      <section className="card p-6">
-        <div className="panel-title">Price structures</div>
-        <h2 className="mt-2 text-lg font-bold text-slate-900">How pricing should land in the catalog</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-          Framework data is rarely a single flat number. Procurement can now review imports with contract pricing, discount logic and project-specific exceptions in mind before publishing products.
-        </p>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          {PRICE_STRUCTURES.map((item) => (
-            <div key={item.label} className="rounded-[16px] border border-brand-line bg-brand-surface px-4 py-4">
-              <div className="text-sm font-semibold text-slate-900">{item.label}</div>
-              <div className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</div>
-            </div>
-          ))}
         </div>
       </section>
     </div>
@@ -179,44 +150,39 @@ export function ContractsPage(): JSX.Element {
 }
 
 function SummaryCard({
+  icon,
   label,
   value,
-  tone,
 }: {
+  icon: JSX.Element;
   label: string;
   value: string;
-  tone: string;
 }): JSX.Element {
   return (
-    <div className="card p-5">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`mt-2 text-2xl font-bold ${tone}`}>{value}</div>
+    <div className="rounded-[22px] border border-brand-line bg-white px-5 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+        <span className="text-brand">{icon}</span>
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
     </div>
   );
 }
 
-function ContractStat({
-  label,
-  value,
-  tone = 'text-slate-900',
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}): JSX.Element {
+function ContractMetric({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-[10px] bg-brand-surface px-4 py-3">
-      <div className="text-[11px] uppercase tracking-[0.12em] text-slate-400">{label}</div>
-      <div className={`mt-1 text-sm font-semibold ${tone}`}>{value}</div>
+    <div className="rounded-[18px] bg-brand-surface px-4 py-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
     </div>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="flex items-center justify-between border-b border-brand-line pb-3">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-brand-line/70 pb-3 last:border-b-0 last:pb-0">
+      <div className="text-sm text-slate-500">{label}</div>
+      <div className="max-w-[60%] text-right text-sm font-medium text-slate-900">{value}</div>
     </div>
   );
 }

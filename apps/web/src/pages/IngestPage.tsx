@@ -7,7 +7,7 @@ import {
   PencilLine,
   Save,
   Search,
-  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Tags,
   UploadCloud,
@@ -97,32 +97,18 @@ type ProductDraft = {
 const DEFAULT_SUPPLIER_ID = '11111111-1111-1111-1111-111111111111';
 const ACCEPTED_FILE_TYPES = 'CSV, XLSX, XLS and PDF';
 const DISPLAY_FIELDS = ['sku', 'name', 'category', 'unit', 'unit_price', 'currency'];
-const PRICE_MODES = [
-  {
-    label: 'Contract price',
-    detail: 'Default site-wide catalog price from framework agreements.',
-  },
-  {
-    label: 'Discount ladder',
-    detail: 'Volume or packaging discounts procurement tracks separately in contract notes.',
-  },
-  {
-    label: 'Project override',
-    detail: 'Project-specific price exceptions that need review before broad rollout.',
-  },
-];
 
 export function IngestPage(): JSX.Element {
   const queryClient = useQueryClient();
   const sourceFileId = useId();
   const [file, setFile] = useState<File | null>(null);
-  const [supplierId, setSupplierId] = useState(DEFAULT_SUPPLIER_ID);
   const [preview, setPreview] = useState<IngestPreview | null>(null);
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, ProductDraft>>({});
   const deferredCatalogSearch = useDeferredValue(catalogSearch);
 
@@ -176,7 +162,7 @@ export function IngestPage(): JSX.Element {
     mutationFn: async () => {
       if (!file) throw new Error('A file is required before import can start.');
       const formData = new FormData();
-      formData.append('supplier_id', supplierId);
+      formData.append('supplier_id', DEFAULT_SUPPLIER_ID);
       formData.append('default_currency', 'EUR');
       formData.append('file', file);
       formData.append('mapping_overrides', JSON.stringify(buildMappingPayload(preview, mappingOverrides)));
@@ -223,6 +209,68 @@ export function IngestPage(): JSX.Element {
 
   return (
     <div className="space-y-6">
+      <section className="card p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="panel-title">Catalog</div>
+            <h1 className="mt-2 text-[30px] font-bold tracking-[-0.03em] text-slate-900">
+              Search and maintain the live catalog
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Keep product cleanup fast and visible while supplier-file review stays one step below.
+            </p>
+          </div>
+          <div className="w-full max-w-xl">
+            <div className="flex gap-3">
+              <label className="relative flex-1">
+                <Search
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={16}
+                />
+                <input
+                  value={catalogSearch}
+                  onChange={(event) =>
+                    startTransition(() => {
+                      setCatalogSearch(event.target.value);
+                    })
+                  }
+                  placeholder="Search by name or SKU…"
+                  className="w-full rounded-[18px] border border-brand-line bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-[18px] px-4"
+                onClick={() => setFiltersOpen((current) => !current)}
+              >
+                <SlidersHorizontal size={16} />
+                Filter
+              </Button>
+            </div>
+            {filtersOpen ? (
+              <div className="mt-3 rounded-[18px] border border-brand-line bg-white px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Category filter
+                </div>
+                <select
+                  value={selectedCategory}
+                  onChange={(event) => setSelectedCategory(event.target.value)}
+                  className="mt-2 w-full rounded-[14px] border border-brand-line bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
+                >
+                  <option value="all">All categories</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category.name} value={category.name}>
+                      {category.name} ({category.product_count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
       <section className="card overflow-hidden p-0">
         <div className="grid gap-0 xl:grid-cols-[1.02fr_0.98fr]">
           <div className="relative overflow-hidden p-6 lg:p-8">
@@ -286,22 +334,6 @@ export function IngestPage(): JSX.Element {
 
               <div className="mt-6 space-y-5">
                 <div>
-                  <label
-                    htmlFor="supplier-id"
-                    className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500"
-                  >
-                    Supplier ID
-                  </label>
-                  <input
-                    id="supplier-id"
-                    className="mt-2 w-full rounded-[18px] border border-brand-line bg-white px-4 py-3 text-sm font-mono text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
-                    style={{ backgroundColor: '#FFFFFF' }}
-                    value={supplierId}
-                    onChange={(event) => setSupplierId(event.target.value)}
-                  />
-                </div>
-
-                <div>
                   <div className="flex items-center justify-between gap-3">
                     <label
                       htmlFor={sourceFileId}
@@ -350,25 +382,6 @@ export function IngestPage(): JSX.Element {
                     }}
                     className="sr-only"
                   />
-                </div>
-
-                <div className="rounded-[22px] border border-brand-line/80 bg-brand-surface/80 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-xl bg-brand-accent/25 p-2 text-brand">
-                      <ShieldCheck size={16} />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Pricing structure guide</div>
-                      <div className="mt-2 grid gap-2">
-                        {PRICE_MODES.map((mode) => (
-                          <div key={mode.label} className="rounded-[14px] bg-white/80 px-4 py-3">
-                            <div className="text-sm font-semibold text-slate-900">{mode.label}</div>
-                            <div className="mt-1 text-sm leading-6 text-slate-600">{mode.detail}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 <Button
@@ -620,7 +633,7 @@ export function IngestPage(): JSX.Element {
         <div className="flex flex-col gap-4 border-b border-brand-line px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="panel-title">Catalog cleanup</div>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">Procurement admin workbench</h2>
+            <h2 className="mt-2 text-xl font-semibold text-slate-900">Catalog</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
               Search imported C-materials, rename items, regroup categories and deactivate noisy rows.
             </p>
@@ -630,36 +643,8 @@ export function IngestPage(): JSX.Element {
           </div>
         </div>
 
-        <div className="grid gap-4 border-b border-brand-line px-6 py-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <label className="relative">
-            <Search
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-              size={16}
-            />
-            <input
-              value={catalogSearch}
-              onChange={(event) =>
-                startTransition(() => {
-                  setCatalogSearch(event.target.value);
-                })
-              }
-              placeholder="Search by name or SKU…"
-              className="w-full rounded-[18px] border border-brand-line bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
-            />
-          </label>
-
-          <select
-            value={selectedCategory}
-            onChange={(event) => setSelectedCategory(event.target.value)}
-            className="rounded-[18px] border border-brand-line bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15"
-          >
-            <option value="all">All categories</option>
-            {categoryOptions.map((category) => (
-              <option key={category.name} value={category.name}>
-                {category.name} ({category.product_count})
-              </option>
-            ))}
-          </select>
+        <div className="border-b border-brand-line px-6 py-4 text-sm text-slate-500">
+          {selectedCategory === 'all' ? 'Showing all categories' : `Filtered to ${selectedCategory}`}
         </div>
 
         <div className="overflow-x-auto">
