@@ -15,25 +15,35 @@ export interface ApprovalRule {
   id: string;
   company_id: string;
   threshold_amount: string | number;
+  daily_approval_cap: string | number;
   auto_approve_below: boolean;
   restricted_categories: string[];
   approver_role: string;
 }
 
+const DISPLAY_CURRENCY = 'EUR';
+
+export function normalizeDisplayCurrency(currency?: string): string {
+  const normalized = currency?.trim().toUpperCase();
+  return normalized === 'EUR' ? 'EUR' : DISPLAY_CURRENCY;
+}
+
 export function formatMoney(amount: string | number, currency: string): string {
   const numeric = Number(amount);
+  const displayCurrency = normalizeDisplayCurrency(currency);
   if (Number.isNaN(numeric)) return `${amount} ${currency}`;
   return new Intl.NumberFormat('de-DE', {
     style: 'currency',
-    currency,
+    currency: displayCurrency,
     maximumFractionDigits: 2,
   }).format(numeric);
 }
 
 export function formatCompactMoney(amount: number, currency: string): string {
+  const displayCurrency = normalizeDisplayCurrency(currency);
   return new Intl.NumberFormat('de-DE', {
     style: 'currency',
-    currency,
+    currency: displayCurrency,
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(amount);

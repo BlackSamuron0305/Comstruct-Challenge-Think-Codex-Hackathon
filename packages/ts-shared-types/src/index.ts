@@ -105,6 +105,7 @@ export const ApprovalRule = z.object({
   id: z.string().uuid(),
   company_id: z.string().uuid(),
   threshold_amount: z.string(),
+  daily_approval_cap: z.string(),
   auto_approve_below: z.boolean(),
   restricted_categories: z.array(z.string()),
   approver_role: UserRole,

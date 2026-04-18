@@ -1,7 +1,5 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Clock3, PackageCheck, WalletCards } from 'lucide-react';
-import { api } from '../lib/api';
+import { useMemo, useState } from 'react';
+import { CheckCircle2, ChevronDown, Clock3, PackageCheck, WalletCards } from 'lucide-react';
 import {
   type OrderSummary,
   formatCompactMoney,
@@ -10,7 +8,6 @@ import {
   sentenceCaseStatus,
 } from '../lib/procurement';
 
-const PROJECT_LABELS = ['Bridge St. Gallen', 'Zurich North', 'Basel Rehab'];
 const CATEGORY_LABELS = ['Fasteners', 'PPE', 'Sealants', 'Tools', 'Consumables'];
 const STATUS_STYLES: Record<string, string> = {
   pending_approval: 'bg-brand-accent text-brand-text',
@@ -21,16 +18,139 @@ const STATUS_STYLES: Record<string, string> = {
   rejected: 'bg-brand-err text-brand-surface',
 };
 
+type ProjectOption = {
+  id: string;
+  name: string;
+  site_address: string | null;
+  trade: string | null;
+};
+
+const MOCK_PROJECTS: ProjectOption[] = [
+  {
+    id: 'proj-bridge-stgallen',
+    name: 'Bridge St. Gallen',
+    site_address: 'Bruckenstrasse 1, 9000 St. Gallen',
+    trade: 'Steel Bridge',
+  },
+  {
+    id: 'proj-zurich-north',
+    name: 'Zurich North',
+    site_address: 'Thurgauerstrasse 45, 8050 Zurich',
+    trade: 'Shell and Core',
+  },
+  {
+    id: 'proj-basel-rehab',
+    name: 'Basel Rehab',
+    site_address: 'Aeschenplatz 8, 4051 Basel',
+    trade: 'Refurbishment',
+  },
+];
+
+const MOCK_ORDERS: OrderSummary[] = [
+  {
+    id: '8d8b6f81-5b8d-4a73-95c4-111111111111',
+    status: 'pending_approval',
+    total_amount: '184.50',
+    currency: 'EUR',
+    foreman_id: 'foreman-001',
+    project_id: 'proj-bridge-stgallen',
+    created_at: '2026-04-18T08:25:00.000Z',
+    notes: 'Anchor bolts and drill bits for pier reinforcement',
+  },
+  {
+    id: '8d8b6f81-5b8d-4a73-95c4-222222222222',
+    status: 'delivered',
+    total_amount: '92.10',
+    currency: 'EUR',
+    foreman_id: 'foreman-001',
+    project_id: 'proj-bridge-stgallen',
+    created_at: '2026-04-17T10:10:00.000Z',
+    notes: 'Safety gloves and consumables for welding crew',
+  },
+  {
+    id: '8d8b6f81-5b8d-4a73-95c4-333333333333',
+    status: 'ordered',
+    total_amount: '148.20',
+    currency: 'EUR',
+    foreman_id: 'foreman-002',
+    project_id: 'proj-bridge-stgallen',
+    created_at: '2026-04-16T06:40:00.000Z',
+    notes: 'Sealants and fastening kits for deck assembly',
+  },
+  {
+    id: '7f7a5182-4e67-4ca9-9d1d-444444444444',
+    status: 'approved',
+    total_amount: '126.40',
+    currency: 'EUR',
+    foreman_id: 'foreman-003',
+    project_id: 'proj-zurich-north',
+    created_at: '2026-04-18T09:15:00.000Z',
+    notes: 'Electrical boxes and cable fixings for level 2',
+  },
+  {
+    id: '7f7a5182-4e67-4ca9-9d1d-555555555555',
+    status: 'pending_approval',
+    total_amount: '198.90',
+    currency: 'EUR',
+    foreman_id: 'foreman-003',
+    project_id: 'proj-zurich-north',
+    created_at: '2026-04-17T13:30:00.000Z',
+    notes: 'PPE replenishment for facade access team',
+  },
+  {
+    id: '7f7a5182-4e67-4ca9-9d1d-666666666666',
+    status: 'delivered',
+    total_amount: '74.30',
+    currency: 'EUR',
+    foreman_id: 'foreman-004',
+    project_id: 'proj-zurich-north',
+    created_at: '2026-04-15T11:05:00.000Z',
+    notes: 'Site supplies for concrete breakout zone',
+  },
+  {
+    id: '6e6c4073-3156-4d52-8f0e-777777777777',
+    status: 'in_transit',
+    total_amount: '165.00',
+    currency: 'EUR',
+    foreman_id: 'foreman-005',
+    project_id: 'proj-basel-rehab',
+    created_at: '2026-04-18T07:55:00.000Z',
+    notes: 'Repair mortar and masking material for corridor works',
+  },
+  {
+    id: '6e6c4073-3156-4d52-8f0e-888888888888',
+    status: 'approved',
+    total_amount: '118.75',
+    currency: 'EUR',
+    foreman_id: 'foreman-005',
+    project_id: 'proj-basel-rehab',
+    created_at: '2026-04-17T08:45:00.000Z',
+    notes: 'Cutting discs and protection film for demolition team',
+  },
+  {
+    id: '6e6c4073-3156-4d52-8f0e-999999999999',
+    status: 'rejected',
+    total_amount: '246.00',
+    currency: 'EUR',
+    foreman_id: 'foreman-006',
+    project_id: 'proj-basel-rehab',
+    created_at: '2026-04-15T14:20:00.000Z',
+    notes: 'Urgent tooling request moved to procurement review',
+  },
+];
+
 export function DashboardPage(): JSX.Element {
-  const { data, isLoading } = useQuery<OrderSummary[]>({
-    queryKey: ['orders'],
-    queryFn: async () => (await api.get('/api/orders')).data,
-    refetchOnWindowFocus: false,
-  });
+  const [selectedProjectId, setSelectedProjectId] = useState(MOCK_PROJECTS[0]?.id ?? '');
+  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const projects = MOCK_PROJECTS;
+  const data = useMemo(
+    () => MOCK_ORDERS.filter((order) => order.project_id === selectedProjectId),
+    [selectedProjectId],
+  );
 
   const view = useMemo(() => {
     const orders = data ?? [];
-    const currency = orders[0]?.currency ?? 'CHF';
+    const currency = orders[0]?.currency ?? 'EUR';
     const activeOrders = orders.filter((order) => order.status !== 'rejected');
     const totalSpend = activeOrders.reduce(
       (sum, order) => sum + Number(order.total_amount),
@@ -54,14 +174,12 @@ export function DashboardPage(): JSX.Element {
     };
   }, [data]);
 
-  const projectBars = buildBars(PROJECT_LABELS, view.totalSpend || 780);
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const selectedProjectName =
+    selectedProject?.name ??
+    `Project ${selectedProjectId.slice(0, 8)}`;
   const categoryBars = buildBars(CATEGORY_LABELS, view.totalSpend * 0.82 || 540);
-  const requesterBars = [
-    { name: 'M. Ionescu', initials: 'MI', spend: view.totalSpend * 0.33, orders: 12 },
-    { name: 'A. Kowalski', initials: 'AK', spend: view.totalSpend * 0.24, orders: 9 },
-    { name: 'T. Yilmaz', initials: 'TY', spend: view.totalSpend * 0.2, orders: 7 },
-    { name: 'S. Popescu', initials: 'SP', spend: view.totalSpend * 0.14, orders: 5 },
-  ];
+  const requesterBars = buildRequesterBars(selectedProjectId, view.totalSpend);
 
   return (
     <div className="space-y-6">
@@ -73,9 +191,70 @@ export function DashboardPage(): JSX.Element {
               Procurement operations at a glance
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-              Track pending approvals, live C-material spend and order activity across
-              active projects from the same portal structure as the reference design.
+              Track pending approvals, live C-material spend and order activity one
+              project at a time so the dashboard never blends site performance together.
             </p>
+            <div className="relative mt-5 max-w-xl">
+              <button
+                type="button"
+                onClick={() => setIsProjectMenuOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded-[22px] border border-brand-line bg-brand-surface px-5 py-4 text-left shadow-[0_14px_28px_rgba(15,23,42,0.06)] transition hover:border-brand/40 hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]"
+              >
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Selected project
+                  </div>
+                  <div className="mt-1 truncate text-lg font-semibold text-slate-900">
+                    {selectedProjectName}
+                  </div>
+                  <div className="mt-1 truncate text-sm text-slate-500">
+                    {selectedProject?.trade ?? 'Project'} · {selectedProject?.site_address ?? 'No site address'}
+                  </div>
+                </div>
+                <div className="ml-4 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-surface text-brand">
+                  <ChevronDown
+                    size={18}
+                    className={`transition ${isProjectMenuOpen ? 'rotate-180' : ''}`}
+                  />
+                </div>
+              </button>
+              {isProjectMenuOpen && (
+                <div className="absolute left-0 right-0 top-[calc(100%+12px)] z-20 overflow-hidden rounded-[24px] border border-brand-line bg-brand-surface shadow-[0_24px_60px_rgba(15,23,42,0.14)]">
+                  <div className="p-3">
+                    {projects.map((project) => {
+                      const active = project.id === selectedProjectId;
+                      return (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(project.id);
+                            setIsProjectMenuOpen(false);
+                          }}
+                          className={`flex w-full items-start justify-between rounded-[18px] px-4 py-4 text-left transition ${
+                            active
+                              ? 'bg-brand text-brand-surface'
+                              : 'text-slate-700 hover:bg-brand-surface'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className={`font-semibold ${active ? 'text-brand-surface' : 'text-slate-900'}`}>
+                              {project.name}
+                            </div>
+                            <div className={`mt-1 text-sm ${active ? 'text-brand-surface/80' : 'text-slate-500'}`}>
+                              {project.trade ?? 'Project'} · {project.site_address ?? 'No site address'}
+                            </div>
+                          </div>
+                          <div className={`ml-4 text-xs font-semibold uppercase tracking-[0.14em] ${active ? 'text-brand-accent' : 'text-slate-400'}`}>
+                            {active ? 'Live' : 'Open'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="rounded-[14px] bg-brand px-4 py-3 text-sm font-medium text-brand-surface">
             {view.pending.length > 0
@@ -89,7 +268,7 @@ export function DashboardPage(): JSX.Element {
         <MetricCard
           label="Total spend"
           value={formatCompactMoney(view.totalSpend, view.currency)}
-          detail="All non-rejected C-material orders"
+          detail={`Non-rejected C-material orders in ${selectedProjectName}`}
           icon={<WalletCards size={18} />}
         />
         <MetricCard
@@ -114,16 +293,10 @@ export function DashboardPage(): JSX.Element {
         />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <ChartCard
-          title="Spend by project"
-          subtitle="Indicative split across active jobs"
-          bars={projectBars}
-          currency={view.currency}
-        />
+      <section>
         <ChartCard
           title="Spend by category"
-          subtitle="Tail-spend profile from recent ordering"
+          subtitle={`Tail-spend profile from recent ordering for ${selectedProjectName}`}
           bars={categoryBars}
           currency={view.currency}
           accent
@@ -135,14 +308,11 @@ export function DashboardPage(): JSX.Element {
           <div className="border-b border-brand-line px-6 py-5">
             <div className="text-base font-semibold text-slate-900">Recent orders</div>
             <div className="mt-1 text-sm text-slate-500">
-              Latest requests and fulfilment changes
+              Latest requests and fulfilment changes for {selectedProjectName}
             </div>
           </div>
-          {isLoading ? (
-            <div className="p-6 text-sm text-slate-500">Loading dashboard data…</div>
-          ) : (
-            <div>
-              {view.recent.map((order) => (
+          <div>
+            {view.recent.map((order) => (
                 <div
                   key={order.id}
                   className="flex flex-col gap-3 border-b border-brand-line/70 px-6 py-4 last:border-b-0 lg:flex-row lg:items-center"
@@ -160,7 +330,8 @@ export function DashboardPage(): JSX.Element {
                     </div>
                     <div className="mt-1 text-sm text-slate-500">
                       {order.project_id
-                        ? `Project ${order.project_id.slice(0, 8)}`
+                        ? projects.find((project) => project.id === order.project_id)?.name ??
+                          `Project ${order.project_id.slice(0, 8)}`
                         : 'No project linked'}{' '}
                       · {formatDate(order.created_at)}
                     </div>
@@ -170,11 +341,10 @@ export function DashboardPage(): JSX.Element {
                   </div>
                 </div>
               ))}
-              {view.recent.length === 0 && (
-                <div className="p-6 text-sm text-slate-500">No order activity yet.</div>
-              )}
-            </div>
-          )}
+            {view.recent.length === 0 && (
+              <div className="p-6 text-sm text-slate-500">No order activity yet.</div>
+            )}
+          </div>
         </div>
 
         <div className="card overflow-hidden">
@@ -290,5 +460,38 @@ function buildBars(labels: string[], baseline: number): Array<{ label: string; v
   return labels.map((label, index) => ({
     label,
     value: (baseline / (labels.length * 1.4)) * ((labels.length - index) / labels.length + 0.55),
+  }));
+}
+
+function buildRequesterBars(
+  projectId: string,
+  totalSpend: number,
+): Array<{ name: string; initials: string; spend: number; orders: number }> {
+  const presets: Record<string, Array<{ name: string; initials: string; ratio: number; orders: number }>> = {
+    'proj-bridge-stgallen': [
+      { name: 'M. Ionescu', initials: 'MI', ratio: 0.35, orders: 8 },
+      { name: 'A. Kowalski', initials: 'AK', ratio: 0.26, orders: 6 },
+      { name: 'T. Yilmaz', initials: 'TY', ratio: 0.21, orders: 5 },
+      { name: 'S. Popescu', initials: 'SP', ratio: 0.12, orders: 3 },
+    ],
+    'proj-zurich-north': [
+      { name: 'L. Meier', initials: 'LM', ratio: 0.31, orders: 7 },
+      { name: 'C. Vogel', initials: 'CV', ratio: 0.28, orders: 6 },
+      { name: 'R. Weber', initials: 'RW', ratio: 0.19, orders: 4 },
+      { name: 'D. Keller', initials: 'DK', ratio: 0.14, orders: 3 },
+    ],
+    'proj-basel-rehab': [
+      { name: 'E. Santos', initials: 'ES', ratio: 0.34, orders: 6 },
+      { name: 'N. Graf', initials: 'NG', ratio: 0.23, orders: 5 },
+      { name: 'J. Roth', initials: 'JR', ratio: 0.18, orders: 4 },
+      { name: 'P. Huber', initials: 'PH', ratio: 0.11, orders: 2 },
+    ],
+  };
+
+  return (presets[projectId] ?? []).map((requester) => ({
+    name: requester.name,
+    initials: requester.initials,
+    spend: totalSpend * requester.ratio,
+    orders: requester.orders,
   }));
 }

@@ -27,15 +27,15 @@ export function ApprovalsPage(): JSX.Element {
   });
 
   const [thresholdAmount, setThresholdAmount] = useState('200');
+  const [dailyLimitAmount, setDailyLimitAmount] = useState('5000');
   const [autoApproveBelow, setAutoApproveBelow] = useState(true);
-  const [approverRole, setApproverRole] = useState('project_manager');
   const [restrictedCategories, setRestrictedCategories] = useState<string[]>([]);
 
   useEffect(() => {
     if (!rule) return;
     setThresholdAmount(String(rule.threshold_amount));
     setAutoApproveBelow(rule.auto_approve_below);
-    setApproverRole(rule.approver_role);
+    setDailyLimitAmount(String(rule.daily_approval_cap));
     setRestrictedCategories(rule.restricted_categories);
   }, [rule]);
 
@@ -59,8 +59,8 @@ export function ApprovalsPage(): JSX.Element {
       api.put('/api/approvals/rule', {
         threshold_amount: Number(thresholdAmount),
         auto_approve_below: autoApproveBelow,
+        daily_approval_cap: Number(dailyLimitAmount),
         restricted_categories: restrictedCategories,
-        approver_role: approverRole,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['approval-rule'] }),
   });
@@ -85,11 +85,11 @@ export function ApprovalsPage(): JSX.Element {
               <MiniStat label="Pending" value={String(data?.length ?? 0)} />
               <MiniStat
                 label="Threshold"
-                value={rule ? formatMoney(rule.threshold_amount, 'CHF') : 'Not set'}
+                value={rule ? formatMoney(rule.threshold_amount, 'EUR') : 'Not set'}
               />
               <MiniStat
-                label="Approver"
-                value={(rule?.approver_role ?? 'project_manager').replace('_', ' ')}
+                label="Daily foreman cap"
+                value={rule ? formatMoney(rule.daily_approval_cap, 'EUR') : 'Not set'}
               />
             </div>
           </div>
@@ -101,26 +101,29 @@ export function ApprovalsPage(): JSX.Element {
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                  Auto-approve below
+                  Per-order auto-approve limit
                 </label>
                 <input
+                  type="number"
                   className="mt-2 w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-sm"
+                  min={0}
+                  step={0.01}
                   value={thresholdAmount}
                   onChange={(e) => setThresholdAmount(e.target.value)}
                 />
               </div>
               <div>
                 <label className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
-                  Approver role
+                  Daily cap per foreman
                 </label>
-                <select
+                <input
+                  type="number"
                   className="mt-2 w-full rounded-2xl border border-brand-line bg-brand-card px-4 py-3 text-sm"
-                  value={approverRole}
-                  onChange={(e) => setApproverRole(e.target.value)}
-                >
-                  <option value="project_manager">Project manager</option>
-                  <option value="procurement_admin">Procurement admin</option>
-                </select>
+                  min={0}
+                  step={0.01}
+                  value={dailyLimitAmount}
+                  onChange={(e) => setDailyLimitAmount(e.target.value)}
+                />
               </div>
             </div>
             <label className="mt-4 flex items-center gap-3 rounded-2xl bg-brand-card px-4 py-3 text-sm text-slate-700">

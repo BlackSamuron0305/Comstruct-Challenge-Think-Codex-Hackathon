@@ -100,7 +100,7 @@ export function IngestPage(): JSX.Element {
                 try {
                   const formData = new FormData();
                   formData.append('supplier_id', supplierId);
-                  formData.append('default_currency', 'CHF');
+                  formData.append('default_currency', 'EUR');
                   formData.append('file', file);
                   const response = await axios.post<IngestResult>(
                     '/api/ingest/supplier-file',

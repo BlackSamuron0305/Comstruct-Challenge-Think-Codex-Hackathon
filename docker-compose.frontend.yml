@@ -12,6 +12,10 @@ services:
     volumes:
       - ./apps/web/src:/workspace/apps/web/src
       - ./apps/web/index.html:/workspace/apps/web/index.html
+      - ./apps/web/package.json:/workspace/apps/web/package.json
+      - ./apps/web/postcss.config.js:/workspace/apps/web/postcss.config.js
+      - ./apps/web/tailwind.config.js:/workspace/apps/web/tailwind.config.js
+      - ./apps/web/vite.config.ts:/workspace/apps/web/vite.config.ts
       - ./packages/ts-shared-types:/workspace/packages/ts-shared-types
     depends_on:
       api-gateway:

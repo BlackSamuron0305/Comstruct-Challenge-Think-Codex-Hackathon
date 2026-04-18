@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { BarChart3, Minus, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api';
+import { formatMoney } from '../lib/procurement';
 
 interface Comparison {
   supplier_id: string;
@@ -116,7 +117,7 @@ export function SupplierScoringPage(): JSX.Element {
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono">
-                    {Number(comparisonItem.unit_price).toFixed(2)} {comparisonItem.currency}
+                    {formatMoney(comparisonItem.unit_price, comparisonItem.currency)}
                   </td>
                   <td className="px-4 py-3">
                     <ScoreBadge score={comparisonItem.overall_score} />

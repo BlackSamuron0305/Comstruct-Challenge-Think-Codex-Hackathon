@@ -2,12 +2,13 @@ FROM node:20-alpine AS dev
 WORKDIR /workspace
 
 RUN corepack enable
+ENV NODE_ENV=development
 
-COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/ts-shared-types/package.json ./packages/ts-shared-types/package.json
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --filter @comstruct/web... --no-frozen-lockfile
 
 COPY apps/web ./apps/web
 COPY packages/ts-shared-types ./packages/ts-shared-types

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@comstruct/ts-shared-types": "workspace:*",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-select": "^2.2.6",
     "@tanstack/react-query": "^5.40.0",
     "axios": "^1.7.0",
     "clsx": "^2.1.0",
