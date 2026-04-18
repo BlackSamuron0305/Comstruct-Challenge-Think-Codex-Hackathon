@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:comstruct/screens/c_home_screen.dart' show CColors;
+import '../screens/c_home_screen.dart' show CColors;
+import '../translations.dart';
 
 class BottomNavShell extends StatelessWidget {
   const BottomNavShell({super.key, required this.child});
@@ -9,8 +10,9 @@ class BottomNavShell extends StatelessWidget {
 
   static int _indexOf(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
-    if (loc.startsWith('/c-orders')) return 0;
-    return 1; // /c-home and everything under it
+    if (loc.startsWith('/c-orders'))  return 0;
+    if (loc.startsWith('/c-profile')) return 2;
+    return 1; // /c-home and sub-screens
   }
 
   @override
@@ -24,18 +26,24 @@ class BottomNavShell extends StatelessWidget {
         unselectedItemColor: Colors.black38,
         onTap: (i) {
           if (i == 0) context.go('/c-orders');
-          else        context.go('/c-home');
+          else if (i == 1) context.go('/c-home');
+          else context.go('/c-profile');
         },
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long_outlined),
-            activeIcon: Icon(Icons.receipt_long),
-            label: 'Meine Bestellungen',
+            icon: const Icon(Icons.receipt_long_outlined),
+            activeIcon: const Icon(Icons.receipt_long),
+            label: t(context, 'navOrders'),
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            activeIcon: Icon(Icons.add_circle),
-            label: 'Neue Bestellung',
+            icon: const Icon(Icons.add_circle_outline),
+            activeIcon: const Icon(Icons.add_circle),
+            label: t(context, 'navNewOrder'),
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.person_outline),
+            activeIcon: const Icon(Icons.person),
+            label: t(context, 'navProfile'),
           ),
         ],
       ),

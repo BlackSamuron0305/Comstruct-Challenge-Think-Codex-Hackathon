@@ -144,6 +144,46 @@ async def call_ollama_stream(
                     continue
 
 
+async def call_ollama_vision(
+    system: str,
+    user_message: str,
+    image_b64: str,
+    *,
+    max_tokens: int = 1024,
+    temperature: float = 0.2,
+    stub: dict | None = None,
+) -> dict[str, Any]:
+    """Call Ollama chat API with an image for multimodal analysis (Gemma3 vision)."""
+    messages = [
+        {"role": "system", "content": system + "\n\nRespond with valid JSON only."},
+        {"role": "user", "content": user_message, "images": [image_b64]},
+    ]
+    try:
+        async with httpx.AsyncClient(timeout=settings.OLLAMA_TIMEOUT) as client:
+            resp = await client.post(
+                f"{settings.OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": settings.OLLAMA_MODEL,
+                    "messages": messages,
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                    },
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("message", {}).get("content", "")
+            return _extract_json(content)
+    except Exception as e:
+        log.warning("Ollama vision call failed (%s), using stub", e)
+        if stub is not None:
+            return stub
+        raise
+
+
 def _deterministic_embedding(text: str) -> list[float]:
     """Stable pseudo-embedding for offline fallback."""
     h = hashlib.sha512(text.encode("utf-8")).digest()

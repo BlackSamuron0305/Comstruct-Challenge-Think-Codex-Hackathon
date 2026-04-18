@@ -31,7 +31,7 @@ def current_user(
     x_user_role: str | None = Header(default=None),
     x_company_id: str | None = Header(default=None),
     x_forwarded_for: str | None = Header(default=None),
-    _: None = Header(default=None, alias="X-Internal-Secret"),
+    _: str | None = Header(default=None, alias="X-Internal-Secret"),
 ) -> CurrentUser:
     require_internal_secret(_)
     if not (x_user_id and x_user_role and x_company_id):

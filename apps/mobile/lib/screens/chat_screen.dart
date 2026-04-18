@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
+import '../translations.dart';
 import 'c_home_screen.dart' show CColors;
 
 class ChatScreen extends StatefulWidget {
@@ -15,10 +16,18 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _ctrl   = TextEditingController();
   final _scroll = ScrollController();
-  final _messages = <_Msg>[
-    const _Msg(role: 'assistant', text: 'Hallo! Welche Materialien brauchen Sie heute?'),
-  ];
+  final _messages = <_Msg>[];
   bool _busy = false;
+  bool _initDone = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initDone) {
+      _messages.add(_Msg(role: 'assistant', text: t(context, 'chatWelcome')));
+      _initDone = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -50,7 +59,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      // Use recommend endpoint for product suggestions
       final res = await AppScope.api.recommend(text);
       final items = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
       final summary = res['summary'] as String?;
@@ -61,16 +69,16 @@ class _ChatScreenState extends State<ChatScreen> {
         } else if (items.isNotEmpty) {
           _messages.add(_Msg(
             role: 'assistant',
-            text: 'Ich habe ${items.length} passende Produkte gefunden:',
+            text: t(context, 'foundProducts').replaceAll('{n}', '${items.length}'),
             items: items,
           ));
         } else {
-          _messages.add(const _Msg(role: 'assistant', text: 'Leider habe ich nichts passendes gefunden. Können Sie es genauer beschreiben?'));
+          _messages.add(_Msg(role: 'assistant', text: t(context, 'nothingFound')));
         }
       });
     } catch (_) {
       setState(() {
-        _messages.add(const _Msg(role: 'assistant', text: '⚠️ Verbindungsfehler. Bitte versuchen Sie es erneut.'));
+        _messages.add(_Msg(role: 'assistant', text: t(context, 'connectionError')));
       });
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -84,7 +92,7 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: CColors.bg,
       appBar: AppBar(
         backgroundColor: CColors.teal,
-        title: const Text('Chat-Assistent'),
+        title: Text(t(context, 'chatTitle')),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/c-home'),
@@ -97,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             itemCount: _messages.length + (_busy ? 1 : 0),
             itemBuilder: (_, i) {
-              if (i == _messages.length) return const _TypingBubble();
+              if (i == _messages.length) return _TypingBubble(label: t(context, 'chatThinking'));
               return _MessageBubble(msg: _messages[i]);
             },
           ),
@@ -118,7 +126,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 textInputAction: TextInputAction.newline,
                 style: const TextStyle(fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'z.B. "20 Gipsschrauben 35mm"…',
+                  hintText: t(context, 'chatPlaceholder'),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -196,7 +204,6 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
           ),
-          // Product chips
           if (msg.items.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -220,7 +227,7 @@ class _ProductChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = (item['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
-    final currency = (item['currency'] as String?) ?? 'CHF';
+    final currency = (item['currency'] as String?) ?? 'EUR';
     final qty = (item['suggested_qty'] as num?) ?? 1;
 
     return Container(
@@ -233,7 +240,7 @@ class _ProductChip extends StatelessWidget {
         dense: true,
         title: Text((item['name'] as String?) ?? '—',
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        subtitle: Text('CHF $price $currency / ${item['unit'] ?? 'Stk'}',
+        subtitle: Text('$price $currency / ${item['unit'] ?? 'Stk'}',
             style: const TextStyle(color: CColors.teal, fontSize: 12, fontWeight: FontWeight.w500)),
         trailing: SizedBox(
           width: 56,
@@ -249,7 +256,7 @@ class _ProductChip extends StatelessWidget {
               await context.read<CartCubit>().add(item['product_id'] as String, qty);
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Hinzugefügt')),
+                SnackBar(content: Text(t(context, 'added'))),
               );
             },
             child: const Icon(Icons.add, size: 18),
@@ -261,7 +268,9 @@ class _ProductChip extends StatelessWidget {
 }
 
 class _TypingBubble extends StatelessWidget {
-  const _TypingBubble();
+  const _TypingBubble({required this.label});
+  final String label;
+
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
@@ -275,7 +284,7 @@ class _TypingBubble extends StatelessWidget {
         ),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)],
       ),
-      child: const Text('Denke nach …', style: TextStyle(color: Colors.black45, fontStyle: FontStyle.italic, fontSize: 14)),
+      child: Text(label, style: const TextStyle(color: Colors.black45, fontStyle: FontStyle.italic, fontSize: 14)),
     ),
   );
 }

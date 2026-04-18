@@ -8,19 +8,27 @@ import 'app_scope.dart';
 import 'config.dart';
 import 'cubits/auth_cubit.dart';
 import 'cubits/cart_cubit.dart';
+import 'cubits/language_cubit.dart';
 import 'local_llm.dart';
 import 'offline_queue.dart';
+import 'screens/c_catalog_screen.dart';
+import 'screens/c_home_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/image_order_screen.dart';
+import 'screens/language_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/my_orders_screen.dart';
 import 'screens/offline_queue_screen.dart';
+import 'screens/order_detail_screen.dart';
 import 'screens/orders_screen.dart';
+import 'screens/profile_screen.dart';
 import 'screens/projects_screen.dart';
 import 'screens/smart_add_screen.dart';
 import 'screens/voice_order_screen.dart';
 import 'theme.dart';
+import 'widgets/bottom_nav_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +56,7 @@ void main() async {
     providers: [
       BlocProvider(create: (_) => AuthCubit(api)..bootstrap()),
       BlocProvider(create: (_) => CartCubit(api)),
+      BlocProvider(create: (_) => LanguageCubit()),
     ],
     child: ComstructApp(api: api),
   ));
@@ -59,12 +68,11 @@ class ComstructApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final router = _buildRouter(context);
     return MaterialApp.router(
-      title: 'Comstruct',
+      title: 'comstruct',
       debugShowCheckedModeBanner: false,
       theme: buildComstructTheme(),
-      routerConfig: router,
+      routerConfig: _buildRouter(context),
     );
   }
 }
@@ -76,21 +84,53 @@ GoRouter _buildRouter(BuildContext context) {
     refreshListenable: GoRouterRefreshStream(auth.stream),
     redirect: (ctx, state) {
       final loggedIn = auth.state.user != null;
-      final atLogin = state.matchedLocation == '/login';
+      final atLogin  = state.matchedLocation == '/login';
       if (!loggedIn) return atLogin ? null : '/login';
-      if (atLogin) return '/projects';
+      if (atLogin)   return '/c-home';
       return null;
     },
     routes: [
-      GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+      GoRoute(path: '/login',    builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/projects', builder: (_, __) => const ProjectsScreen()),
-      GoRoute(path: '/catalog', builder: (_, __) => const CatalogScreen()),
-      GoRoute(path: '/cart', builder: (_, __) => const CartScreen()),
-      GoRoute(path: '/orders', builder: (_, __) => const OrdersScreen()),
-      GoRoute(path: '/smart-add', builder: (_, __) => const SmartAddScreen()),
-      GoRoute(path: '/image-order', builder: (_, __) => const ImageOrderScreen()),
-      GoRoute(path: '/voice-order', builder: (_, __) => const VoiceOrderScreen()),
-      GoRoute(path: '/chat', builder: (_, __) => const ChatScreen()),
+
+      // ── Shell with bottom nav ─────────────────────────────────────
+      ShellRoute(
+        builder: (_, __, child) => BottomNavShell(child: child),
+        routes: [
+          GoRoute(path: '/c-home',    builder: (_, __) => const CHomeScreen()),
+          GoRoute(path: '/c-orders',  builder: (_, __) => const MyOrdersScreen()),
+          GoRoute(path: '/c-profile', builder: (_, __) => const ProfileScreen()),
+        ],
+      ),
+
+      // ── C-materials sub-screens (no bottom nav) ───────────────────
+      GoRoute(path: '/c-language', builder: (_, __) => const LanguageScreen()),
+      GoRoute(path: '/c-voice',   builder: (_, __) => const VoiceOrderScreen()),
+      GoRoute(path: '/c-chat',    builder: (_, __) => const ChatScreen()),
+      GoRoute(path: '/c-photo',   builder: (_, __) => const ImageOrderScreen()),
+      GoRoute(
+        path: '/c-catalog',
+        builder: (_, state) => CCatalogScreen(
+          category: state.uri.queryParameters['category'],
+        ),
+      ),
+      GoRoute(
+        path: '/c-order/:id',
+        builder: (_, state) {
+          final order = state.extra as Map<String, dynamic>?
+              ?? {'id': state.pathParameters['id'] ?? ''};
+          return OrderDetailScreen(order: order);
+        },
+      ),
+
+      // ── Legacy routes ─────────────────────────────────────────────
+      GoRoute(path: '/catalog',       builder: (_, __) => const CatalogScreen()),
+      GoRoute(path: '/cart',          builder: (_, __) => const CartScreen()),
+      GoRoute(path: '/orders',        builder: (_, __) => const OrdersScreen()),
+      GoRoute(path: '/smart-add',     builder: (_, __) => const SmartAddScreen()),
+      GoRoute(path: '/image-order',   builder: (_, __) => const ImageOrderScreen()),
+      GoRoute(path: '/voice-order',   builder: (_, __) => const VoiceOrderScreen()),
+      GoRoute(path: '/chat',          builder: (_, __) => const ChatScreen()),
       GoRoute(path: '/offline-queue', builder: (_, __) => const OfflineQueueScreen()),
     ],
   );

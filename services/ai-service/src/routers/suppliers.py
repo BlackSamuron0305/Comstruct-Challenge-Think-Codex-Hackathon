@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..services.scoring import compare_suppliers, compute_supplier_score
+from ..services.scoring import compare_suppliers, compute_supplier_score, get_supplier_score_breakdown
 from ..services.scraper import run_scrape_job, scrape_supplier_page
 from ..services.web_search import search_supplier_info, search_web
 from ..services.supplier_proposal import (
@@ -44,6 +44,16 @@ class ScoreResponse(BaseModel):
 async def compute_score(supplier_id: str):
     """Compute and store composite score for a supplier."""
     return await compute_supplier_score(supplier_id)
+
+
+# ── Score breakdown ───────────────────────────────────────────────────
+@router.get(
+    "/{supplier_id}/score-breakdown",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def score_breakdown(supplier_id: str):
+    """Get the full score breakdown for a supplier (all dimensions + weights)."""
+    return await get_supplier_score_breakdown(supplier_id)
 
 
 # ── Comparison ────────────────────────────────────────────────────────

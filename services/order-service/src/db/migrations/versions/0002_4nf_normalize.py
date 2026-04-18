@@ -55,7 +55,7 @@ def upgrade() -> None:
         schema="procurement",
     )
     op.create_index("ix_supplier_scores_supplier", "supplier_scores",
-                    ["supplier_id", "score_type"], schema="procurement")
+                    ["supplier_id", "score_type"], schema="procurement", unique=True)
     op.create_index("ix_supplier_scores_type", "supplier_scores",
                     ["score_type", "score_value"], schema="procurement")
 

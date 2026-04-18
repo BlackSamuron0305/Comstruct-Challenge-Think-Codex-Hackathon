@@ -6,14 +6,25 @@ import { config } from './config.js';
  * Sets X-User-* headers from the verified JWT and attaches the
  * X-Internal-Secret so backend services trust the request.
  */
-function injectIdentityHeaders(req: FastifyRequest, headers: Record<string, string | undefined>): void {
+function injectIdentityHeaders(
+  req: FastifyRequest,
+  headers: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  const nextHeaders = { ...headers };
+
+  delete nextHeaders.host;
+  delete nextHeaders.connection;
+  delete nextHeaders.expect;
+
   if (req.user) {
-    headers['x-user-id'] = req.user.sub;
-    headers['x-user-role'] = req.user.role;
-    headers['x-company-id'] = req.user.company_id;
-    headers['x-user-email'] = req.user.email;
+    nextHeaders['x-user-id'] = req.user.sub;
+    nextHeaders['x-user-role'] = req.user.role;
+    nextHeaders['x-company-id'] = req.user.company_id;
+    nextHeaders['x-user-email'] = req.user.email;
   }
-  headers['x-internal-secret'] = config.internalSecret;
+
+  nextHeaders['x-internal-secret'] = config.internalSecret;
+  return nextHeaders;
 }
 
 interface UpstreamSpec {
@@ -49,8 +60,10 @@ export async function registerProxies(app: FastifyInstance): Promise<void> {
       rewritePrefix: spec.rewritePrefix ?? spec.prefix,
       replyOptions: {
         rewriteRequestHeaders: (req, headers) => {
-          injectIdentityHeaders(req as FastifyRequest, headers as Record<string, string | undefined>);
-          return headers;
+          return injectIdentityHeaders(
+            req as FastifyRequest,
+            headers as Record<string, string | undefined>,
+          );
         },
       },
       preHandler: spec.requireAuth

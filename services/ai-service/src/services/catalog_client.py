@@ -24,7 +24,7 @@ async def search_by_vector(vector: list[float], limit: int = 12) -> list[dict]:
         r = await client.post(
             f"{settings.CATALOG_SERVICE_URL}/products/search-by-vector",
             headers=_headers(),
-            json={"vector": vector, "limit": limit},
+            json={"embedding": vector, "limit": limit},
         )
         r.raise_for_status()
         return r.json()

@@ -1,7 +1,8 @@
 """Supplier scoring engine.
 
 Computes composite scores from price history, delivery performance,
-interaction history, and web reputation. Stores results in procurement.supplier_scores.
+interaction history, web reputation, and AI-powered specs fit.
+Stores results in procurement.supplier_scores.
 """
 import logging
 import uuid
@@ -11,6 +12,7 @@ from decimal import Decimal
 import httpx
 
 from ..config import settings
+from ..llm.ollama_client import call_ollama_json
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,15 @@ async def compute_supplier_score(supplier_id: str) -> dict:
         # against specific product requirements. Default neutral.
         specs_fit_score = Decimal("50.0")
 
+        # Try AI-powered specs fit if supplier has web data
+        if web_cache_row and web_cache_row["results"]:
+            try:
+                specs_fit_score = await _compute_specs_fit_ai(
+                    supplier_id, web_cache_row["results"],
+                )
+            except Exception as exc:
+                logger.warning("AI specs-fit failed for %s: %s", supplier_id, exc)
+
         # Composite
         overall = (
             price_score * Decimal(str(SCORE_WEIGHTS["price"]))
@@ -208,3 +219,78 @@ async def compare_suppliers(product_id: str, supplier_ids: list[str] | None = No
             "comparisons": comparisons,
             "recommendation": comparisons[0]["supplier_id"] if comparisons else None,
         }
+
+
+async def _compute_specs_fit_ai(supplier_id: str, web_cache_json: str) -> Decimal:
+    """Use Ollama to evaluate how well a supplier fits construction material needs."""
+    import json as _json
+    try:
+        cached = _json.loads(web_cache_json)
+    except Exception:
+        return Decimal("50.0")
+
+    snippets = ""
+    hits = cached.get("hits", cached.get("results", []))
+    if isinstance(hits, list):
+        for h in hits[:5]:
+            if isinstance(h, dict):
+                snippets += f"- {h.get('title', '')} : {h.get('snippet', '')}\n"
+    if not snippets:
+        snippets = str(cached)[:600]
+
+    result = await call_ollama_json(
+        system=(
+            "You are a construction procurement analyst evaluating suppliers. "
+            "Score how well a supplier matches Swiss construction material procurement needs. "
+            "Consider: product range breadth, specialization in construction/building, "
+            "Swiss market presence, B2B capabilities, certifications mentioned."
+        ),
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Rate this supplier (ID {supplier_id}) based on the following web data:\n\n"
+                f"{snippets}\n\n"
+                "Return JSON: {\"specs_fit_score\": <0-100>, \"reasoning\": \"<brief>\"}"
+            ),
+        }],
+        max_tokens=256,
+        temperature=0.2,
+        stub={"specs_fit_score": 50, "reasoning": "Ollama unavailable"},
+    )
+    raw = result.get("specs_fit_score", 50)
+    return Decimal(str(max(0, min(100, int(raw)))))
+
+
+async def get_supplier_score_breakdown(supplier_id: str) -> dict:
+    """Retrieve the full score breakdown for a supplier from the DB."""
+    pool = await _db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT score_type, score_value, sample_size, computed_at
+            FROM procurement.supplier_scores
+            WHERE supplier_id = $1
+            ORDER BY score_type
+        """, uuid.UUID(supplier_id))
+
+    if not rows:
+        return {"supplier_id": supplier_id, "scores": {}, "computed_at": None}
+
+    scores = {}
+    latest_at = None
+    sample = 0
+    for r in rows:
+        scores[r["score_type"]] = {
+            "value": str(r["score_value"]),
+            "sample_size": r["sample_size"],
+        }
+        if r["computed_at"] and (latest_at is None or r["computed_at"] > latest_at):
+            latest_at = r["computed_at"]
+            sample = r["sample_size"]
+
+    return {
+        "supplier_id": supplier_id,
+        "scores": scores,
+        "weights": SCORE_WEIGHTS,
+        "sample_size": sample,
+        "computed_at": latest_at.isoformat() if latest_at else None,
+    }

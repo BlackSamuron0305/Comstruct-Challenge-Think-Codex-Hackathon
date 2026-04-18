@@ -15,15 +15,11 @@ def hash_password(password: str) -> str:
 
 COMPANY_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 PROJECT_ID = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-FOREMAN_ID = UUID("cccccccc-cccc-cccc-cccc-cccccccccc01")
-PM_ID = UUID("cccccccc-cccc-cccc-cccc-cccccccccc02")
 PROC_ID = UUID("cccccccc-cccc-cccc-cccc-cccccccccc03")
 
 DEMO_PASSWORD = "comstruct-demo"
 
 USERS = [
-    (FOREMAN_ID, "foreman@brueckesg.ch", "Marco Brunner", UserRole.FOREMAN.value, "+41 79 100 0001"),
-    (PM_ID, "pm@brueckesg.ch", "Anna Steiner", UserRole.PROCUREMENT_WORKER.value, "+41 79 100 0002"),
     (PROC_ID, "procurement@comstruct.com", "Lukas Weber", UserRole.PROCUREMENT_WORKER.value, "+41 79 100 0003"),
 ]
 

@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.ollama_client import call_ollama_json, call_ollama_stream
+from ..llm.ollama_client import call_ollama_json, call_ollama_stream, call_ollama_vision
 
 logger = logging.getLogger(__name__)
 
@@ -158,29 +158,43 @@ async def upload_image(
         "Image uploaded: %s (%.1f KB, %s)", file.filename, image_size_kb, file.content_type,
     )
 
-    # ── STUB: Vision API call will go here ──
-    # In production: send image_b64 to GPT-4o vision or Gemma multimodal
-    # For now, return a structured stub response
+    vision_system = CONSTRUCTION_SYSTEM + """
+You are analyzing a construction site image. Identify:
+1. What materials are visible or being used
+2. Potential safety issues or missing materials
+3. Items that should be ordered
+
+Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "quantity_estimate": "...", "urgency": "low|medium|high"}], "observations": "...", "recommendations": ["..."], "confidence": 0.8}"""
+
+    user_prompt = "Analyze this construction site image."
+    if context:
+        user_prompt += f" Context: {context}"
+
     stub_response = {
+        "materials_detected": [],
+        "observations": f"Image '{file.filename}' received ({image_size_kb:.0f} KB). Vision model unavailable.",
+        "recommendations": [],
+        "confidence": 0.0,
+    }
+
+    analysis = await call_ollama_vision(
+        system=vision_system,
+        user_message=user_prompt,
+        image_b64=image_b64,
+        max_tokens=1024,
+        temperature=0.2,
+        stub=stub_response,
+    )
+
+    return {
         "status": "processed",
         "filename": file.filename,
         "size_kb": round(image_size_kb, 1),
         "content_type": file.content_type,
-        "analysis": {
-            "materials_detected": [],
-            "observations": (
-                f"Image '{file.filename}' received ({image_size_kb:.0f} KB). "
-                "Vision model analysis will be available when the AI API is connected."
-            ),
-            "recommendations": [],
-            "confidence": 0.0,
-        },
+        "analysis": analysis,
         "context": context or None,
         "project_id": project_id or None,
-        "note": "Stub response — connect GPT-4o vision or Gemma multimodal for real analysis.",
     }
-
-    return stub_response
 
 
 # ── Audio transcription + interaction ─────────────────────────────────
