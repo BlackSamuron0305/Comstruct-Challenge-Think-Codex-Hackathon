@@ -2,6 +2,9 @@ import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/r
 
 import appCss from "../styles.css?url";
 import { ProjectProvider } from "@/components/dashboard/ProjectContext";
+import { AuthProvider, useAuth } from "@/components/auth/AuthContext";
+import { LoginScreen } from "@/components/auth/LoginScreen";
+import { ChatWidget } from "@/components/chat/ChatWidget";
 
 function NotFoundComponent() {
   return (
@@ -65,10 +68,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RootComponent() {
+function AuthGate() {
+  const { user } = useAuth();
+  if (!user) return <LoginScreen />;
   return (
     <ProjectProvider>
       <Outlet />
+      <ChatWidget />
     </ProjectProvider>
+  );
+}
+
+function RootComponent() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }

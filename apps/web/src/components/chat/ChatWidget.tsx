@@ -1,0 +1,184 @@
+import { useEffect, useRef, useState } from "react";
+import { MessageSquare, X, Send, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { answerQuestion } from "./answerEngine";
+
+type Msg = { role: "user" | "assistant"; content: string };
+
+const SUGGESTIONS = [
+  "What's pending?",
+  "Spend this month?",
+  "Suppliers that need attention",
+  "Who's the biggest spender?",
+];
+
+function renderMarkdown(text: string) {
+  // Tiny markdown: **bold**, `code`, lists, paragraphs, --- separators
+  const lines = text.split("\n");
+  const out: React.ReactNode[] = [];
+  let list: string[] = [];
+
+  const flushList = () => {
+    if (list.length) {
+      out.push(
+        <ul key={`ul-${out.length}`} className="list-disc pl-5 space-y-0.5 my-1">
+          {list.map((l, i) => (
+            <li key={i} dangerouslySetInnerHTML={{ __html: inline(l) }} />
+          ))}
+        </ul>
+      );
+      list = [];
+    }
+  };
+
+  function inline(s: string) {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, '<code class="text-mono text-[11px] px-1 py-0.5 rounded bg-muted">$1</code>')
+      .replace(/\*(.+?)\*/g, "<em>$1</em>");
+  }
+
+  lines.forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("- ")) {
+      list.push(trimmed.slice(2));
+    } else if (trimmed === "---") {
+      flushList();
+      out.push(<hr key={`hr-${i}`} className="my-2 border-border" />);
+    } else if (trimmed === "") {
+      flushList();
+    } else {
+      flushList();
+      out.push(
+        <p key={`p-${i}`} className="my-1" dangerouslySetInnerHTML={{ __html: inline(trimmed) }} />
+      );
+    }
+  });
+  flushList();
+  return out;
+}
+
+export function ChatWidget() {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([
+    {
+      role: "assistant",
+      content:
+        "Hi 👋 I'm your procurement assistant. Ask me about pending approvals, spend, suppliers, or how the dashboard works.",
+    },
+  ]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, open]);
+
+  function send(text: string) {
+    const q = text.trim();
+    if (!q) return;
+    setMessages((m) => [...m, { role: "user", content: q }]);
+    setInput("");
+    // Simulate small thinking delay for UX
+    setTimeout(() => {
+      const a = answerQuestion(q);
+      setMessages((m) => [...m, { role: "assistant", content: a }]);
+    }, 250);
+  }
+
+  return (
+    <>
+      {/* Floating launcher */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-hivis text-hivis-foreground shadow-lg hover:scale-105 transition grid place-items-center"
+          aria-label="Open assistant"
+        >
+          <MessageSquare className="h-6 w-6" />
+        </button>
+      )}
+
+      {/* Panel */}
+      {open && (
+        <div className="fixed bottom-6 right-6 z-50 w-[380px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-3rem)] rounded-xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/40">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-md bg-hivis grid place-items-center">
+                <Sparkles className="h-4 w-4 text-hivis-foreground" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold leading-tight">Procurement assistant</div>
+                <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">
+                  Dashboard insights
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={
+                  m.role === "user"
+                    ? "ml-auto max-w-[85%] bg-primary text-primary-foreground rounded-lg px-3 py-2"
+                    : "mr-auto max-w-[90%] bg-secondary text-foreground rounded-lg px-3 py-2"
+                }
+              >
+                {m.role === "assistant" ? (
+                  <div className="prose-sm">{renderMarkdown(m.content)}</div>
+                ) : (
+                  m.content
+                )}
+              </div>
+            ))}
+          </div>
+
+          {messages.length <= 2 && (
+            <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => send(s)}
+                  className="text-[11px] px-2 py-1 rounded-full border border-border bg-card hover:bg-accent"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="p-3 border-t border-border flex items-center gap-2"
+          >
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about approvals, spend, suppliers…"
+              className="flex-1"
+            />
+            <Button type="submit" size="icon" className="bg-hivis text-hivis-foreground hover:bg-hivis/90">
+              <Send className="h-4 w-4" />
+            </Button>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}

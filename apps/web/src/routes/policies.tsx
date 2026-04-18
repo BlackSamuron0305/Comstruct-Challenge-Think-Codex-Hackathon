@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/dashboard/Layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,32 +21,52 @@ const ITEM_GROUPS = [
   "Site supplies",
 ] as const;
 
+const STORAGE_KEY = "comstruct_policies_v1";
+
+const DEFAULTS = {
+  globalDaily: 250,
+  foremanLimits: { "M. Keller": 400, "A. Brunner": 250, "L. Studer": 300, "R. Frei": 200 } as Record<string, number>,
+  groupLimits: { Fasteners: 150, Consumables: 200, PPE: 120, Tools: 500, "Site supplies": 100 } as Record<string, number>,
+  customRules: [] as { id: string; item: string; limit: number | "" }[],
+};
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function PoliciesPage() {
-  const [globalDaily, setGlobalDaily] = useState<number>(250);
+  const saved = loadSaved();
 
-  const [foremanLimits, setForemanLimits] = useState<Record<string, number>>({
-    "M. Keller": 400,
-    "A. Brunner": 250,
-    "L. Studer": 300,
-    "R. Frei": 200,
-  });
-
-  const [groupLimits, setGroupLimits] = useState<Record<string, number>>({
-    Fasteners: 150,
-    Consumables: 200,
-    PPE: 120,
-    Tools: 500,
-    "Site supplies": 100,
-  });
-
-  const [customRules, setCustomRules] = useState<{ id: string; item: string; limit: number }[]>([
-    { id: "r1", item: "Hilti Cordless Drill", limit: 0 },
-  ]);
+  const [globalDaily, setGlobalDaily] = useState<number | "">(saved?.globalDaily ?? DEFAULTS.globalDaily);
+  const [foremanLimits, setForemanLimits] = useState<Record<string, number | "">>(saved?.foremanLimits ?? DEFAULTS.foremanLimits);
+  const [groupLimits, setGroupLimits] = useState<Record<string, number | "">>(saved?.groupLimits ?? DEFAULTS.groupLimits);
+  const [customRules, setCustomRules] = useState<{ id: string; item: string; limit: number | "" }[]>(
+    saved?.customRules ?? DEFAULTS.customRules
+  );
 
   function handleSave() {
+    const data = { globalDaily, foremanLimits, groupLimits, customRules };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // ignore storage errors
+    }
     toast.success("Policies saved", {
-      description: "New thresholds apply to incoming orders immediately.",
+      description: `Default ceiling CHF ${globalDaily || 0} · ${FOREMEN.length} foreman limits · ${ITEM_GROUPS.length} group caps saved.`,
     });
+  }
+
+  // Numeric input helper: returns "" to allow clearing, otherwise the number
+  function parseNum(val: string): number | "" {
+    if (val === "" || val === undefined) return "";
+    const n = Number(val);
+    return isNaN(n) ? "" : n;
   }
 
   return (
@@ -77,8 +97,9 @@ function PoliciesPage() {
                 <Input
                   type="number"
                   min={0}
+                  placeholder="e.g. 250"
                   value={globalDaily}
-                  onChange={(e) => setGlobalDaily(Number(e.target.value))}
+                  onChange={(e) => setGlobalDaily(parseNum(e.target.value))}
                   className="mt-1"
                 />
               </div>
@@ -108,9 +129,10 @@ function PoliciesPage() {
                     <Input
                       type="number"
                       min={0}
-                      value={foremanLimits[f] ?? 0}
+                      placeholder="e.g. 300"
+                      value={foremanLimits[f] ?? ""}
                       onChange={(e) =>
-                        setForemanLimits((prev) => ({ ...prev, [f]: Number(e.target.value) }))
+                        setForemanLimits((prev) => ({ ...prev, [f]: parseNum(e.target.value) }))
                       }
                       className="w-32"
                     />
@@ -139,9 +161,10 @@ function PoliciesPage() {
                   <Input
                     type="number"
                     min={0}
-                    value={groupLimits[g] ?? 0}
+                    placeholder="e.g. 200"
+                    value={groupLimits[g] ?? ""}
                     onChange={(e) =>
-                      setGroupLimits((prev) => ({ ...prev, [g]: Number(e.target.value) }))
+                      setGroupLimits((prev) => ({ ...prev, [g]: parseNum(e.target.value) }))
                     }
                     className="w-28"
                   />
@@ -159,7 +182,10 @@ function PoliciesPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() =>
-                  setCustomRules((r) => [...r, { id: crypto.randomUUID(), item: "", limit: 0 }])
+                  setCustomRules((r) => [
+                    ...r,
+                    { id: crypto.randomUUID(), item: "", limit: "" },
+                  ])
                 }
               >
                 <Plus className="h-3.5 w-3.5 mr-1" /> Rule
@@ -183,11 +209,12 @@ function PoliciesPage() {
                   <Input
                     type="number"
                     min={0}
+                    placeholder="CHF"
                     value={r.limit}
                     onChange={(e) =>
                       setCustomRules((rules) =>
                         rules.map((x) =>
-                          x.id === r.id ? { ...x, limit: Number(e.target.value) } : x
+                          x.id === r.id ? { ...x, limit: parseNum(e.target.value) } : x
                         )
                       )
                     }
@@ -203,7 +230,7 @@ function PoliciesPage() {
                 </div>
               ))}
               {customRules.length === 0 && (
-                <div className="text-xs text-muted-foreground">No item-level overrides.</div>
+                <div className="text-xs text-muted-foreground">No item-level overrides. Click + Rule to add one.</div>
               )}
             </div>
           </Card>
