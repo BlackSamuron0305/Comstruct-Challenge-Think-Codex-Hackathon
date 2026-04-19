@@ -2,7 +2,17 @@ function normalizeBaseUrl(value: string): string {
   return value.replace(/\/$/, '').replace(/\/api$/, '');
 }
 
-const BROWSER_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001');
+function getDefaultBrowserApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8001';
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  return `${protocol}//${hostname}:8001`;
+}
+
+const BROWSER_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || getDefaultBrowserApiBaseUrl());
 const SERVER_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL_SERVER || 'http://api-gateway:8001');
 const ACCESS_KEY = 'comstruct-access-token';
 const REFRESH_KEY = 'comstruct-refresh-token';

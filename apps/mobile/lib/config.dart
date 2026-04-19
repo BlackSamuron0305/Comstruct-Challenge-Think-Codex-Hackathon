@@ -34,9 +34,23 @@ class AppConfig {
     return normalized;
   }
 
+  static String? _runtimeWebApiBaseUrl() {
+    if (!kIsWeb) return null;
+
+    final host = Uri.base.host.trim();
+    if (host.isEmpty) return null;
+
+    final scheme = Uri.base.scheme == 'https' ? 'https' : 'http';
+    return '$scheme://$host:8001';
+  }
+
   static List<String> _defaultCandidateApiBaseUrls() {
     if (kIsWeb) {
-      return ['http://127.0.0.1:8001'];
+      final runtimeHost = _runtimeWebApiBaseUrl();
+      return [
+        if (runtimeHost != null) runtimeHost,
+        'http://127.0.0.1:8001',
+      ];
     }
 
     switch (defaultTargetPlatform) {
@@ -103,7 +117,12 @@ class AppConfig {
   }
 
   static String get backendConnectionHelp {
-    if (kIsWeb) return 'Verify the gateway is running on http://127.0.0.1:8001.';
+    if (kIsWeb) {
+      final runtimeHost = _runtimeWebApiBaseUrl();
+      return runtimeHost == null
+          ? 'Verify the gateway is running on port 8001.'
+          : 'Verify the gateway is reachable at $runtimeHost.';
+    }
     if (defaultTargetPlatform == TargetPlatform.android) {
       return 'On a physical Android phone, http://127.0.0.1:8001 only works when USB adb reverse is active. Otherwise use the laptop LAN URL on the same Wi-Fi and keep port :8001.';
     }

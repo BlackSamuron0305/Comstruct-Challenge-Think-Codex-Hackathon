@@ -63,10 +63,16 @@ await app.register(helmet, {
 });
 
 const loopbackOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+const demoFrontendOriginPattern = /^https?:\/\/(?:(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9.-]+):(8080|8090)$/i;
 
 await app.register(cors, {
   origin: (origin, cb) => {
-    if (!origin || config.corsOrigin.includes(origin) || loopbackOriginPattern.test(origin)) {
+    if (
+      !origin ||
+      config.corsOrigin.includes(origin) ||
+      loopbackOriginPattern.test(origin) ||
+      demoFrontendOriginPattern.test(origin)
+    ) {
       cb(null, true);
       return;
     }
