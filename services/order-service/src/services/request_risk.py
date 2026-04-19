@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import statistics
 from collections import defaultdict
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -86,7 +85,10 @@ async def compute_order_request_risk(
         risk_score = _logistic_risk(z_score)
         max_risk = max(max_risk, risk_score)
 
-        is_anomaly = current_qty > upper_bound or risk_score >= settings.ORDER_LOGISTIC_RISK_THRESHOLD
+        is_anomaly = (
+            current_qty > upper_bound
+            or risk_score >= settings.ORDER_LOGISTIC_RISK_THRESHOLD
+        )
         if is_anomaly:
             signals.append({
                 "product_id": str(item.product_id),

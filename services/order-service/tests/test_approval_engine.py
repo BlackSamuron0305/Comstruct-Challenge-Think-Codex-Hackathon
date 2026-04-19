@@ -29,7 +29,9 @@ def _engine_with_rule(rule):
     db = AsyncMock()
     engine = ApprovalEngine(db)
     engine._get_rule = AsyncMock(return_value=rule)
-    engine._request_risk = AsyncMock(return_value={"requires_review": False, "risk_score": 0.0, "signals": []})
+    engine._request_risk = AsyncMock(
+        return_value={"requires_review": False, "risk_score": 0.0, "signals": []}
+    )
     return engine
 
 

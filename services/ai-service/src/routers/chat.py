@@ -10,10 +10,8 @@ Provides:
 import base64
 import json
 import logging
-import tempfile
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 

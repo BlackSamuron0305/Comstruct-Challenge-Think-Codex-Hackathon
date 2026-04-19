@@ -9,8 +9,6 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-import httpx
-
 from ..config import settings
 from ..llm.anthropic_client import call_claude_json
 

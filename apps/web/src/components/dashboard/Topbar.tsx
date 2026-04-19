@@ -7,7 +7,9 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="h-1 w-1 rounded-full bg-hivis" />
-            <span className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Live</span>
+            <span className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Live
+            </span>
           </div>
           <h1 className="text-display text-xl font-semibold leading-tight truncate">{title}</h1>
           {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
@@ -26,7 +28,9 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
               placeholder="Search orders, SKUs, suppliers…"
               className="bg-transparent outline-none text-sm flex-1 placeholder:text-muted-foreground"
             />
-            <span className="text-mono text-[10px] text-muted-foreground border border-border rounded px-1">⌘K</span>
+            <span className="text-mono text-[10px] text-muted-foreground border border-border rounded px-1">
+              ⌘K
+            </span>
           </div>
           <button className="h-9 w-9 grid place-items-center rounded-md border border-border bg-card hover:bg-accent">
             <Bell className="h-4 w-4" />

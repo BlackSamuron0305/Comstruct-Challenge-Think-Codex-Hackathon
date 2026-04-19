@@ -2,8 +2,14 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
 export function DashboardLayout({
-  title, subtitle, children,
-}: { title: string; subtitle?: string; children: React.ReactNode }) {
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="min-h-screen flex w-full bg-background grid-blueprint">
       <Sidebar />
