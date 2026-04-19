@@ -22,6 +22,7 @@ from ..dependencies import require_internal_secret
 from ..llm.ollama_client import call_ollama_json, call_ollama_stream, call_ollama_vision
 from ..llm.openai_client import embed_one
 from ..services.catalog_client import search_by_vector, search_products
+from ..services.upload_validation import SUPPORTED_AUDIO_EXTENSIONS, SUPPORTED_IMAGE_EXTENSIONS, validate_uploaded_file
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -487,18 +488,14 @@ async def upload_image(
     If the model does not return structured data, the endpoint falls back to
     catalog-grounded suggestions derived from the supplied context.
     """
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported image type: {file.content_type}. "
-                   f"Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}",
-        )
-
     content = await file.read()
-    if len(content) > MAX_IMAGE_SIZE:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Image too large (max 10MB)")
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=ALLOWED_IMAGE_TYPES,
+        allowed_extensions=SUPPORTED_IMAGE_EXTENSIONS,
+        max_size=MAX_IMAGE_SIZE,
+    )
 
     image_b64 = base64.b64encode(content).decode("utf-8")
     image_size_kb = len(content) / 1024
@@ -601,18 +598,14 @@ async def transcribe_audio(
 
     Stub: actual transcription will be done via Whisper API / local model.
     """
-    if file.content_type not in ALLOWED_AUDIO_TYPES:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported audio type: {file.content_type}. "
-                   f"Allowed: {', '.join(ALLOWED_AUDIO_TYPES)}",
-        )
-
     content = await file.read()
-    if len(content) > MAX_AUDIO_SIZE:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Audio too large (max 25MB)")
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=ALLOWED_AUDIO_TYPES,
+        allowed_extensions=SUPPORTED_AUDIO_EXTENSIONS,
+        max_size=MAX_AUDIO_SIZE,
+    )
 
     audio_size_kb = len(content) / 1024
 

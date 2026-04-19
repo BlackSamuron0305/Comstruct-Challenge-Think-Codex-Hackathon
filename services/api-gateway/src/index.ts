@@ -11,7 +11,12 @@ import { registerAuthRoutes } from './auth.js';
 import { registerProxies } from './proxy.js';
 import { registerWebSocket } from './ws.js';
 
-const app = Fastify({ logger: { level: config.logLevel } });
+const app = Fastify({
+  logger: { level: config.logLevel },
+  requestTimeout: config.requestTimeoutMs,
+  keepAliveTimeout: config.keepAliveTimeoutMs,
+  bodyLimit: config.bodyLimitBytes,
+});
 
 await app.register(sensible);
 
@@ -67,7 +72,7 @@ await app.register(cors, {
 
 // Rate limiting: stricter for auth, relaxed for normal API
 await app.register(rateLimit, {
-  max: 200,
+  max: config.rateLimitPerMinute,
   timeWindow: '1 minute',
   keyGenerator: (req) => {
     // Rate limit by user ID if authenticated, else by IP

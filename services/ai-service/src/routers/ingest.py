@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from ..dependencies import require_internal_secret
 from ..events import publish_ai_progress
 from ..services.ingestion import ingest_supplier_file, preview_supplier_file
+from ..services.upload_validation import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    SUPPORTED_DOCUMENT_TYPES,
+    validate_uploaded_file,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -31,6 +36,13 @@ async def preview(
     mapping_overrides: str | None = Form(None),
 ):
     content = await file.read()
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=SUPPORTED_DOCUMENT_TYPES,
+        allowed_extensions=SUPPORTED_DOCUMENT_EXTENSIONS,
+        max_size=50 * 1024 * 1024,
+    )
     return await preview_supplier_file(
         filename=file.filename or "upload.csv",
         content=content,
@@ -52,6 +64,13 @@ async def supplier_file(
     await publish_ai_progress(job_id, status="started", progress=0.0, detail="Reading file...")
 
     content = await file.read()
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=SUPPORTED_DOCUMENT_TYPES,
+        allowed_extensions=SUPPORTED_DOCUMENT_EXTENSIONS,
+        max_size=50 * 1024 * 1024,
+    )
     await publish_ai_progress(job_id, status="processing", progress=0.2, detail="Parsing document...")
 
     result = await ingest_supplier_file(

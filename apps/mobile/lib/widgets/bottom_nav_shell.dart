@@ -24,14 +24,12 @@ class BottomNavShell extends StatelessWidget {
     final idx = _indexOf(context);
     return Scaffold(
       body: child,
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(26),
-            child: NavigationBar(
-              height: 92,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: NavigationBar(
+            height: 84,
               backgroundColor: Colors.white,
               indicatorColor: CColors.tealLighter,
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -66,7 +64,6 @@ class BottomNavShell extends StatelessWidget {
                   label: t(context, 'navFavorites'),
                 ),
               ],
-            ),
           ),
         ),
       ),

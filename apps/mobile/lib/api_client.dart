@@ -7,6 +7,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
+import 'config.dart';
+
 
 String describeApiError(Object error, {String? baseUrl}) {
   if (error is DioException) {
@@ -111,8 +113,9 @@ class OfflineCache {
 
 // ─── API Client ───────────────────────────────────────────────────────
 class ApiClient {
-  ApiClient({required this.baseUrl, required this.tokens})
-      : dio = Dio(BaseOptions(
+  ApiClient({required String baseUrl, required this.tokens})
+      : _initialBaseUrl = baseUrl,
+        dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 15),
           receiveTimeout: const Duration(seconds: 30),
@@ -127,6 +130,11 @@ class ApiClient {
         h.next(opts);
       },
       onError: (e, h) async {
+        final recovered = await _retryOnAlternateBaseUrl(e);
+        if (recovered != null) {
+          return h.resolve(recovered);
+        }
+
         if (e.response?.statusCode == 401 && tokens.refresh != null) {
           final ok = await _tryRefresh();
           if (ok) {
@@ -156,10 +164,60 @@ class ApiClient {
     ));
   }
 
-  final String baseUrl;
+  final String _initialBaseUrl;
   final TokenStore tokens;
   final Dio dio;
   final _uuid = const Uuid();
+
+  String get baseUrl => dio.options.baseUrl;
+
+  bool _isConnectivityError(DioException error) {
+    return error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout;
+  }
+
+  Future<Response<dynamic>?> _retryOnAlternateBaseUrl(DioException error) async {
+    if (!_isConnectivityError(error)) return null;
+    if (error.requestOptions.extra['baseUrlRetried'] == true) return null;
+
+    final current = dio.options.baseUrl;
+    final candidates = AppConfig.candidateApiBaseUrls.where((url) => url != current).toList();
+    if (candidates.isEmpty) return null;
+
+    for (final candidate in candidates) {
+      try {
+        final probe = await Dio(BaseOptions(
+          baseUrl: candidate,
+          connectTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+          sendTimeout: const Duration(seconds: 4),
+        )).get('/health');
+
+        if (probe.statusCode == 200) {
+          dio.options.baseUrl = candidate;
+          final retryRequest = error.requestOptions.copyWith(
+            baseUrl: candidate,
+            headers: {
+              ...error.requestOptions.headers,
+              if (tokens.access != null) 'Authorization': 'Bearer ${tokens.access}',
+            },
+            extra: {
+              ...error.requestOptions.extra,
+              'baseUrlRetried': true,
+              'previousBaseUrl': current.isEmpty ? _initialBaseUrl : current,
+            },
+          );
+          return await dio.fetch(retryRequest);
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return null;
+  }
 
   Future<bool> _tryRefresh() async {
     try {

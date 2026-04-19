@@ -20,6 +20,7 @@ from src.llm.ollama_client import (
 )
 from src.services.classification import _stub_classify
 from src.routers.documents import _detect_procurement_constraints
+from src.prompts.column_mapper import CANONICAL_FIELDS as COLUMN_MAPPER_FIELDS
 
 
 # ── JSON extraction ───────────────────────────────────────────────
@@ -167,6 +168,20 @@ class TestDocumentConstraints:
         assert result["source_locked"] is True
         assert result["contract_binding"] == "mandatory_supplier"
         assert result["mandatory_supplier_name"] == "Swiss Fix AG"
+
+
+class TestIngestionSchemaAlignment:
+    def test_column_mapper_uses_catalog_database_fields(self):
+        assert "sku" in COLUMN_MAPPER_FIELDS
+        assert "name" in COLUMN_MAPPER_FIELDS
+        assert "unit_price" in COLUMN_MAPPER_FIELDS
+        assert "currency" in COLUMN_MAPPER_FIELDS
+        assert "packaging_qty" in COLUMN_MAPPER_FIELDS
+        assert "source_delivery_days" in COLUMN_MAPPER_FIELDS
+        assert "special_info" in COLUMN_MAPPER_FIELDS
+
+        stale_fields = {"pack_size", "lead_time_days", "min_order_qty", "datasheet_url"}
+        assert stale_fields.isdisjoint(set(COLUMN_MAPPER_FIELDS))
 
 
 class TestWorkflowLogic:

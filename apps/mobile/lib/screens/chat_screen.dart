@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api_client.dart';
 import '../app_scope.dart';
+import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../translations.dart';
@@ -98,7 +99,8 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _messages.add(_Msg(role: 'assistant', text: summary, items: items));
       });
-    } catch (_) {
+    } catch (e) {
+      final detailedError = '${describeApiError(e, baseUrl: AppScope.api.baseUrl)} ${AppConfig.backendConnectionHelp}';
       try {
         final localRes = await OfflineCaptureAssistant.analyzeVoiceText(text);
         final localItems = List<Map<String, dynamic>>.from((localRes['items'] as List?) ?? []);
@@ -111,15 +113,15 @@ class _ChatScreenState extends State<ChatScreen> {
             role: 'assistant',
             text: localItems.isNotEmpty
                 ? (localSummary?.isNotEmpty == true
-                    ? localSummary!
+                    ? '${localSummary!}\n\n$detailedError'
                     : foundProductsLabel.replaceAll('{n}', '${localItems.length}'))
-                : connectionErrorLabel,
+                : '$connectionErrorLabel\n\n$detailedError',
             items: localItems,
           ));
         });
       } catch (_) {
         setState(() {
-          _messages.add(_Msg(role: 'assistant', text: connectionErrorLabel));
+          _messages.add(_Msg(role: 'assistant', text: '$connectionErrorLabel\n\n$detailedError'));
         });
       }
     } finally {

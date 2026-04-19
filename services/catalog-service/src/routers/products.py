@@ -76,6 +76,7 @@ async def _apply_delivery_history(rows: list[Product], db: AsyncSession) -> None
     }
 
     changed = False
+    changed_rows: list[Product] = []
     for row in rows:
         avg_days, sample_size = product_history.get(str(row.id), (None, 0))
         if avg_days is None:
@@ -89,15 +90,22 @@ async def _apply_delivery_history(rows: list[Product], db: AsyncSession) -> None
         if avg_days is not None:
             confidence = Decimal(str(min(1, sample_size / 5 if sample_size else 0.2))).quantize(Decimal("0.01"))
 
+        row_changed = False
         if row.expected_delivery_days != avg_days:
             row.expected_delivery_days = avg_days
             changed = True
+            row_changed = True
         if row.delivery_confidence != confidence:
             row.delivery_confidence = confidence
             changed = True
+            row_changed = True
+        if row_changed:
+            changed_rows.append(row)
 
     if changed:
         await db.commit()
+        for row in changed_rows:
+            await db.refresh(row)
 
 
 def _strategy_weights(strategy: str) -> dict[str, Decimal]:

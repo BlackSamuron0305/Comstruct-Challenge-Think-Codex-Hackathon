@@ -30,6 +30,12 @@ from ..services.parsing import (
     parse_pdf_to_table,
     parse_tabular,
 )
+from ..services.upload_validation import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    SUPPORTED_DOCUMENT_TYPES,
+    SUPPORTED_IMAGE_EXTENSIONS,
+    validate_uploaded_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +282,13 @@ async def extract_pdf(
 ):
     """Extract structured data from a PDF document using markdown-first chunked AI."""
     content = await file.read()
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types={"application/pdf"},
+        allowed_extensions={".pdf"},
+        max_size=MAX_DOC_SIZE,
+    )
     df = parse_pdf_to_table(content)
     page_markdowns = parse_pdf_to_markdown_pages(content)
     markdown_chunks = build_markdown_chunks(
@@ -368,6 +381,13 @@ async def extract_excel(
 ):
     """Extract structured product data from an Excel/CSV file."""
     content = await file.read()
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=SUPPORTED_DOCUMENT_TYPES,
+        allowed_extensions=SUPPORTED_DOCUMENT_EXTENSIONS,
+        max_size=MAX_DOC_SIZE,
+    )
     filename = file.filename or "upload.xlsx"
     df = parse_tabular(filename, content)
 
@@ -421,14 +441,14 @@ async def extract_image(
     default_currency: str = Form("CHF"),
 ):
     """Extract structured data from an image (photo of invoice, price list, delivery note) using OCR + AI."""
-    if file.content_type and file.content_type not in ALLOWED_IMAGE_TYPES:
-        from fastapi import HTTPException
-        raise HTTPException(400, f"Unsupported image type: {file.content_type}. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}")
-
     content = await file.read()
-    if len(content) > MAX_DOC_SIZE:
-        from fastapi import HTTPException
-        raise HTTPException(400, "File too large (max 50MB)")
+    validate_uploaded_file(
+        file,
+        content,
+        allowed_content_types=ALLOWED_IMAGE_TYPES,
+        allowed_extensions=SUPPORTED_IMAGE_EXTENSIONS,
+        max_size=MAX_DOC_SIZE,
+    )
 
     if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
         try:

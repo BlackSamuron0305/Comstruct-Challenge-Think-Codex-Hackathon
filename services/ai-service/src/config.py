@@ -6,6 +6,13 @@ class Settings(BaseSettings):
 
     SERVICE_PORT: int = 8005
 
+    @property
+    def runtime_llm_provider(self) -> str:
+        provider = (self.LLM_PROVIDER or "ollama").strip().lower()
+        if provider == "openai" and self.OPENAI_API_KEY:
+            return "openai"
+        return "ollama"
+
     INTERNAL_SHARED_SECRET: str = "dev-secret"
     CATALOG_SERVICE_URL: str = "http://catalog-service:8003"
     REDIS_URL: str = "redis://:dev_password@redis:6379/0"

@@ -23,6 +23,7 @@ from ..db import Base
 class Supplier(Base):
     __tablename__ = "suppliers"
     __table_args__ = {"schema": "catalog"}
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -41,6 +42,7 @@ class Supplier(Base):
 
 class Product(Base):
     __tablename__ = "products"
+    __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
         UniqueConstraint("supplier_id", "sku", name="uq_supplier_sku"),
         Index("ix_products_category", "category"),

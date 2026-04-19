@@ -88,7 +88,7 @@ async def call_ollama_json(
     stub: dict | None = None,
 ) -> dict[str, Any]:
     """Dispatch structured generation to OpenAI via LangChain or Ollama fallback."""
-    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+    if settings.runtime_llm_provider == "openai":
         return await call_langchain_openai_json(
             system=system,
             messages=messages,
@@ -135,7 +135,7 @@ async def call_ollama_stream(
     max_tokens: int = 1024,
 ) -> AsyncIterator[str]:
     """Stream text from OpenAI via LangChain or Ollama fallback."""
-    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+    if settings.runtime_llm_provider == "openai":
         async for chunk in call_langchain_openai_stream(
             system=system,
             user_message=user_message,
@@ -187,7 +187,7 @@ async def call_ollama_vision(
     content_type: str | None = None,
 ) -> dict[str, Any]:
     """Dispatch vision analysis to OpenAI via LangChain or Ollama fallback."""
-    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+    if settings.runtime_llm_provider == "openai":
         return await call_langchain_openai_vision_json(
             system=system,
             user_message=user_message,
