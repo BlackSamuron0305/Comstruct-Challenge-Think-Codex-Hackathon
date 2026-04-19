@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import 'config.dart';
@@ -355,31 +356,76 @@ Map<String, dynamic> applyClarificationSelection({
 class TokenStore {
   static const _kAccess = 'comstruct.access';
   static const _kRefresh = 'comstruct.refresh';
+
   final _storage = const FlutterSecureStorage();
+  SharedPreferences? _prefs;
+  bool _secureStorageAvailable = true;
+
   String? access;
   String? refresh;
 
+  Future<SharedPreferences> get _sharedPrefs async =>
+      _prefs ??= await SharedPreferences.getInstance();
+
+  Future<String?> _readValue(String key) async {
+    if (_secureStorageAvailable) {
+      try {
+        return await _storage.read(key: key);
+      } catch (_) {
+        _secureStorageAvailable = false;
+      }
+    }
+    final prefs = await _sharedPrefs;
+    return prefs.getString(key);
+  }
+
+  Future<void> _writeValue(String key, String value) async {
+    if (_secureStorageAvailable) {
+      try {
+        await _storage.write(key: key, value: value);
+        return;
+      } catch (_) {
+        _secureStorageAvailable = false;
+      }
+    }
+    final prefs = await _sharedPrefs;
+    await prefs.setString(key, value);
+  }
+
+  Future<void> _deleteValue(String key) async {
+    if (_secureStorageAvailable) {
+      try {
+        await _storage.delete(key: key);
+        return;
+      } catch (_) {
+        _secureStorageAvailable = false;
+      }
+    }
+    final prefs = await _sharedPrefs;
+    await prefs.remove(key);
+  }
+
   Future<void> load() async {
-    access = await _storage.read(key: _kAccess);
-    refresh = await _storage.read(key: _kRefresh);
+    access = await _readValue(_kAccess);
+    refresh = await _readValue(_kRefresh);
   }
 
   Future<void> save({String? access, String? refresh}) async {
     if (access != null) {
       this.access = access;
-      await _storage.write(key: _kAccess, value: access);
+      await _writeValue(_kAccess, access);
     }
     if (refresh != null) {
       this.refresh = refresh;
-      await _storage.write(key: _kRefresh, value: refresh);
+      await _writeValue(_kRefresh, refresh);
     }
   }
 
   Future<void> clear() async {
     access = null;
     refresh = null;
-    await _storage.delete(key: _kAccess);
-    await _storage.delete(key: _kRefresh);
+    await _deleteValue(_kAccess);
+    await _deleteValue(_kRefresh);
   }
 }
 

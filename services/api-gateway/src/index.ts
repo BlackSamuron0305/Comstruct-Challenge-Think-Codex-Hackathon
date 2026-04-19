@@ -56,16 +56,25 @@ await app.register(helmet, {
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'", 'ws:', 'wss:', 'http://localhost:*'],
+      connectSrc: ["'self'", 'ws:', 'wss:', 'http://localhost:*', 'http://127.0.0.1:*'],
     },
   },
   crossOriginEmbedderPolicy: false,
 });
 
+const loopbackOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+
 await app.register(cors, {
-  origin: config.corsOrigin,
+  origin: (origin, cb) => {
+    if (!origin || config.corsOrigin.includes(origin) || loopbackOriginPattern.test(origin)) {
+      cb(null, true);
+      return;
+    }
+
+    cb(null, false);
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 86400,
 });

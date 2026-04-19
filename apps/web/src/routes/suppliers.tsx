@@ -424,10 +424,10 @@ function Suppliers() {
                     }}
                     className="text-sm flex-1 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center gap-2"
                   >
-                    {supplier.autoSync ? (
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    ) : (
+                    {supplier.supportsDocuments ? (
                       <ArrowUpFromLine className="h-3.5 w-3.5" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
                     )}
                     {supplier.actionLabel}
                   </button>

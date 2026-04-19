@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight, Info, TriangleAlert } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, TriangleAlert } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { DashboardLayout } from "@/components/dashboard/Layout";
@@ -109,18 +109,6 @@ function Overview() {
 
   return (
     <DashboardLayout title="Overview" subtitle={subtitle}>
-      <div className="mb-4 rounded-lg border border-border bg-card p-4 flex items-start gap-3">
-        <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground shrink-0">
-          <Info className="h-4 w-4" />
-        </div>
-        <div className="text-sm">
-          <div className="font-medium">Live operational procurement view</div>
-          <p className="text-muted-foreground">
-            This dashboard is backed by the running services. Start with blocked approvals, then open the order timeline or refresh supplier data.
-          </p>
-        </div>
-      </div>
-
       {isLoading ? (
         <QueryState kind="loading" title="Loading live metrics" description="Spend, approvals, and project signals are being refreshed now." />
       ) : isError ? (

@@ -7,6 +7,10 @@ import { api, type OrderSummary, type ProjectRecord, type SupplierRecord } from 
 import { answerQuestion } from "./answerEngine";
 
 type Msg = { role: "user" | "assistant"; content: string };
+type ChatApiResponse = {
+  reply?: string;
+  suggestions?: string[];
+};
 
 const SUGGESTIONS = [
   "What needs approval?",
@@ -67,11 +71,12 @@ function renderMarkdown(text: string) {
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
       content:
-        "Hi 👋 I'm your procurement assistant. I answer from the live dashboard data and explain statistical approvals, spend, suppliers, and project activity in plain language.",
+        "Hi 👋 I'm your procurement assistant. Ask me about approvals, spend, suppliers, or materials and I will use the live AI service to help.",
     },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -90,20 +95,50 @@ export function ChatWidget() {
   });
 
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects]);
+  const assistantContext = useMemo(() => ({
+    pending_approval_count: orders.filter((order) => order.status === "pending_approval").length,
+    supplier_count: suppliers.length,
+    project_names: projects.slice(0, 12).map((project) => project.name),
+    recent_orders: orders.slice(0, 8).map((order) => ({
+      id: order.id,
+      project: order.project_id ? (projectMap.get(order.project_id) ?? order.project_id) : null,
+      supplier: order.supplier_name ?? null,
+      total_amount: order.total_amount,
+      currency: order.currency,
+      status: order.status,
+      requires_approval: order.requires_approval ?? false,
+    })),
+  }), [orders, suppliers, projects, projectMap]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, open]);
+  }, [messages, open, busy]);
 
-  function send(text: string) {
+  async function send(text: string) {
     const q = text.trim();
-    if (!q) return;
+    if (!q || busy) return;
+
     setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
-    setTimeout(() => {
-      const a = answerQuestion(q, { orders, suppliers, projectMap });
-      setMessages((m) => [...m, { role: "assistant", content: a }]);
-    }, 180);
+    setBusy(true);
+
+    try {
+      const language = typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("de")
+        ? "de"
+        : "en";
+      const response = await api.post<ChatApiResponse>("/api/ai/chat", {
+        message: q,
+        language,
+        context: assistantContext,
+      });
+      const reply = response.reply?.trim() || answerQuestion(q, { orders, suppliers, projectMap });
+      setMessages((m) => [...m, { role: "assistant", content: reply }]);
+    } catch {
+      const fallback = answerQuestion(q, { orders, suppliers, projectMap });
+      setMessages((m) => [...m, { role: "assistant", content: fallback }]);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -130,7 +165,7 @@ export function ChatWidget() {
               <div>
                 <div className="text-sm font-semibold leading-tight">Procurement assistant</div>
                 <div className="text-[10px] text-mono uppercase tracking-widest text-muted-foreground">
-                  Dashboard insights
+                  Live AI assistant
                 </div>
               </div>
             </div>
@@ -160,6 +195,11 @@ export function ChatWidget() {
                 )}
               </div>
             ))}
+            {busy && (
+              <div className="mr-auto max-w-[90%] rounded-lg bg-secondary px-3 py-2 text-foreground">
+                Thinking…
+              </div>
+            )}
           </div>
 
           {messages.length <= 2 && (
@@ -168,7 +208,8 @@ export function ChatWidget() {
                 <button
                   key={s}
                   onClick={() => send(s)}
-                  className="text-[11px] px-2 py-1 rounded-full border border-border bg-card hover:bg-accent"
+                  disabled={busy}
+                  className="text-[11px] px-2 py-1 rounded-full border border-border bg-card hover:bg-accent disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -186,10 +227,11 @@ export function ChatWidget() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about approvals, spend, suppliers…"
+              placeholder="Ask the procurement AI…"
               className="flex-1"
+              disabled={busy}
             />
-            <Button type="submit" size="icon" className="bg-hivis text-hivis-foreground hover:bg-hivis/90">
+            <Button type="submit" size="icon" className="bg-hivis text-hivis-foreground hover:bg-hivis/90" disabled={busy}>
               <Send className="h-4 w-4" />
             </Button>
           </form>

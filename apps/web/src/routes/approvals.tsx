@@ -262,10 +262,10 @@ function Approvals() {
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Requester</th>
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Supplier</th>
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Ordered items</th>
-                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Route</th>
+                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Status</th>
                   <th className="text-right font-normal px-5 py-3 whitespace-nowrap">Items</th>
                   <th className="text-right font-normal px-5 py-3 whitespace-nowrap">Total</th>
-                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Status</th>
+                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Route</th>
                 </tr>
               </thead>
               <tbody>
@@ -277,12 +277,12 @@ function Approvals() {
                     <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{order.foremanName}</td>
                     <td className="px-5 py-3 whitespace-nowrap">{order.supplierName}</td>
                     <td className="px-5 py-3 max-w-[22rem] text-xs text-muted-foreground whitespace-normal">{describeItems(order)}</td>
+                    <td className="px-5 py-3 whitespace-nowrap"><StatusBadge status={order.status} /></td>
+                    <td className="px-5 py-3 text-right tabular whitespace-nowrap">{order.items?.length ?? 0}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium whitespace-nowrap">{formatCurrency(order.total, order.currency)}</td>
                     <td className="px-5 py-3 whitespace-nowrap">
                       <span className={["text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded", routeTone(order)].join(" ")}>{routeLabel(order)}</span>
                     </td>
-                    <td className="px-5 py-3 text-right tabular whitespace-nowrap">{order.items?.length ?? 0}</td>
-                    <td className="px-5 py-3 text-right tabular font-medium whitespace-nowrap">{formatCurrency(order.total, order.currency)}</td>
-                    <td className="px-5 py-3 whitespace-nowrap"><StatusBadge status={order.status} /></td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
