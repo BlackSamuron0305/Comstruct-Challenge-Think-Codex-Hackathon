@@ -1,4 +1,4 @@
-import { Bell, Workflow } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -75,13 +75,6 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="hidden xl:flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
-            <Workflow className="h-3.5 w-3.5 text-primary" />
-            <div className="text-[11px]">
-              <span className="text-muted-foreground">AI flow:</span> markdown → extract → review
-            </div>
-          </div>
-
           <div className="relative">
             <button
               type="button"
