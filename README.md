@@ -225,6 +225,7 @@ See [docs/security-and-compliance.md](docs/security-and-compliance.md) for full 
 | [docs/security-and-compliance.md](docs/security-and-compliance.md) | GDPR, OWASP Top 10, security controls, AI governance |
 | [docs/mobile-app.md](docs/mobile-app.md) | Flutter mobile — offline-first, voice/OCR ordering, on-device LLM |
 | [docs/development-guide.md](docs/development-guide.md) | Local setup, testing, linting, monorepo tooling |
+| [docs/execution-roadmap.md](docs/execution-roadmap.md) | 40-sprint delivery tracker & next-slice priorities |
 
 ## Project Structure
 
