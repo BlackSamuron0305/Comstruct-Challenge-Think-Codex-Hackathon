@@ -14,15 +14,14 @@ import 'offline_queue.dart';
 import 'screens/c_catalog_screen.dart';
 import 'screens/c_home_screen.dart';
 import 'screens/cart_screen.dart';
-import 'screens/catalog_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/favorites_screen.dart';
 import 'screens/image_order_screen.dart';
 import 'screens/language_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/my_orders_screen.dart';
 import 'screens/offline_queue_screen.dart';
 import 'screens/order_detail_screen.dart';
-import 'screens/orders_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/projects_screen.dart';
 import 'screens/smart_add_screen.dart';
@@ -84,22 +83,24 @@ GoRouter _buildRouter(BuildContext context) {
     refreshListenable: GoRouterRefreshStream(auth.stream),
     redirect: (ctx, state) {
       final loggedIn = auth.state.user != null;
-      final atLogin  = state.matchedLocation == '/login';
-      if (!loggedIn) return atLogin ? null : '/login';
-      if (atLogin)   return '/c-home';
+      final atAuth = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+      if (!loggedIn) return atAuth ? null : '/login';
+      if (atAuth) return '/c-home';
       return null;
     },
     routes: [
       GoRoute(path: '/login',    builder: (_, __) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, __) => const LoginScreen(startInRegisterMode: true)),
       GoRoute(path: '/projects', builder: (_, __) => const ProjectsScreen()),
 
       // ── Shell with bottom nav ─────────────────────────────────────
       ShellRoute(
         builder: (_, __, child) => BottomNavShell(child: child),
         routes: [
-          GoRoute(path: '/c-home',    builder: (_, __) => const CHomeScreen()),
-          GoRoute(path: '/c-orders',  builder: (_, __) => const MyOrdersScreen()),
+          GoRoute(path: '/c-orders', builder: (_, __) => const MyOrdersScreen()),
+          GoRoute(path: '/c-home', builder: (_, __) => const CHomeScreen()),
           GoRoute(path: '/c-profile', builder: (_, __) => const ProfileScreen()),
+          GoRoute(path: '/c-favorites', builder: (_, __) => const FavoritesScreen()),
         ],
       ),
 
@@ -124,9 +125,9 @@ GoRouter _buildRouter(BuildContext context) {
       ),
 
       // ── Legacy routes ─────────────────────────────────────────────
-      GoRoute(path: '/catalog',       builder: (_, __) => const CatalogScreen()),
+      GoRoute(path: '/catalog',       builder: (_, __) => const CCatalogScreen()),
       GoRoute(path: '/cart',          builder: (_, __) => const CartScreen()),
-      GoRoute(path: '/orders',        builder: (_, __) => const OrdersScreen()),
+      GoRoute(path: '/orders',        builder: (_, __) => const MyOrdersScreen()),
       GoRoute(path: '/smart-add',     builder: (_, __) => const SmartAddScreen()),
       GoRoute(path: '/image-order',   builder: (_, __) => const ImageOrderScreen()),
       GoRoute(path: '/voice-order',   builder: (_, __) => const VoiceOrderScreen()),

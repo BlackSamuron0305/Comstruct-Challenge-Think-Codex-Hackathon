@@ -82,7 +82,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         title: const Text('Orders'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/catalog'),
+          onPressed: () => context.go('/c-home'),
         ),
       ),
       body: RefreshIndicator(

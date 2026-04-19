@@ -178,6 +178,7 @@ const _translations = <String, Map<String, String>>{
     'navOrders': 'Orders',
     'navNewOrder': 'New Order',
     'navProfile': 'Profile',
+    'navFavorites': 'Favorites',
     // misc
     'added': 'Added',
     'error': 'Error',

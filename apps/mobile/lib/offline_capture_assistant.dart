@@ -13,14 +13,19 @@ class OfflineCaptureAssistant {
   };
 
   static const Map<String, List<String>> _aliases = {
-    'screws': ['screw', 'screws', 'schraube', 'schrauben', 'torx'],
-    'anchors': ['anchor', 'anchors', 'dubel', 'dübel', 'nylon'],
-    'gloves': ['glove', 'gloves', 'handschuh', 'handschuhe', 'nitril'],
-    'masks': ['mask', 'masks', 'ffp2', 'atemschutz'],
-    'tape': ['tape', 'tapes', 'band', 'gewebeband'],
-    'foam': ['foam', 'pu', 'schaum', 'sealant', 'silikon', 'silicone'],
-    'drill': ['drill', 'bohrer', 'sds'],
-    'battery': ['battery', 'batterie', 'aa'],
+    'screws': ['screw', 'screws', 'schraube', 'schrauben', 'torx', 'drywall', 'gips', 'gipsschraube', 'trockenbau'],
+    'anchors': ['anchor', 'anchors', 'dubel', 'dübel', 'nylon', 'fixing'],
+    'gloves': ['glove', 'gloves', 'handschuh', 'handschuhe', 'nitril', 'nitrile', 'workglove'],
+    'masks': ['mask', 'masks', 'ffp2', 'atemschutz', 'respirator'],
+    'goggles': ['goggle', 'goggles', 'schutzbrille', 'glasses'],
+    'helmet': ['helmet', 'hardhat', 'helm'],
+    'tape': ['tape', 'tapes', 'band', 'gewebeband', 'duct'],
+    'foam': ['foam', 'pu', 'schaum', 'sealant', 'silikon', 'silicone', 'filler'],
+    'drill': ['drill', 'bohrer', 'sds', 'bit'],
+    'battery': ['battery', 'batterie', 'aa', 'aaa'],
+    'bags': ['bag', 'bags', 'trash', 'rubble', 'sack'],
+    'marker': ['marker', 'marking', 'spray', 'chalk'],
+    'ties': ['tie', 'ties', 'binder', 'cabletie', 'ziptie'],
   };
 
   static Future<Map<String, dynamic>> analyzeVoiceText(String text) async {
@@ -176,7 +181,7 @@ class OfflineCaptureAssistant {
     List<String> tokens,
     String rawText,
   ) {
-    final haystack = '${product['name'] ?? ''} ${product['category'] ?? ''}'
+    final haystack = '${product['name'] ?? ''} ${product['category'] ?? ''} ${product['description'] ?? ''} ${product['sku'] ?? ''}'
         .toLowerCase();
 
     var score = 0;

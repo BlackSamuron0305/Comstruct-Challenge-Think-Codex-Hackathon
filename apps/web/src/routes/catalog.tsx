@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { api, formatCurrency, shortId, type ProductRecord, type SupplierRecord } from "@/lib/api";
+import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
+import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
 
 export const Route = createFileRoute("/catalog")({
   head: () => ({
@@ -49,6 +51,7 @@ type ImportResult = {
 };
 
 type CatalogRow = {
+  id: string;
   sku: string;
   name: string;
   group: string;
@@ -106,8 +109,24 @@ function Catalog() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [selectedTrade, setSelectedTrade] = useState<string>("all");
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [standardsOnly, setStandardsOnly] = useState<boolean>(false);
   const [lastImportResult, setLastImportResult] = useState<ImportResult | null>(null);
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [localSuppliers, setLocalSuppliers] = useState<LocalSupplierDraft[]>(() => loadLocalSuppliers());
+  const [draftSupplierName, setDraftSupplierName] = useState("");
+  const [draftSupplierContact, setDraftSupplierContact] = useState("");
+  const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
+  const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
+  const [draftSupplierChannel, setDraftSupplierChannel] = useState<SupplierChannel>("Excel/PDF upload");
+  const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [localSuppliers, setLocalSuppliers] = useState<LocalSupplierDraft[]>(() => loadLocalSuppliers());
+  const [draftSupplierName, setDraftSupplierName] = useState("");
+  const [draftSupplierContact, setDraftSupplierContact] = useState("");
+  const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
+  const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
+  const [draftSupplierChannel, setDraftSupplierChannel] = useState<SupplierChannel>("Excel/PDF upload");
 
   function resetImportDraft() {
     setSelectedFile(null);
@@ -116,6 +135,84 @@ function Catalog() {
     setMappingOverrides({});
     setLastImportResult(null);
     previewMutation.reset();
+  }
+
+  function resetSupplierDraft() {
+    setDraftSupplierName("");
+    setDraftSupplierContact("");
+    setDraftSupplierEmail("");
+    setDraftSupplierPhone("");
+    setDraftSupplierChannel("Excel/PDF upload");
+  }
+
+  function handleSupplierSelect(nextValue: string) {
+    if (nextValue === "__new__") {
+      setShowAddSupplier(true);
+      return;
+    }
+    setSelectedSupplierId(nextValue);
+  }
+
+  function handleCreateSupplier() {
+    if (!draftSupplierName.trim()) {
+      toast.error("Please enter a supplier name.");
+      return;
+    }
+
+    const created = createLocalSupplierDraft({
+      name: draftSupplierName,
+      contact_name: draftSupplierContact,
+      email: draftSupplierEmail,
+      phone: draftSupplierPhone,
+      channel: draftSupplierChannel,
+    });
+
+    const next = [created, ...localSuppliers];
+    setLocalSuppliers(next);
+    saveLocalSuppliers(next);
+    setSelectedSupplierId(created.id);
+    setShowAddSupplier(false);
+    resetSupplierDraft();
+    toast.success(`${created.name} added for this workspace.`);
+  }
+
+  function resetSupplierDraft() {
+    setDraftSupplierName("");
+    setDraftSupplierContact("");
+    setDraftSupplierEmail("");
+    setDraftSupplierPhone("");
+    setDraftSupplierChannel("Excel/PDF upload");
+  }
+
+  function handleSupplierSelect(nextValue: string) {
+    if (nextValue === "__new__") {
+      setShowAddSupplier(true);
+      return;
+    }
+    setSelectedSupplierId(nextValue);
+  }
+
+  function handleCreateSupplier() {
+    if (!draftSupplierName.trim()) {
+      toast.error("Please enter a supplier name.");
+      return;
+    }
+
+    const created = createLocalSupplierDraft({
+      name: draftSupplierName,
+      contact_name: draftSupplierContact,
+      email: draftSupplierEmail,
+      phone: draftSupplierPhone,
+      channel: draftSupplierChannel,
+    });
+
+    const next = [created, ...localSuppliers];
+    setLocalSuppliers(next);
+    saveLocalSuppliers(next);
+    setSelectedSupplierId(created.id);
+    setShowAddSupplier(false);
+    resetSupplierDraft();
+    toast.success(`${created.name} added for this workspace.`);
   }
 
   const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
@@ -127,6 +224,18 @@ function Catalog() {
     queryKey: ["catalog-suppliers"],
     queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
   });
+
+  const supplierOptions = useMemo(() => {
+    const live = suppliers.map((supplier) => ({ ...supplier, channel: "API/PunchOut" as SupplierChannel }));
+    const manual = localSuppliers.map((supplier) => ({ ...supplier }));
+    return [...manual, ...live];
+  }, [localSuppliers, suppliers]);
+
+  const supplierOptions = useMemo(() => {
+    const live = suppliers.map((supplier) => ({ ...supplier, channel: "API/PunchOut" as SupplierChannel }));
+    const manual = localSuppliers.map((supplier) => ({ ...supplier }));
+    return [...manual, ...live];
+  }, [localSuppliers, suppliers]);
 
   const previewMutation = useMutation({
     mutationFn: ({ file, overrides }: { file: File; overrides?: Record<string, string> }) => {
@@ -205,17 +314,18 @@ function Catalog() {
 
   const baseRows = useMemo(() => {
     return products.map((product) => ({
+      id: product.id,
       sku: product.sku ?? shortId(product.id),
       name: product.name,
       group: product.category ?? "Uncategorised",
       unit: product.unit ?? "pc",
       pack: product.packaging_qty ? `Pack ${product.packaging_qty}` : "Single",
-      supplier: suppliers.find((supplier) => supplier.id === product.supplier_id)?.name ?? shortId(product.supplier_id),
-      price: product.unit_price ?? 0,
+      supplier: supplierOptions.find((supplier) => supplier.id === product.supplier_id)?.name ?? shortId(product.supplier_id),
+      price: Number(product.unit_price ?? 0),
       currency: product.currency ?? "EUR",
       status: product.is_active === false || !product.category ? "needs-review" as const : "mapped" as const,
     }));
-  }, [products, suppliers]);
+  }, [products, supplierOptions]);
 
   const rows = useMemo<CatalogRow[]>(() => {
     const byGroup = baseRows.reduce<Record<string, typeof baseRows>>((acc, row) => {
@@ -240,9 +350,27 @@ function Catalog() {
       const matcher = tradeKey ? (tradeMatchers[tradeKey] ?? tradeMatchers.construction) : null;
       const tradeOk = !matcher || matcher.test(`${row.name} ${row.group}`);
       const standardsOk = !standardsOnly || row.standard;
-      return tradeOk && standardsOk;
+      const supplierOk = selectedSupplierFilter === "all" || row.supplier === selectedSupplierFilter;
+      const query = searchQuery.trim().toLowerCase();
+      const numericPrice = Number(row.price ?? 0);
+      const haystack = [
+        row.id,
+        row.sku,
+        row.name,
+        row.group,
+        row.pack,
+        row.unit,
+        row.supplier,
+        row.tradeFit,
+        row.variant,
+        row.currency,
+        numericPrice.toFixed(2),
+        Math.round(numericPrice).toString(),
+      ].join(" ").toLowerCase();
+      const queryOk = !query || haystack.includes(query);
+      return tradeOk && standardsOk && supplierOk && queryOk;
     });
-  }, [baseRows, selectedTrade, standardsOnly]);
+  }, [baseRows, selectedTrade, selectedSupplierFilter, standardsOnly, searchQuery]);
 
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
   const previewIssues = mappedColumns.filter((entry) => !entry.target_field).length;
@@ -250,6 +378,39 @@ function Catalog() {
   const needsReview = previewMutation.data ? previewIssues : rows.filter((item) => item.status === "needs-review").length;
   const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
   const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
+  const hasLiveWarning = productsError || suppliersError;
+  const previewRows = previewMutation.data?.preview_rows ?? [];
+  const previewKeys = Object.keys(previewRows[0] ?? {});
+  const documentType = fileName.toLowerCase().includes("offer")
+    ? "Offer / quote"
+    : fileName.toLowerCase().includes("contract")
+      ? "Framework contract"
+      : fileName.toLowerCase().includes("pdf")
+        ? "PDF commercial document"
+        : "Catalog or price list";
+  const contractSignals = previewKeys.filter((key) => /discount|rebate|qty|quantity|valid|contract|payment|lead|term/i.test(key)).slice(0, 6);
+  const quantityBreakHints = previewRows.slice(0, 3).map((row) => {
+    const qtyKey = Object.keys(row).find((key) => /qty|quantity|min/i.test(key));
+    const priceKey = Object.keys(row).find((key) => /price|amount|discount|rebate/i.test(key));
+    if (!qtyKey && !priceKey) return null;
+    return `${qtyKey ? `${row[qtyKey]}` : "tier"}${priceKey ? ` → ${row[priceKey]}` : ""}`;
+  }).filter(Boolean) as string[];
+  const previewRows = previewMutation.data?.preview_rows ?? [];
+  const previewKeys = Object.keys(previewRows[0] ?? {});
+  const documentType = fileName.toLowerCase().includes("offer")
+    ? "Offer / quote"
+    : fileName.toLowerCase().includes("contract")
+      ? "Framework contract"
+      : fileName.toLowerCase().includes("pdf")
+        ? "PDF commercial document"
+        : "Catalog or price list";
+  const contractSignals = previewKeys.filter((key) => /discount|rebate|qty|quantity|valid|contract|payment|lead|term/i.test(key)).slice(0, 6);
+  const quantityBreakHints = previewRows.slice(0, 3).map((row) => {
+    const qtyKey = Object.keys(row).find((key) => /qty|quantity|min/i.test(key));
+    const priceKey = Object.keys(row).find((key) => /price|amount|discount|rebate/i.test(key));
+    if (!qtyKey && !priceKey) return null;
+    return `${qtyKey ? `${row[qtyKey]}` : "tier"}${priceKey ? ` → ${row[priceKey]}` : ""}`;
+  }).filter(Boolean) as string[];
   const canImport = Boolean(selectedFile && selectedSupplierId && previewReady && previewIssues === 0 && !importMutation.isPending);
   const importBlockedReason = !selectedFile
     ? "Upload a supplier file to generate a preview first."
@@ -261,7 +422,7 @@ function Catalog() {
           ? "Resolve or explicitly ignore the remaining unmapped columns before importing."
           : null;
 
-  if (productsLoading || suppliersLoading) {
+  if (productsLoading && suppliersLoading && products.length === 0 && suppliers.length === 0) {
     return (
       <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
         <QueryState
@@ -273,24 +434,25 @@ function Catalog() {
     );
   }
 
-  if (productsError || suppliersError) {
-    return (
-      <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
-        <QueryState
-          kind="error"
-          title="Catalog data could not be loaded"
-          description="The live catalog or supplier list is temporarily unavailable."
-          onRetry={() => {
-            void refetchProducts();
-            void refetchSuppliers();
-          }}
-        />
-      </DashboardLayout>
-    );
-  }
-
   return (
     <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
+      {hasLiveWarning && (
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
+          <div className="font-medium text-warning-foreground">Live catalog sync warning</div>
+          <div className="mt-1 text-muted-foreground">
+            Part of the catalog data is temporarily unavailable. The page is still showing the latest live results it could load.
+          </div>
+          <button
+            onClick={() => {
+              void refetchProducts();
+              void refetchSuppliers();
+            }}
+            className="mt-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
+          >
+            Retry live sync
+          </button>
+        </div>
+      )}
       <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div className="font-medium">Live catalog records</div>
         <p className="mt-1 text-muted-foreground">
@@ -298,7 +460,7 @@ function Catalog() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <label className="rounded-lg border border-dashed border-border bg-card p-5 cursor-pointer hover:bg-accent/40 transition-colors">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Upload className="h-4 w-4" /></div>
@@ -317,11 +479,12 @@ function Catalog() {
               <div className="font-medium text-sm">Live preview & import</div>
               <select
                 value={selectedSupplierId}
-                onChange={(event) => setSelectedSupplierId(event.target.value)}
+                onChange={(event) => handleSupplierSelect(event.target.value)}
                 className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
               >
                 <option value="">Choose supplier</option>
-                {suppliers.map((supplier) => (
+                <option value="__new__">＋ Add new supplier…</option>
+                {supplierOptions.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                 ))}
               </select>
@@ -367,17 +530,89 @@ function Catalog() {
           ) : null}
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="font-medium text-sm">Smart filters</div>
-          <select value={selectedTrade} onChange={(event) => setSelectedTrade(event.target.value)} className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+      </div>
+
+      <div className="mb-6 rounded-lg border border-border bg-card p-5">
+        <div className="font-medium text-sm">Smart filters</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search name, SKU, supplier, price or article number"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm md:col-span-2"
+          />
+          <select value={selectedTrade} onChange={(event) => setSelectedTrade(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
             {tradeOptions.map((option) => <option key={option} value={option}>{option === "all" ? "All trades" : option}</option>)}
           </select>
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
-            Project standard only
-          </label>
+          <select value={selectedSupplierFilter} onChange={(event) => setSelectedSupplierFilter(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <option value="all">All suppliers</option>
+            {supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
+          </select>
         </div>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
+          Project standard only
+        </label>
+        <div className="mt-2 text-xs text-muted-foreground">Showing {rows.length} results across names, numbers, suppliers, and prices.</div>
       </div>
+
+      {(previewMutation.data || selectedFile) && (
+        <div className="mb-6 rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Commercial extraction</div>
+              <h3 className="text-display text-lg font-semibold">Offers, contracts, and quantity discounts</h3>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-xs">
+              {documentType}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Detected contract fields</div>
+              <div className="mt-1 text-sm font-medium">{contractSignals.length ? contractSignals.join(" · ") : "No explicit contract fields yet"}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Quantity discount hints</div>
+              <div className="mt-1 text-sm font-medium">{quantityBreakHints.length ? quantityBreakHints.join(" · ") : "Upload a richer quote to detect tiered pricing"}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Workflow focus</div>
+              <div className="mt-1 text-sm font-medium">Markdown → AI extraction → pricing review → catalog import</div>
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">This view is optimized for offer sheets, special quantity breaks, rebates, validity dates, and contract terms before import.</div>
+        </div>
+      )}
+
+      {(previewMutation.data || selectedFile) && (
+        <div className="mb-6 rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Commercial extraction</div>
+              <h3 className="text-display text-lg font-semibold">Offers, contracts, and quantity discounts</h3>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-xs">
+              {documentType}
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Detected contract fields</div>
+              <div className="mt-1 text-sm font-medium">{contractSignals.length ? contractSignals.join(" · ") : "No explicit contract fields yet"}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Quantity discount hints</div>
+              <div className="mt-1 text-sm font-medium">{quantityBreakHints.length ? quantityBreakHints.join(" · ") : "Upload a richer quote to detect tiered pricing"}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Workflow focus</div>
+              <div className="mt-1 text-sm font-medium">Markdown → AI extraction → pricing review → catalog import</div>
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-muted-foreground">This view is optimized for offer sheets, special quantity breaks, rebates, validity dates, and contract terms before import.</div>
+        </div>
+      )}
 
       {previewMutation.data && (
         <div className="mb-6 rounded-lg border border-border bg-card p-5">
@@ -544,7 +779,7 @@ function Catalog() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted-foreground">
-                  No catalog records are stored in the database yet.
+                  No catalog records match the current name, number, or supplier filters.
                 </td>
               </tr>
             )}

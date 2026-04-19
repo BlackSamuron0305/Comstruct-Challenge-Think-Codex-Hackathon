@@ -8,6 +8,7 @@ const ACCESS_KEY = 'comstruct-access-token';
 const REFRESH_KEY = 'comstruct-refresh-token';
 const USER_KEY = 'comstruct-user';
 const LEGACY_USER_KEYS = [USER_KEY, 'comstruct_auth_user'];
+const SESSION_EVENT = 'comstruct-auth-changed';
 
 let authPromise: Promise<void> | null = null;
 let serverAccessToken: string | null = null;
@@ -109,6 +110,11 @@ function getStoredToken(key: string): string | null {
   return window.localStorage.getItem(key);
 }
 
+function notifySessionChange(): void {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new Event(SESSION_EVENT));
+}
+
 function storeTokens(accessToken?: string | null, refreshToken?: string | null): void {
   if (!isBrowser()) {
     if (accessToken) serverAccessToken = accessToken;
@@ -118,6 +124,7 @@ function storeTokens(accessToken?: string | null, refreshToken?: string | null):
 
   if (accessToken) window.localStorage.setItem(ACCESS_KEY, accessToken);
   if (refreshToken) window.localStorage.setItem(REFRESH_KEY, refreshToken);
+  notifySessionChange();
 }
 
 function parseUserFromToken(token: string): AuthUser | null {
@@ -172,6 +179,7 @@ function storeUser(user?: AuthUser | null): void {
     return;
   }
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  notifySessionChange();
 }
 
 export function getCurrentUser(): AuthUser | null {
@@ -192,6 +200,7 @@ export function clearSession(): void {
   window.localStorage.removeItem(REFRESH_KEY);
   window.localStorage.removeItem(USER_KEY);
   window.localStorage.removeItem('comstruct_auth_user');
+  notifySessionChange();
 }
 
 function withParams(path: string, params?: Record<string, QueryValue>): string {

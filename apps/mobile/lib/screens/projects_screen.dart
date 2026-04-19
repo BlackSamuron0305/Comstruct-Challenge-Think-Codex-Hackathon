@@ -77,7 +77,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                       await prefs.setString(kSelectedProjectKey, p['id'] as String);
                       await prefs.setString(kSelectedProjectNameKey, p['name'] as String);
                       if (!ctx.mounted) return;
-                      ctx.go('/catalog');
+                      ctx.go('/c-home');
                     },
                   ),
                 );

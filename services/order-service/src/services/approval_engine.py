@@ -24,7 +24,11 @@ class ApprovalEngine:
         return await compute_order_request_risk(self.db, order=order)
 
     async def evaluate(self, order: Order) -> tuple[bool, str | None]:
-        """Returns (requires_approval, reason)."""
+        """Returns (requires_approval, reason).
+
+        Statistical demand behaviour is the primary decision-maker for C-materials.
+        Static rules remain only as safety guardrails for clearly restricted categories.
+        """
         rule = await self._get_rule(order.company_id)
 
         # Defensive A-material check (should be filtered by AI gate, but belt-and-suspenders)
@@ -33,40 +37,32 @@ class ApprovalEngine:
             if snap.get("material_class") == "A":
                 return True, "Contains A-materials — requires procurement review"
 
-        if not rule:
-            threshold = self._defaults.DEFAULT_APPROVAL_THRESHOLD
-            if order.total_amount >= threshold:
-                return True, (
-                    f"Order total {order.total_amount} {order.currency} "
-                    f"exceeds default threshold {threshold} CHF"
-                )
-            return False, None
-
-        # Threshold
-        if order.total_amount >= rule.threshold_amount:
-            return True, (
-                f"Order total {order.total_amount} {order.currency} "
-                f"exceeds threshold {rule.threshold_amount} CHF"
-            )
-
-        # Restricted categories
-        order_categories = {
-            (item.product_snapshot or {}).get("category") for item in order.items
-        } - {None}
-        restricted = order_categories & set(rule.restricted_categories or [])
-        if restricted:
-            return True, f"Contains restricted categories: {', '.join(sorted(restricted))}"
-
-        # Statistical request sanity-check against historical quantities.
+        # Statistical request sanity-check against historical quantities and AI-like product tags.
         risk = await self._request_risk(order)
         if risk["requires_review"]:
-            product_names = [s.get("name") for s in risk["signals"][:3] if s.get("name")]
-            context = ", ".join(product_names) if product_names else "one or more items"
-            return True, (
-                f"Quantity anomaly detected for {context} "
-                f"(risk {risk['risk_score']}, std-dev guard tripped)"
-            )
+            lead_signal = (risk.get("signals") or [{}])[0]
+            context = lead_signal.get("name") or lead_signal.get("tag") or "one or more items"
+            expected = lead_signal.get("expected_quantity")
+            stddev = lead_signal.get("historical_stddev")
+            details: list[str] = []
+            if expected is not None:
+                details.append(f"expected {expected}")
+            if stddev is not None:
+                details.append(f"σ {stddev}")
+            details.append(f"risk {risk['risk_score']}")
+            return True, f"Quantity anomaly detected for {context} ({', '.join(details)})"
 
+        # Restricted categories still force a manual review as a safety override.
+        if rule:
+            order_categories = {
+                (item.product_snapshot or {}).get("category") for item in order.items
+            } - {None}
+            restricted = order_categories & set(rule.restricted_categories or [])
+            if restricted:
+                return True, f"Contains restricted categories: {', '.join(sorted(restricted))}"
+
+        # Fixed monetary thresholds are now advisory only; statistically normal C-item
+        # orders can pass automatically even when the CHF total is high.
         return False, None
 
     async def auto_approve(self, order: Order) -> Order:

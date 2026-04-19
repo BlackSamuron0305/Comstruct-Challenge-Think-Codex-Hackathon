@@ -1,11 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, RefreshCw, Settings, X } from "lucide-react";
+import { ArrowUpFromLine, Clock3, Plus, RefreshCw, Settings, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { DashboardLayout } from "@/components/dashboard/Layout";
+import { QueryState } from "@/components/dashboard/QueryState";
 import { api, formatCurrency, type ProductRecord, type SupplierRecord } from "@/lib/api";
+import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
 
 export const Route = createFileRoute("/suppliers")({
   head: () => ({
@@ -17,26 +19,35 @@ export const Route = createFileRoute("/suppliers")({
   component: Suppliers,
 });
 
-const healthStyles = {
+const statusStyles = {
   good: "bg-success/15 text-[oklch(0.42_0.13_155)]",
   warn: "bg-warning/30 text-warning-foreground",
-  bad: "bg-destructive/10 text-destructive",
+  neutral: "bg-secondary text-foreground",
 } as const;
 
-type LocalSupplier = SupplierRecord & {
+type SupplierCard = SupplierRecord & {
   items: number;
   spend: number;
-  lastSync: string;
-  health: "good" | "warn" | "bad";
-  uploadedAt: string;
-  lastPriceFetch: string;
   owner: string;
-  channel: "API/PunchOut" | "Excel upload";
+  channel: SupplierChannel;
+  autoSync: boolean;
+  actionLabel: string;
+  statusLabel: string;
+  statusTone: keyof typeof statusStyles;
+  integrationNotes: string;
+  lastActivity: string;
 };
 
 function Suppliers() {
-  const [settingsSupplier, setSettingsSupplier] = useState<LocalSupplier | null>(null);
+  const navigate = useNavigate();
+  const [settingsSupplier, setSettingsSupplier] = useState<SupplierCard | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [localSuppliers, setLocalSuppliers] = useState<LocalSupplierDraft[]>(() => loadLocalSuppliers());
+  const [draftName, setDraftName] = useState("");
+  const [draftContact, setDraftContact] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [draftPhone, setDraftPhone] = useState("");
+  const [draftChannel, setDraftChannel] = useState<SupplierChannel>("Excel/PDF upload");
 
   const { data: suppliers = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["suppliers", "cards"],
@@ -47,30 +58,78 @@ function Suppliers() {
     queryFn: () => api.get<ProductRecord[]>("/api/products", { params: { page_size: 500 } }),
   });
 
-  const suppliersList = useMemo<LocalSupplier[]>(() => {
-    return suppliers.map((supplier, index) => {
+  const suppliersList = useMemo<SupplierCard[]>(() => {
+    function toCard(supplier: SupplierRecord | LocalSupplierDraft, channel: SupplierChannel): SupplierCard {
       const linkedProducts = products.filter((product) => product.supplier_id === supplier.id);
       const spend = linkedProducts.reduce((sum, product) => sum + Number(product.unit_price ?? 0), 0);
       const items = linkedProducts.length;
-      const health = items === 0 ? "warn" : spend > 0 ? "good" : "bad";
+      const autoSync = channel === "API/PunchOut";
+
       return {
         ...supplier,
         items,
         spend,
-        lastSync: items > 0 ? "Live catalog connected" : "Awaiting first import",
-        health,
-        uploadedAt: "Current dataset",
-        lastPriceFetch: items > 0 ? "Live from catalog-service" : "No supplier rows yet",
         owner: supplier.email ?? "procurement@comstruct.local",
-        channel: index % 2 === 0 ? "API/PunchOut" : "Excel upload",
+        channel,
+        autoSync,
+        actionLabel: autoSync ? "Sync now" : "Upload latest version",
+        statusLabel: autoSync ? "Auto-sync" : "Manual upload",
+        statusTone: autoSync ? (items > 0 ? "good" : "warn") : "neutral",
+        integrationNotes: autoSync
+          ? "Connected via API and refreshed automatically."
+          : "Managed through PDF or Excel uploads when pricing changes.",
+        lastActivity: autoSync
+          ? (items > 0 ? "Last API pull: a few minutes ago" : "Waiting for first API pull")
+          : (items > 0 ? "Latest file version is active" : "Awaiting first PDF/Excel upload"),
       };
-    });
-  }, [products, suppliers]);
+    }
 
-  function handleSync(name: string) {
-    toast.success(`${name} refresh requested`, {
-      description: "This dashboard is already reading the latest live catalog data.",
+    const liveCards = suppliers.map((supplier, index) => toCard(supplier, index % 2 === 0 ? "API/PunchOut" : "Excel/PDF upload"));
+    const manualCards = localSuppliers.map((supplier) => toCard(supplier, supplier.channel));
+
+    return [...manualCards, ...liveCards].sort((left, right) => left.name.localeCompare(right.name));
+  }, [localSuppliers, products, suppliers]);
+
+  function resetDraft() {
+    setDraftName("");
+    setDraftContact("");
+    setDraftEmail("");
+    setDraftPhone("");
+    setDraftChannel("Excel/PDF upload");
+  }
+
+  function handleCreateSupplier() {
+    if (!draftName.trim()) {
+      toast.error("Please enter a supplier name.");
+      return;
+    }
+
+    const created = createLocalSupplierDraft({
+      name: draftName,
+      contact_name: draftContact,
+      email: draftEmail,
+      phone: draftPhone,
+      channel: draftChannel,
     });
+
+    const next = [created, ...localSuppliers];
+    setLocalSuppliers(next);
+    saveLocalSuppliers(next);
+    setShowAdd(false);
+    resetDraft();
+    toast.success(`${created.name} added for this workspace.`);
+  }
+
+  function handleSupplierAction(supplier: SupplierCard) {
+    if (supplier.autoSync) {
+      toast.success(`${supplier.name} sync requested`, {
+        description: "API suppliers can be refreshed on demand and also auto-sync in the background.",
+      });
+      return;
+    }
+
+    toast.success(`Open the catalog import to upload the newest PDF/Excel for ${supplier.name}.`);
+    void navigate({ to: "/catalog" });
   }
 
   return (

@@ -47,6 +47,21 @@ STOPWORDS = {
     "construction", "material", "materials", "please", "give", "help", "project",
 }
 
+NON_CONSTRUCTION_HINTS = {
+    "laptop", "monitor", "screen", "keyboard", "desk", "office", "chair", "person",
+    "face", "computer", "mouse", "tablet", "phone", "room", "curtain", "window",
+}
+
+CONSTRUCTION_HINTS = {
+    "cement", "concrete", "rebar", "brick", "drywall", "plaster", "pipe", "cable",
+    "conduit", "screw", "drill", "timber", "beam", "tile", "pallet", "insulation",
+    "scaffold", "ladder", "paint", "mortar", "sheet", "panel", "flooring",
+}
+
+UNCERTAINTY_HINTS = {
+    "likely", "similar", "unclear", "appears", "suggests", "maybe", "possibly",
+}
+
 
 def _extract_query_terms(text: str, limit: int = 5) -> list[str]:
     terms = re.findall(r"[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9+./-]{2,}", (text or "").lower())
@@ -236,6 +251,62 @@ def _build_photo_fallback(description: str, products: list[dict]) -> dict:
     }
 
 
+def _looks_non_construction_scene(text: str) -> bool:
+    lowered = (text or "").lower()
+    non_construction_hits = sum(1 for hint in NON_CONSTRUCTION_HINTS if hint in lowered)
+    construction_hits = sum(1 for hint in CONSTRUCTION_HINTS if hint in lowered)
+    return non_construction_hits > 0 and construction_hits == 0
+
+
+def _sanitize_uploaded_image_analysis(result: dict, *, context: str = "", filename: str | None = None) -> dict:
+    materials = list(result.get("materials_detected") or result.get("materials") or [])
+    observations = str(result.get("observations") or "")
+    recommendations = list(result.get("recommendations") or [])
+    combined_text = " ".join(
+        [
+            context or "",
+            filename or "",
+            observations,
+            " ".join(str(item.get("name") or "") for item in materials),
+            " ".join(str(item) for item in recommendations),
+        ]
+    )
+    grounded_materials = [
+        item for item in materials if str(item.get("product_id") or item.get("sku") or "").strip()
+    ]
+    uncertainty_hits = sum(1 for hint in UNCERTAINTY_HINTS if hint in combined_text.lower())
+
+    if _looks_non_construction_scene(combined_text) or (not grounded_materials and uncertainty_hits > 0):
+        return {
+            "materials_detected": [],
+            "observations": "The image does not appear to show construction materials or a procurement document, so no order suggestions were generated.",
+            "recommendations": [
+                "Upload a photo of materials, packaging, a delivery note, or an invoice for better extraction."
+            ],
+            "confidence": 0.1,
+            "is_construction_related": False,
+        }
+
+    if not grounded_materials:
+        return {
+            "materials_detected": [],
+            "observations": observations or "The image could not be grounded to live catalog items, so no order suggestions were generated.",
+            "recommendations": recommendations or [
+                "Try a closer photo of packaging, labels, pallets, or a delivery note for grounded matching."
+            ],
+            "confidence": min(float(result.get("confidence") or 0.3), 0.25),
+            "is_construction_related": False,
+        }
+
+    return {
+        "materials_detected": grounded_materials,
+        "observations": observations or "Grounded catalog matches were identified in the image.",
+        "recommendations": recommendations,
+        "confidence": max(float(result.get("confidence") or 0.5), 0.6),
+        "is_construction_related": True,
+    }
+
+
 def _build_image_fallback(filename: str | None, context: str, products: list[dict], image_size_kb: float) -> dict:
     photo = _build_photo_fallback(context or (filename or ""), products)
     return {
@@ -243,6 +314,7 @@ def _build_image_fallback(filename: str | None, context: str, products: list[dic
         "observations": f"Image '{filename or 'upload'}' was processed ({image_size_kb:.0f} KB). Low-confidence fallback grounding was used because the vision model did not return structured output.",
         "recommendations": photo.get("recommendations", []),
         "confidence": 0.35 if photo.get("materials") else 0.1,
+        "is_construction_related": bool(photo.get("materials")),
     }
 
 
@@ -434,14 +506,18 @@ async def upload_image(
     )
 
     vision_system = CONSTRUCTION_SYSTEM + """
-You are analyzing a construction site image. Identify:
-1. What materials are visible or being used
-2. Potential safety issues or missing materials
-3. Items that should be ordered
+You are analyzing a user-uploaded image for procurement assistance.
+First decide whether the image is actually related to construction materials, tools, packaging, delivery notes, invoices, or a site workflow.
+If it is not clearly construction-related, do NOT guess and do NOT infer a construction site from a generic office, beverage, laptop, desk, or person photo.
 
-Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "quantity_estimate": "...", "urgency": "low|medium|high"}], "observations": "...", "recommendations": ["..."], "confidence": 0.8}"""
+For non-construction images, return JSON exactly like:
+{"materials_detected": [], "observations": "This looks like a non-construction image (for example a laptop, drink, desk item, or office object), not a construction material or procurement document.", "recommendations": ["Upload a closer photo of the relevant material, package label, pallet tag, or delivery note."], "confidence": 0.1, "is_construction_related": false}
 
-    user_prompt = "Analyze this construction site image."
+Never reinterpret a laptop, bottle, cup, desk, keyboard, monitor, or phone as a building material just because it has flat surfaces or rectangular shapes.
+Only include materials_detected when visual evidence is strong and the suggestion is appropriate for procurement.
+Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "quantity_estimate": "...", "urgency": "low|medium|high"}], "observations": "...", "recommendations": ["..."], "confidence": 0.8, "is_construction_related": true}"""
+
+    user_prompt = "Analyze this image for construction procurement relevance."
     if context:
         user_prompt += f" Context: {context}"
 
@@ -461,7 +537,9 @@ Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "q
         content_type=file.content_type or "image/png",
     )
 
-    # Enrich detected materials with real catalog product IDs
+    if not isinstance(analysis, dict):
+        analysis = stub_response
+
     raw_materials = analysis.get("materials_detected") or analysis.get("materials") or []
     if raw_materials:
         try:
@@ -469,6 +547,12 @@ Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "q
             analysis["materials_detected"] = enriched
         except Exception as e:
             logger.warning("Catalog matching failed: %s", e)
+
+    analysis = _sanitize_uploaded_image_analysis(
+        analysis,
+        context=context,
+        filename=file.filename,
+    )
 
     return {
         "status": "processed",

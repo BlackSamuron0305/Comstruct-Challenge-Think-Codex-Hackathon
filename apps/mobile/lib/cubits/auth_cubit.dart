@@ -24,7 +24,7 @@ class AuthCubit extends Cubit<AuthState> {
       emit(AuthState(user: user));
     } catch (_) {
       await _api.tokens.clear();
-      emit(AuthState(error: 'Session expired'));
+      emit(AuthState(error: 'Session expired. Please sign in again.'));
     }
   }
 
@@ -34,7 +34,31 @@ class AuthCubit extends Cubit<AuthState> {
       final user = await _api.login(email, password);
       emit(AuthState(user: user));
     } catch (e) {
-      emit(state.copyWith(busy: false, error: 'Login failed'));
+      emit(AuthState(error: describeApiError(e, baseUrl: _api.baseUrl)));
+    }
+  }
+
+  Future<void> register({
+    required String fullName,
+    required String email,
+    required String password,
+    required String companyName,
+    required String role,
+    String? phone,
+  }) async {
+    emit(state.copyWith(busy: true, error: null));
+    try {
+      final user = await _api.register(
+        fullName: fullName,
+        email: email,
+        password: password,
+        companyName: companyName,
+        role: role,
+        phone: phone,
+      );
+      emit(AuthState(user: user));
+    } catch (e) {
+      emit(AuthState(error: describeApiError(e, baseUrl: _api.baseUrl)));
     }
   }
 

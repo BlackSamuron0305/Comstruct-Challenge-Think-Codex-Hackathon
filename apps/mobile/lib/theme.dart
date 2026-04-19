@@ -1,4 +1,4 @@
-/// Comstruct design tokens (spec §6.1 Flutter theme)
+// Comstruct design tokens (spec §6.1 Flutter theme)
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -34,22 +34,45 @@ ThemeData buildComstructTheme() {
       backgroundColor: ComstructColors.brand,
       foregroundColor: Colors.white,
       centerTitle: false,
+      toolbarHeight: 72,
+      iconTheme: IconThemeData(size: 30),
+      titleTextStyle: TextStyle(
+        color: Colors.white,
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        minimumSize: const Size(56, 56),
+        padding: const EdgeInsets.all(14),
+        tapTargetSize: MaterialTapTargetSize.padded,
+      ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: ComstructColors.accent,
         foregroundColor: Colors.white,
-        minimumSize: const Size(0, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        minimumSize: const Size(0, 64),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: ComstructColors.line),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: ComstructColors.line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: ComstructColors.brand, width: 1.3),
       ),
     ),
     cardTheme: CardThemeData(

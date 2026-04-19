@@ -71,7 +71,7 @@ class _OfflineQueueScreenState extends State<OfflineQueueScreen> {
         title: const Text('Offline Queue'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/catalog'),
+          onPressed: () => context.go('/c-home'),
         ),
         actions: [
           if (_items.any((i) => i.status == QueueItemStatus.synced))

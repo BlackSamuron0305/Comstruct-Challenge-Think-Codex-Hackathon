@@ -6,7 +6,7 @@ function has(text: string, ...keys: string[]) {
 
 export function answerQuestion(raw: string): string {
   const q = raw.toLowerCase().trim();
-  if (!q) return "Ask about approvals, spend, suppliers, catalog imports, or policy rules.";
+  if (!q) return "Ask about approvals, spend, suppliers, catalog imports, or demand statistics.";
 
   const candidates: Match[] = [];
 
@@ -14,7 +14,7 @@ export function answerQuestion(raw: string): string {
     candidates.push({
       score: 10,
       answer:
-        "Use the live Approvals view to review current orders. Orders below CHF 200 auto-approve, CHF 200–499 go through PM approval, and CHF 500+ route to central procurement.",
+        "Use the live Approvals view to review statistically unusual orders. C-material requests are now checked against historical product-family demand instead of fixed CHF thresholds.",
     });
   }
 
@@ -50,11 +50,11 @@ export function answerQuestion(raw: string): string {
     });
   }
 
-  if (has(q, "policy", "threshold", "limit", "auto-approve", "auto approval")) {
+  if (has(q, "policy", "threshold", "limit", "auto-approve", "auto approval", "statistics", "erwartungswert", "stddev")) {
     candidates.push({
       score: 8,
       answer:
-        "Approval thresholds are: under CHF 200 = auto-approved, CHF 200–499 = PM approval, and CHF 500+ = central procurement review.",
+        "The Statistics view shows Erwartungswert, Standardabweichung, and AI product tags for each C-item family. Normal requests auto-pass; only anomalies are routed for review.",
     });
   }
 
@@ -67,7 +67,7 @@ export function answerQuestion(raw: string): string {
   }
 
   if (candidates.length === 0) {
-    return "I can help with approvals, spend visibility, suppliers, catalog imports, and procurement policies.";
+    return "I can help with approvals, spend visibility, suppliers, catalog imports, and demand statistics.";
   }
 
   candidates.sort((a, b) => b.score - a.score);

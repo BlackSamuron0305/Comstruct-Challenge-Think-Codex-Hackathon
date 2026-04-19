@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { HardHat } from "lucide-react";
+import logo from "@/assets/comstruct-logo.svg";
 import { useAuth } from "./AuthContext";
 
 export function LoginScreen() {
@@ -25,14 +25,8 @@ export function LoginScreen() {
   return (
     <div className="min-h-screen w-full grid place-items-center bg-background px-4">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2 mb-8 justify-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <HardHat className="h-5 w-5" />
-          </div>
-          <div className="leading-tight">
-            <div className="text-display text-lg font-semibold tracking-tight">comstruct</div>
-            <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-widest">C-Materials</div>
-          </div>
+        <div className="mb-8 flex justify-center">
+          <img src={logo} alt="comstruct" className="h-14 w-auto" />
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

@@ -7,11 +7,28 @@ from uuid import uuid4
 import pytest
 
 from src.services.approval_engine import ApprovalEngine
+from src.services.request_risk import _derive_product_tag
 
 
-def _item(category: str = "Fasteners", material_class: str = "C", line_total: str = "10.00"):
+def _item(
+    category: str = "Fasteners",
+    material_class: str = "C",
+    line_total: str = "10.00",
+    *,
+    quantity: str = "1",
+    name: str = "Generic item",
+    unit: str = "pc",
+):
     return SimpleNamespace(
-        product_snapshot={"category": category, "material_class": material_class},
+        product_id=uuid4(),
+        quantity=Decimal(quantity),
+        unit=unit,
+        product_snapshot={
+            "name": name,
+            "category": category,
+            "material_class": material_class,
+            "unit": unit,
+        },
         line_total=Decimal(line_total),
     )
 
@@ -45,28 +62,26 @@ async def test_below_default_threshold_auto_approves():
 
 
 @pytest.mark.asyncio
-async def test_at_or_above_default_threshold_requires_approval():
+async def test_high_value_order_auto_approves_when_statistically_normal():
     engine = _engine_with_rule(None)
-    order = _order("250.00", [_item(line_total="250.00")])
+    order = _order("250.00", [_item(line_total="250.00", quantity="24", name="Painter brush 50mm")])
     requires, reason = await engine.evaluate(order)
-    assert requires is True
-    assert "exceeds default threshold" in reason
+    assert requires is False
+    assert reason is None
 
 
 @pytest.mark.asyncio
-async def test_custom_threshold_branch():
+async def test_custom_threshold_is_advisory_when_statistics_are_normal():
     rule = SimpleNamespace(
         threshold_amount=Decimal("500.00"),
         restricted_categories=[],
     )
     engine = _engine_with_rule(rule)
-    # Below custom threshold => auto-approve even though above default
-    requires, _ = await engine.evaluate(_order("400.00", [_item(line_total="400.00")]))
+    requires, _ = await engine.evaluate(_order("400.00", [_item(line_total="400.00", quantity="20")]))
     assert requires is False
-    # At or above => approval needed
-    requires, reason = await engine.evaluate(_order("500.00", [_item(line_total="500.00")]))
-    assert requires is True
-    assert "exceeds threshold" in reason
+    requires, reason = await engine.evaluate(_order("500.00", [_item(line_total="500.00", quantity="22")]))
+    assert requires is False
+    assert reason is None
 
 
 @pytest.mark.asyncio
@@ -106,8 +121,50 @@ async def test_statistical_risk_branch():
     engine._request_risk = AsyncMock(return_value={
         "requires_review": True,
         "risk_score": 0.93,
-        "signals": [{"name": "Work Gloves"}],
+        "signals": [{
+            "name": "Work Gloves",
+            "expected_quantity": 42.0,
+            "historical_stddev": 8.5,
+        }],
     })
     requires, reason = await engine.evaluate(_order("50.00", [_item(line_total="50.00")]))
     assert requires is True
     assert "Quantity anomaly detected" in reason
+    assert "expected" in reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_statistical_baseline_overrides_fixed_thresholds_for_normal_orders():
+    engine = _engine_with_rule(None)
+    order = _order(
+        "250.00",
+        [
+            _item(
+                category="Consumables > Brushes",
+                name="Painter brush 50mm",
+                quantity="24",
+                line_total="250.00",
+            )
+        ],
+    )
+    requires, reason = await engine.evaluate(order)
+    assert requires is False
+    assert reason is None
+
+
+def test_ai_like_family_tags_group_similar_products_together():
+    assert _derive_product_tag({
+        "name": "Painter brush 50mm",
+        "category": "Consumables > Finishing",
+        "material_class": "C",
+    }) == "brushes"
+    assert _derive_product_tag({
+        "name": "Malerpinsel Set",
+        "category": "Site supplies",
+        "material_class": "C",
+    }) == "brushes"
+    assert _derive_product_tag({
+        "name": "Schlosserhammer 500g",
+        "category": "Tools",
+        "material_class": "C",
+    }) == "hammers"

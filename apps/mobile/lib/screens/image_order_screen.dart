@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../config.dart';
 import '../cubits/cart_cubit.dart';
@@ -28,11 +29,14 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
   File? _image;
   bool _busy = false;
   bool _ordering = false;
+  bool _nonMaterialDetected = false;
   List<Map<String, dynamic>> _materials = [];
   final Map<String, int> _quantities = {};
   final Set<String> _removingKeys = <String>{};
   String? _observation;
   String? _error;
+  bool _isConstructionRelated = true;
+  List<String> _recommendations = [];
 
   String _materialKey(Map<String, dynamic> material) {
     final existing = material['_entry_key'] as String?;
@@ -57,6 +61,24 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
     final raw =
         material['quantity'] ?? material['quantity_estimate'] ?? material['suggested_qty'] ?? 1;
     return raw is num ? raw.toInt() : (int.tryParse('$raw') ?? 1);
+  }
+
+  bool _looksNonMaterialObservation(String? text) {
+    final value = (text ?? '').toLowerCase();
+    const markers = <String>[
+      'does not appear to show construction',
+      'does not look like a construction material',
+      'not a construction material',
+      'not construction-related',
+      'laptop',
+      'bottle',
+      'desk',
+      'keyboard',
+      'phone',
+      'cup',
+      'office',
+    ];
+    return markers.any(value.contains);
   }
 
   int _qtyFor(int index) {
@@ -110,6 +132,9 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
       _removingKeys.clear();
       _observation = null;
       _error = null;
+      _nonMaterialDetected = false;
+      _isConstructionRelated = true;
+      _recommendations = [];
     });
     await _analyze();
   }
@@ -123,6 +148,9 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
       _quantities.clear();
       _removingKeys.clear();
       _observation = null;
+      _nonMaterialDetected = false;
+      _isConstructionRelated = true;
+      _recommendations = [];
     });
 
     try {
@@ -175,16 +203,40 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
             (res['summary'] as String?);
 
         if (mounted && (detected.isNotEmpty || (obs?.isNotEmpty ?? false))) {
+          final detectedItems = List<Map<String, dynamic>>.from(detected);
+          final recommendations = ((analysis['recommendations'] as List?) ?? const [])
+              .map((item) => '$item')
+              .where((item) => item.trim().isNotEmpty)
+              .toList();
+          final groundedItems = detectedItems.where((item) {
+            final id = (item['product_id'] as String?) ?? (item['sku'] as String?);
+            return id != null && id.isNotEmpty;
+          }).toList();
+          final confidenceRaw = analysis['confidence'];
+          final confidence = confidenceRaw is num ? confidenceRaw.toDouble() : double.tryParse('$confidenceRaw');
+          final observationText = obs?.trim();
+          final looksNonMaterial =
+              analysis['is_construction_related'] == false ||
+              _looksNonMaterialObservation(observationText) ||
+              ((confidence != null && confidence < 0.45) && groundedItems.isEmpty && localItems.isEmpty);
+          final isConstructionRelated = !looksNonMaterial;
+
           setState(() {
-            _materials = _withStableKeys(List<Map<String, dynamic>>.from(detected));
-            _observation = obs ?? _observation;
+            _materials = _withStableKeys(isConstructionRelated ? groundedItems : <Map<String, dynamic>>[]);
+            _observation = observationText ??
+                (isConstructionRelated
+                    ? 'No grounded catalog matches were found from this photo. Try a closer shot of packaging, labels, or material stacks.'
+                    : 'This looks like something other than a construction material. Please photograph the actual item, packaging, pallet label, or delivery note.');
+            _nonMaterialDetected = looksNonMaterial;
+            _isConstructionRelated = isConstructionRelated;
+            _recommendations = recommendations;
           });
         }
-      } catch (_) {
+      } catch (e) {
         if (mounted && _materials.isEmpty) {
           setState(() {
             _error =
-                'No backend connection at ${AppConfig.apiBaseUrl}. Showing on-device OCR only. ${AppConfig.backendConnectionHelp}';
+                '${describeApiError(e, baseUrl: AppScope.api.baseUrl)} Showing on-device OCR only. ${AppConfig.backendConnectionHelp}';
           });
         }
       }
@@ -213,15 +265,16 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
     setState(() => _ordering = true);
     try {
+      await cart.clear();
       int added = 0;
       for (int i = 0; i < _materials.length; i++) {
         final m = _materials[i];
-        final id = (m['product_id'] as String?) ?? (m['sku'] as String?);
+        final id = m['product_id'] as String?;
         if (id == null || id.isEmpty) continue;
         final n = _qtyFor(i);
         if (n <= 0) continue;
-        await cart.add(id, n);
-        added++;
+        final ok = await cart.add(id, n);
+        if (ok) added++;
       }
       if (added == 0) {
         final task = List.generate(_materials.length, (i) {
@@ -402,7 +455,7 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
   Widget _buildReviewScreen(BuildContext context) {
     final orderableCount = _materials.where((m) {
-      final id = (m['product_id'] as String?) ?? (m['sku'] as String?);
+      final id = m['product_id'] as String?;
       final qty = _quantities[_materialKey(m)] ?? _detectedQty(m);
       return id != null && id.isNotEmpty && qty > 0;
     }).length;
@@ -421,6 +474,9 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
             _removingKeys.clear();
             _observation = null;
             _error = null;
+            _nonMaterialDetected = false;
+            _isConstructionRelated = true;
+            _recommendations = [];
           }),
         ),
       ),
@@ -506,13 +562,53 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
             ),
           ),
         if (_materials.isEmpty && !_busy && _error == null)
-          const Expanded(
-              child: Center(
-                  child: Text(
-            'No materials detected.\nTry a clearer photo.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black45, fontSize: 15),
-          ))),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _nonMaterialDetected ? Icons.not_interested_rounded : Icons.search_off,
+                      size: 44,
+                      color: _nonMaterialDetected ? CColors.orange : Colors.black38,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _nonMaterialDetected
+                          ? 'This photo looks like a non-material image.'
+                          : 'No grounded catalog materials were detected.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _observation ??
+                          (_isConstructionRelated
+                              ? 'Try a closer photo of packaging, pallets, labels, or a procurement document.'
+                              : 'Take a photo of the actual material, packaging, pallet label, or delivery note.'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.black54, fontSize: 14),
+                    ),
+                    if (_recommendations.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ..._recommendations.take(2).map(
+                        (tip) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '• $tip',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.black54, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
         // ORDER NOW button — big, glove-friendly
         if (_materials.isNotEmpty && !_busy)
           Container(

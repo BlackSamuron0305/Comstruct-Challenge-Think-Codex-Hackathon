@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
+import '../favorites_store.dart';
 import '../translations.dart';
-import '../theme.dart';
 import 'c_home_screen.dart' show CColors;
 
 // ── Product image placeholder painter ──────────────────────────────
@@ -56,12 +55,34 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
   late Future<List<Map<String, dynamic>>> _future;
   String? _expandedId;
   final Map<String, TextEditingController> _qtyCtrlMap = {};
+  final Set<String> _favoriteIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadFavorites();
     context.read<CartCubit>().refresh();
+  }
+
+  Future<void> _loadFavorites() async {
+    final ids = await FavoritesStore.load();
+    if (!mounted) return;
+    setState(() {
+      _favoriteIds
+        ..clear()
+        ..addAll(ids);
+    });
+  }
+
+  Future<void> _toggleFavorite(String id) async {
+    final ids = await FavoritesStore.toggle(id);
+    if (!mounted) return;
+    setState(() {
+      _favoriteIds
+        ..clear()
+        ..addAll(ids);
+    });
   }
 
   void _load([String? q]) {
@@ -73,7 +94,9 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
   TextEditingController _qtyCtrl(String id, int currentQty) {
     _qtyCtrlMap.putIfAbsent(id, () => TextEditingController());
     final ctrl = _qtyCtrlMap[id]!;
-    if (!ctrl.text.isNotEmpty) ctrl.text = currentQty > 0 ? '$currentQty' : '';
+    if (ctrl.text.isEmpty) {
+      ctrl.text = currentQty > 0 ? '$currentQty' : '';
+    }
     return ctrl;
   }
 
@@ -94,25 +117,30 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
             ? t(context, 'cat${_tKeyFor(widget.category!)}')
             : t(context, 'appTitle')),
         actions: [
-          BlocBuilder<CartCubit, CartState>(
-            builder: (_, s) => Stack(alignment: Alignment.center, children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart_outlined),
-                onPressed: () => context.go('/cart'),
-              ),
-              if (s.lines.isNotEmpty)
-                Positioned(
-                  right: 6, top: 6,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(color: CColors.yellow, shape: BoxShape.circle),
-                    child: Text('${s.lines.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-            ]),
+          IconButton(
+            icon: const Icon(Icons.favorite_border),
+            onPressed: () => context.go('/c-favorites'),
           ),
         ],
+      ),
+      bottomNavigationBar: BlocBuilder<CartCubit, CartState>(
+        builder: (_, cartState) {
+          if (cartState.lines.isEmpty) return const SizedBox.shrink();
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SizedBox(
+                height: 64,
+                child: ElevatedButton.icon(
+                  onPressed: () => context.go('/cart'),
+                  icon: const Icon(Icons.check_circle_outline, size: 24),
+                  label: Text('Review ${cartState.lines.length} item(s)'),
+                ),
+              ),
+            ),
+          );
+        },
       ),
       body: Column(children: [
         Padding(
@@ -184,31 +212,40 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                             child: Row(children: [
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(p['name'] as String? ?? '—',
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                                 const SizedBox(height: 2),
                                 Text('${p['sku'] ?? ''} · ${p['unit'] ?? ''}',
                                     style: const TextStyle(color: Colors.black45, fontSize: 12)),
                                 const SizedBox(height: 5),
                                 Text('EUR $price',
-                                    style: const TextStyle(color: CColors.teal, fontWeight: FontWeight.w700, fontSize: 15)),
+                                    style: const TextStyle(color: CColors.teal, fontWeight: FontWeight.w700, fontSize: 16)),
                               ])),
-                              // Quick +/- controls
+                              IconButton(
+                                onPressed: () => _toggleFavorite(id),
+                                icon: Icon(
+                                  _favoriteIds.contains(id) ? Icons.favorite : Icons.favorite_border,
+                                  color: _favoriteIds.contains(id) ? Colors.redAccent : Colors.black38,
+                                  size: 28,
+                                ),
+                              ),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 if (qty > 0) ...[
                                   _CircleBtn(
                                     color: qty == 1 ? CColors.red : CColors.teal,
                                     icon: qty == 1 ? Icons.close : Icons.remove,
-                                    onTap: () => context.read<CartCubit>().add(id, qty - 1),
+                                    size: 40,
+                                    onTap: () => context.read<CartCubit>().setQuantity(id, qty - 1),
                                   ),
                                   const SizedBox(width: 6),
                                   Text('$qty', style: const TextStyle(
-                                      fontWeight: FontWeight.w700, fontSize: 16, color: CColors.teal)),
+                                      fontWeight: FontWeight.w800, fontSize: 18, color: CColors.teal)),
                                   const SizedBox(width: 6),
                                 ],
                                 _CircleBtn(
                                   color: CColors.green,
                                   icon: Icons.add,
-                                  onTap: () => context.read<CartCubit>().add(id, qty + 1),
+                                  size: 40,
+                                  onTap: () => context.read<CartCubit>().setQuantity(id, qty + 1),
                                 ),
                                 const SizedBox(width: 6),
                                 AnimatedRotation(
@@ -238,7 +275,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                                   color: qty == 0 ? Colors.grey.shade300 : CColors.teal,
                                   icon: Icons.remove,
                                   size: 36,
-                                  onTap: qty == 0 ? null : () => context.read<CartCubit>().add(id, qty - 1),
+                                  onTap: qty == 0 ? null : () => context.read<CartCubit>().setQuantity(id, qty - 1),
                                 ),
                                 const SizedBox(width: 8),
                                 SizedBox(
@@ -261,7 +298,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                                     ),
                                     onSubmitted: (v) {
                                       final n = int.tryParse(v) ?? 0;
-                                      context.read<CartCubit>().add(id, n);
+                                      context.read<CartCubit>().setQuantity(id, n);
                                       _qtyCtrlMap[id]?.text = n > 0 ? '$n' : '';
                                     },
                                   ),
@@ -271,7 +308,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                                   color: CColors.green,
                                   icon: Icons.add,
                                   size: 36,
-                                  onTap: () => context.read<CartCubit>().add(id, qty + 1),
+                                  onTap: () => context.read<CartCubit>().setQuantity(id, qty + 1),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(p['unit'] as String? ?? '', style: const TextStyle(color: Colors.black45, fontSize: 13)),

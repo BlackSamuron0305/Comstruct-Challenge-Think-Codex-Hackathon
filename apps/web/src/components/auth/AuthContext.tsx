@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 import { clearSession, getCurrentUser, loginWithCredentials, type AuthUser } from "@/lib/api";
 
+const SESSION_EVENT = "comstruct-auth-changed";
+
 type AuthCtx = {
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<void>;
@@ -15,8 +17,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setUser(getCurrentUser());
-    setReady(true);
+    const syncUser = () => {
+      setUser(getCurrentUser());
+      setReady(true);
+    };
+
+    syncUser();
+    window.addEventListener("storage", syncUser);
+    window.addEventListener(SESSION_EVENT, syncUser);
+
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener(SESSION_EVENT, syncUser);
+    };
   }, []);
 
   const login = async (email: string, password: string) => {

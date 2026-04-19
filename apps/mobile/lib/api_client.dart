@@ -1,4 +1,4 @@
-/// API client with secure token storage, auto-refresh, retry, and offline cache.
+// API client with secure token storage, auto-refresh, retry, and offline cache.
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -7,7 +7,42 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
-import 'config.dart';
+
+String describeApiError(Object error, {String? baseUrl}) {
+  if (error is DioException) {
+    final status = error.response?.statusCode;
+    if (status != null) {
+      if (status == 401) {
+        return 'Your session is missing or expired. Please sign in again.';
+      }
+      if (status == 403) {
+        return 'The backend denied access to this action.';
+      }
+      final detail = error.response?.data;
+      final detailText = detail == null ? '' : ' ${detail.toString()}';
+      return 'Backend request failed with HTTP $status.$detailText';
+    }
+
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return 'Backend timed out while contacting ${baseUrl ?? 'the server'}.';
+      case DioExceptionType.connectionError:
+        return 'Could not connect to ${baseUrl ?? 'the server'}.';
+      case DioExceptionType.badCertificate:
+        return 'TLS certificate validation failed for ${baseUrl ?? 'the server'}.';
+      case DioExceptionType.cancel:
+        return 'The request was cancelled before the backend responded.';
+      case DioExceptionType.unknown:
+      case DioExceptionType.badResponse:
+        break;
+    }
+  }
+
+  final message = error.toString().trim();
+  return message.isEmpty ? 'Unknown backend error.' : message;
+}
 
 // ─── Secure Token Storage ─────────────────────────────────────────────
 class TokenStore {
@@ -156,6 +191,38 @@ class ApiClient {
     return Map<String, dynamic>.from(data['user'] as Map);
   }
 
+  Future<Map<String, dynamic>> register({
+    required String fullName,
+    required String email,
+    required String password,
+    required String role,
+    required String companyName,
+    String? phone,
+  }) async {
+    final r = await Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 20),
+    )).post(
+      '/auth/register',
+      data: {
+        'full_name': fullName,
+        'email': email,
+        'password': password,
+        'role': role,
+        'company_name': companyName,
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+        'preferred_language': 'en',
+      },
+    );
+    final data = Map<String, dynamic>.from(r.data as Map);
+    await tokens.save(
+      access: data['access_token'] as String,
+      refresh: data['refresh_token'] as String,
+    );
+    return Map<String, dynamic>.from(data['user'] as Map);
+  }
+
   Future<Map<String, dynamic>> me() async {
     final r = await dio.get('/auth/me');
     return Map<String, dynamic>.from(r.data as Map);
@@ -212,6 +279,15 @@ class ApiClient {
 
   Future<void> removeFromCart(String productId) async {
     await dio.delete('/api/cart/$productId');
+  }
+
+  Future<void> clearCart() async {
+    await dio.delete('/api/cart');
+    await OfflineCache.put('cart', {
+      'items': <Map<String, dynamic>>[],
+      'total_amount': '0.00',
+      'currency': 'CHF',
+    }, ttl: const Duration(minutes: 30));
   }
 
   // ── Orders (with idempotency) ──────────────────────────────────────

@@ -1,12 +1,13 @@
-"""Ollama local LLM client — local AI for development/testing.
+"""LLM transport helpers for backend AI calls.
 
-Production will use OpenAI (ChatGPT). Phone deployment will use Gemma 2B.
-This module provides the local Ollama interface used during development.
+When LLM_PROVIDER=openai, the web/backend routes use OpenAI via LangChain and
+smaller budget-friendly models. Ollama is kept only as an optional local
+fallback for development and mobile-adjacent experimentation.
 
 Provides:
-- call_ollama_json: structured JSON generation via Ollama chat API
-- call_ollama_stream: streaming text generation (for WebSocket progress)
-- ollama_embed_batch / ollama_embed_one: local embeddings
+- call_ollama_json: provider-aware structured JSON generation
+- call_ollama_stream: provider-aware streaming text generation
+- ollama_embed_batch / ollama_embed_one: optional local embeddings fallback
 """
 from __future__ import annotations
 
@@ -20,6 +21,11 @@ from typing import Any, AsyncIterator, Sequence
 import httpx
 
 from ..config import settings
+from .langchain_client import (
+    call_langchain_openai_json,
+    call_langchain_openai_stream,
+    call_langchain_openai_vision_json,
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +80,16 @@ async def call_ollama_json(
     temperature: float = 0.3,
     stub: dict | None = None,
 ) -> dict[str, Any]:
-    """Call Ollama chat API and parse JSON from the response."""
+    """Dispatch structured generation to OpenAI via LangChain or Ollama fallback."""
+    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        return await call_langchain_openai_json(
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stub=stub,
+        )
+
     ollama_messages = [{"role": "system", "content": system + "\n\nRespond with valid JSON only. No markdown, no explanation."}]
     for m in messages:
         ollama_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
@@ -112,7 +127,17 @@ async def call_ollama_stream(
     temperature: float = 0.3,
     max_tokens: int = 1024,
 ) -> AsyncIterator[str]:
-    """Stream text from Ollama for real-time WebSocket delivery."""
+    """Stream text from OpenAI via LangChain or Ollama fallback."""
+    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        async for chunk in call_langchain_openai_stream(
+            system=system,
+            user_message=user_message,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ):
+            yield chunk
+        return
+
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_message},
@@ -152,8 +177,20 @@ async def call_ollama_vision(
     max_tokens: int = 1024,
     temperature: float = 0.2,
     stub: dict | None = None,
+    content_type: str | None = None,
 ) -> dict[str, Any]:
-    """Call Ollama chat API with an image for multimodal analysis (Gemma3 vision)."""
+    """Dispatch vision analysis to OpenAI via LangChain or Ollama fallback."""
+    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        return await call_langchain_openai_vision_json(
+            system=system,
+            user_message=user_message,
+            image_b64=image_b64,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stub=stub,
+            content_type=content_type,
+        )
+
     messages = [
         {"role": "system", "content": system + "\n\nRespond with valid JSON only."},
         {"role": "user", "content": user_message, "images": [image_b64]},

@@ -52,7 +52,7 @@ class _CartScreenState extends State<CartScreen> {
         SnackBar(content: Text('Order ${order['status']} (${(order['id'] as String).substring(0, 8)})')),
       );
       await context.read<CartCubit>().refresh();
-      if (mounted) context.go('/orders');
+      if (mounted) context.go('/c-orders');
     } catch (e) {
       // Offline fallback — queue checkout for later
       final isOnline = await AppScope.llm.isOnline;
@@ -84,11 +84,11 @@ class _CartScreenState extends State<CartScreen> {
   Widget build(BuildContext context) {
     final cart = context.watch<CartCubit>().state;
     return Scaffold(
-      appBar: AppBar(title: const Text('Cart')),
+      appBar: AppBar(title: const Text('Order Review')),
       body: cart.busy
           ? const Center(child: CircularProgressIndicator())
           : cart.lines.isEmpty
-              ? const Center(child: Text('Your cart is empty'))
+              ? const Center(child: Text('No items selected yet'))
               : RefreshIndicator(
                   onRefresh: () => context.read<CartCubit>().refresh(),
                   child: ListView.separated(
@@ -141,7 +141,7 @@ class _CartScreenState extends State<CartScreen> {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: _checkingOut ? null : _checkout,
-                      child: Text(_checkingOut ? 'Submitting…' : 'Submit Order'),
+                      child: Text(_checkingOut ? 'Submitting…' : 'Place order now'),
                     ),
                   ),
                 ]),

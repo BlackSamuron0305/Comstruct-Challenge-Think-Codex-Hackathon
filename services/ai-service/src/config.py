@@ -12,19 +12,20 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://comstruct_app:comstruct_dev_password@postgres:5432/comstruct"
 
     # ── LLM Provider Selection ─────────────────────────────────────
-    # Default to local Ollama for privacy-safe development, test and demo flows.
-    # External providers remain optional fallbacks only.
-    LLM_PROVIDER: str = "ollama"
+    # Web/backend defaults to OpenAI via LangChain using smaller, budget-aware models.
+    # Ollama remains optional for local/mobile experimentation only.
+    LLM_PROVIDER: str = "openai"
 
-    # ── Ollama (local LLM — runs on host, not in Docker) ──────────
+    # ── Ollama (optional local fallback) ───────────────────────────
     OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"
     OLLAMA_MODEL: str = "gemma3:4b"
     OLLAMA_EMBED_MODEL: str = "nomic-embed-text:latest"
     OLLAMA_TIMEOUT: int = 300
 
-    # ── OpenAI / ChatGPT (production) ─────────────────────────────
+    # ── OpenAI / ChatGPT (production/web) ─────────────────────────
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_VISION_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
     ANTHROPIC_API_KEY: str = ""
 

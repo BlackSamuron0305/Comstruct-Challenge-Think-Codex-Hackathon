@@ -1,13 +1,13 @@
-"""Embedding dispatcher — routes to Ollama (local) or OpenAI (production).
+"""Embedding dispatcher — routes to OpenAI via LangChain for web/backend.
 
-Switch via LLM_PROVIDER env var: "ollama" (default) or "openai".
+Ollama remains an optional local fallback when explicitly selected.
 """
 from __future__ import annotations
 
 import logging
 from typing import Sequence
 
-from .ollama_client import ollama_embed_batch, ollama_embed_one, EMBED_DIM
+from .ollama_client import EMBED_DIM, _deterministic_embedding, ollama_embed_batch, ollama_embed_one
 from ..config import settings
 
 log = logging.getLogger(__name__)
@@ -27,25 +27,23 @@ async def embed_one(text: str) -> list[float]:
 
 
 async def _openai_embed_batch(texts: Sequence[str]) -> list[list[float]]:
-    """Call OpenAI embeddings API."""
-    import httpx
-
+    """Call OpenAI embeddings via LangChain and keep costs low with the small model."""
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.OPENAI_EMBED_MODEL,
-                    "input": list(texts),
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return [item["embedding"] for item in data["data"]]
+        from langchain_openai import OpenAIEmbeddings
+
+        embeddings = OpenAIEmbeddings(
+            model=settings.OPENAI_EMBED_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+        )
+        vectors = await embeddings.aembed_documents(list(texts))
+        normalised: list[list[float]] = []
+        for emb in vectors:
+            if len(emb) < EMBED_DIM:
+                emb.extend([0.0] * (EMBED_DIM - len(emb)))
+            elif len(emb) > EMBED_DIM:
+                emb = emb[:EMBED_DIM]
+            normalised.append(emb)
+        return normalised
     except Exception as e:
-        log.warning("OpenAI embed failed (%s), falling back to Ollama", e)
-        return await ollama_embed_batch(texts)
+        log.warning("OpenAI embed failed (%s), using deterministic fallback", e)
+        return [_deterministic_embedding(text) for text in texts]

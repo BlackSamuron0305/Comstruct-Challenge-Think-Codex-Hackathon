@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, AsyncIterator
 
 from ..config import settings
 
@@ -25,6 +25,24 @@ def _extract_json(content: str) -> dict[str, Any]:
         raise
 
 
+def _stringify_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+    return str(content)
+
+
 async def call_langchain_openai_json(
     *,
     system: str,
@@ -32,6 +50,7 @@ async def call_langchain_openai_json(
     max_tokens: int = 2048,
     temperature: float = 0.2,
     stub: dict | None = None,
+    model: str | None = None,
 ) -> dict[str, Any]:
     if not settings.OPENAI_API_KEY:
         if stub is not None:
@@ -60,16 +79,94 @@ async def call_langchain_openai_json(
 
     try:
         llm = ChatOpenAI(
-            model=settings.OPENAI_MODEL,
+            model=model or settings.OPENAI_MODEL,
             api_key=settings.OPENAI_API_KEY,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         response = await llm.ainvoke(lc_messages)
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        return _extract_json(content)
+        return _extract_json(_stringify_content(response.content))
     except Exception as e:
         log.warning("LangChain OpenAI call failed (%s), using stub", e)
+        if stub is not None:
+            return stub
+        raise
+
+
+async def call_langchain_openai_stream(
+    *,
+    system: str,
+    user_message: str,
+    temperature: float = 0.2,
+    max_tokens: int = 1024,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is required for LangChain OpenAI streaming")
+
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    llm = ChatOpenAI(
+        model=model or settings.OPENAI_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        streaming=True,
+    )
+
+    async for chunk in llm.astream([
+        SystemMessage(content=system),
+        HumanMessage(content=user_message),
+    ]):
+        text = _stringify_content(getattr(chunk, "content", ""))
+        if text:
+            yield text
+
+
+async def call_langchain_openai_vision_json(
+    *,
+    system: str,
+    user_message: str,
+    image_b64: str,
+    max_tokens: int = 1024,
+    temperature: float = 0.2,
+    stub: dict | None = None,
+    content_type: str | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
+    if not settings.OPENAI_API_KEY:
+        if stub is not None:
+            return stub
+        raise RuntimeError("OPENAI_API_KEY is required for LangChain OpenAI vision calls")
+
+    try:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage, SystemMessage
+    except Exception as e:
+        log.warning("LangChain vision import failed (%s), using stub", e)
+        if stub is not None:
+            return stub
+        raise
+
+    image_url = f"data:{content_type or 'image/png'};base64,{image_b64}"
+    try:
+        llm = ChatOpenAI(
+            model=model or settings.OPENAI_VISION_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        response = await llm.ainvoke([
+            SystemMessage(content=system + "\n\nReturn valid JSON only."),
+            HumanMessage(content=[
+                {"type": "text", "text": user_message},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]),
+        ])
+        return _extract_json(_stringify_content(response.content))
+    except Exception as e:
+        log.warning("LangChain OpenAI vision call failed (%s), using stub", e)
         if stub is not None:
             return stub
         raise

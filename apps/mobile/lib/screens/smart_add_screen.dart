@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../config.dart';
 import '../cubits/cart_cubit.dart';
@@ -64,7 +65,9 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
         _source = LlmSource.local;
       });
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() {
+        _error = describeApiError(e, baseUrl: AppScope.api.baseUrl);
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -169,7 +172,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                   content: Text(
-                                      ok ? 'Added to cart' : 'Could not add')),
+                                      ok ? 'Added to review' : 'Could not add')),
                             );
                           },
                           child: Text(
@@ -182,7 +185,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                 const SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: () => context.go('/cart'),
-                  child: const Text('Go to Cart'),
+                  child: const Text('Review Order'),
                 ),
               ]),
             ),

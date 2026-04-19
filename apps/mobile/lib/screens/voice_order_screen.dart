@@ -202,13 +202,14 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
     final cart = context.read<CartCubit>();
     int added = 0;
     try {
+      await cart.clear();
       for (final m in _results) {
         final id = m['product_id'] as String?;
         if (id == null) continue;
         final qty = (m['suggested_qty'] ?? 1);
         final n = qty is num ? qty : (int.tryParse('$qty') ?? 1);
-        await cart.add(id, n);
-        added++;
+        final ok = await cart.add(id, n);
+        if (ok) added++;
       }
 
       if (added == 0) {
@@ -233,7 +234,7 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       if (!mounted) return;
       setState(() => _approved = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$added items added to cart')),
+        SnackBar(content: Text('$added items ready for review')),
       );
     } catch (_) {
       await OfflineQueue.enqueue(
@@ -629,8 +630,8 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
                     textStyle: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w700),
                   ),
-                  icon: const Icon(Icons.shopping_cart, size: 24),
-                  label: const Text('Go to Cart'),
+                  icon: const Icon(Icons.assignment_turned_in_outlined, size: 24),
+                  label: const Text('Review Order'),
                 ),
               )
             : Column(children: [

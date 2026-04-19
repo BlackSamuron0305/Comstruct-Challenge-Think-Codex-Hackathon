@@ -3,11 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../app_scope.dart';
-import '../cubits/cart_cubit.dart';
 import '../cubits/language_cubit.dart';
 import '../translations.dart';
-import '../theme.dart';
 
 // ── C-materials color tokens ──────────────────────────────────────────
 class CColors {
@@ -86,9 +83,7 @@ class _CHomeScreenState extends State<CHomeScreen> {
                     Text(t(context, 'appTitle'),
                         style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700,
                             color: Color(0xFF1A1A1A), letterSpacing: -0.5)),
-                    // Language globe + cart
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      // Language picker button
                       Material(
                         color: CColors.tealLighter,
                         borderRadius: BorderRadius.circular(20),
@@ -110,24 +105,14 @@ class _CHomeScreenState extends State<CHomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Cart icon
-                      BlocBuilder<CartCubit, CartState>(
-                        builder: (_, s) => Stack(alignment: Alignment.center, children: [
-                          IconButton(
-                            icon: const Icon(Icons.shopping_cart_outlined, color: CColors.teal),
-                            onPressed: () => context.go('/cart'),
-                          ),
-                          if (s.lines.isNotEmpty)
-                            Positioned(
-                              right: 6, top: 6,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(color: CColors.yellow, shape: BoxShape.circle),
-                                child: Text('${s.lines.length}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                        ]),
+                      _TopIconButton(
+                        icon: Icons.person_outline,
+                        onTap: () => context.go('/c-profile'),
+                      ),
+                      const SizedBox(width: 8),
+                      _TopIconButton(
+                        icon: Icons.favorite_border,
+                        onTap: () => context.go('/c-favorites'),
                       ),
                     ]),
                   ],
@@ -251,6 +236,51 @@ class _CHomeScreenState extends State<CHomeScreen> {
                 ),
               ),
 
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => context.go('/c-favorites'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFFD4D8), width: 1.3),
+                      ),
+                      child: Row(children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: const BoxDecoration(color: Color(0xFFFFF0F1), shape: BoxShape.circle),
+                          child: const Icon(Icons.favorite, color: Colors.redAccent, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Saved items',
+                                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Keep your personally starred materials one tap away.',
+                                style: TextStyle(color: Colors.black54, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: Colors.black38),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+
               // ── Section divider ──
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -313,6 +343,30 @@ class _Cat {
   const _Cat(this.id, this.tKey, this.icon);
   final String id, tKey;
   final IconData icon;
+}
+
+class _TopIconButton extends StatelessWidget {
+  const _TopIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, color: CColors.teal, size: 24),
+        ),
+      ),
+    );
+  }
 }
 
 class _QuickButton extends StatelessWidget {

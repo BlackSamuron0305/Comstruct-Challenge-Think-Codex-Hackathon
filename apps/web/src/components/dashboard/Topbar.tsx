@@ -1,4 +1,4 @@
-import { Search, Bell, Workflow } from "lucide-react";
+import { Bell, Search, Workflow } from "lucide-react";
 
 export function Topbar({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
