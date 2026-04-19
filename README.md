@@ -95,7 +95,7 @@ For the fastest public demo deployment, use a single Google Compute Engine VM an
 4. Copy `.env.example` to `.env` and set the public host values:
    `VITE_API_BASE_URL=http://YOUR_VM_IP:8001/api`
    `VITE_WS_URL=ws://YOUR_VM_IP:8001/ws`
-   `CORS_ORIGIN=http://YOUR_VM_IP:8080`
+   `CORS_ORIGIN=http://YOUR_VM_IP:8080,http://YOUR_VM_IP:8090`
 5. Run the first deploy:
 
 ```bash

@@ -8,6 +8,7 @@ import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
 import '../favorites_store.dart';
 import 'c_home_screen.dart' show CColors;
+import 'projects_screen.dart' show kSelectedProjectKey, kSelectedProjectNameKey;
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -46,7 +47,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       final orders = await AppScope.api.orders(pageSize: 10);
       final favoriteIds = await FavoritesStore.load();
 
-      final projectName = prefs.getString('comstruct.selectedProjectName') ?? 'your project';
+      final projectName = prefs.getString(kSelectedProjectNameKey) ?? 'Select a project';
       final trade = prefs.getString('comstruct.userPosition') ?? (me['role']?.toString() ?? 'foreman');
 
       final recentItems = _extractRecent(orders, catalog).take(10).toList();
@@ -181,6 +182,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   Future<void> _addToReview(Map<String, dynamic> item) async {
+    final prefs = await SharedPreferences.getInstance();
+    final projectId = prefs.getString(kSelectedProjectKey);
+    if (projectId == null || projectId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a project first')),
+      );
+      context.go('/projects');
+      return;
+    }
+
     final productId = _itemProductId(item);
     if (productId == null) {
       ScaffoldMessenger.of(context).showSnackBar(

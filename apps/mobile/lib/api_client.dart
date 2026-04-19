@@ -43,6 +43,13 @@ String describeApiError(Object error, {String? baseUrl}) {
   }
 
   final message = error.toString().trim();
+  final lower = message.toLowerCase();
+  if (lower.contains('connection closed before full header was received') ||
+      lower.contains('socketexception') ||
+      lower.contains('connection refused') ||
+      lower.contains('failed host lookup')) {
+    return 'Could not reach ${baseUrl ?? 'the server'} from this device. Please retry.';
+  }
   return message.isEmpty ? 'Unknown backend error.' : message;
 }
 
@@ -346,10 +353,21 @@ class ApiClient {
   String get baseUrl => dio.options.baseUrl;
 
   bool _isConnectivityError(DioException error) {
+    final message = error.message?.toLowerCase() ?? '';
     return error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||
-        error.type == DioExceptionType.sendTimeout;
+        error.type == DioExceptionType.sendTimeout ||
+        (error.type == DioExceptionType.unknown &&
+            (message.contains('connection closed') ||
+                message.contains('socketexception') ||
+                message.contains('failed host lookup') ||
+                message.contains('connection refused')));
+  }
+
+  Future<void> ensureReachableBaseUrl() async {
+    final resolved = await AppConfig.resolveReachableApiBaseUrl();
+    dio.options.baseUrl = resolved;
   }
 
   Future<Response<dynamic>?> _retryOnAlternateBaseUrl(DioException error) async {

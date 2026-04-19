@@ -6,9 +6,10 @@ import 'package:uuid/uuid.dart';
 
 import '../api_client.dart';
 import '../app_scope.dart';
+import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_queue.dart';
-import 'projects_screen.dart' show kSelectedProjectKey;
+import 'projects_screen.dart' show kSelectedProjectKey, kSelectedProjectNameKey;
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -19,18 +20,47 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   bool _checkingOut = false;
   String? _idempotencyKey;
+  String? _projectId;
+  String _projectName = 'Select a project';
+  String? _checkoutError;
+
+  bool get _hasSelectedProject => _projectId != null && _projectId!.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    _loadSelectedProject();
     context.read<CartCubit>().refresh();
+  }
+
+  Future<void> _loadSelectedProject() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _projectId = prefs.getString(kSelectedProjectKey);
+      _projectName = prefs.getString(kSelectedProjectNameKey) ?? 'Select a project';
+    });
+  }
+
+  void _selectProject() {
+    context.go('/projects');
   }
 
   Future<void> _checkout() async {
     final prefs = await SharedPreferences.getInstance();
     final projectId = prefs.getString(kSelectedProjectKey);
-    if (projectId == null) {
+    final projectName = prefs.getString(kSelectedProjectNameKey) ?? 'Select a project';
+
+    setState(() {
+      _projectId = projectId;
+      _projectName = projectName;
+    });
+
+    if (projectId == null || projectId.isEmpty) {
       if (!mounted) return;
+      setState(() {
+        _checkoutError = 'Select a project first before placing the order.';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a project first')),
       );
@@ -38,11 +68,14 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
-    // Generate idempotency key once per checkout attempt
     _idempotencyKey ??= const Uuid().v4();
 
-    setState(() => _checkingOut = true);
+    setState(() {
+      _checkingOut = true;
+      _checkoutError = null;
+    });
     try {
+      await AppScope.api.ensureReachableBaseUrl();
       final order = await AppScope.api.checkout(
         projectId: projectId,
         idempotencyKey: _idempotencyKey,
@@ -73,8 +106,10 @@ class _CartScreenState extends State<CartScreen> {
         return;
       }
       if (!mounted) return;
+      final friendly = '${describeApiError(e, baseUrl: AppScope.api.baseUrl)} ${AppConfig.backendConnectionHelp}';
+      setState(() => _checkoutError = friendly);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text(friendly)),
       );
     } finally {
       if (mounted) setState(() => _checkingOut = false);
@@ -84,53 +119,191 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartCubit>().state;
+    final controlsEnabled = _hasSelectedProject && !_checkingOut;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Order Review')),
-      body: cart.busy
-          ? const Center(child: CircularProgressIndicator())
-          : cart.lines.isEmpty
-              ? const Center(child: Text('No items selected yet'))
-              : RefreshIndicator(
-                  onRefresh: () => context.read<CartCubit>().refresh(),
-                  child: ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(12),
-                    itemCount: cart.lines.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final l = cart.lines[i];
-                      final quantity = parseFlexibleInt(l['quantity'], fallback: 1);
-                      final unitPrice = parseFlexibleNumber(l['unit_price']) ?? 0;
-                      return Dismissible(
-                        key: ValueKey(l['product_id']),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 16),
-                          color: Colors.red,
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (_) => context.read<CartCubit>().remove(l['product_id'] as String),
-                        child: Card(
-                          child: ListTile(
-                            title: Text(l['name'] as String),
-                            subtitle: Text('$quantity × ${unitPrice.toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)}'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => context.read<CartCubit>().remove(l['product_id'] as String),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Material(
+              color: _hasSelectedProject ? const Color(0xFFEAF7F1) : const Color(0xFFFFF4E5),
+              borderRadius: BorderRadius.circular(16),
+              child: ListTile(
+                leading: Icon(
+                  _hasSelectedProject ? Icons.business_center_outlined : Icons.folder_open,
+                  color: _hasSelectedProject ? Colors.green.shade700 : Colors.orange.shade800,
                 ),
+                title: Text(_hasSelectedProject ? _projectName : 'Select a project first'),
+                subtitle: Text(
+                  _hasSelectedProject
+                      ? 'This order will be placed for the selected project.'
+                      : 'Choose a project before adjusting quantities or placing the order.',
+                ),
+                trailing: !_hasSelectedProject
+                    ? FilledButton(
+                        onPressed: _selectProject,
+                        child: const Text('Select'),
+                      )
+                    : null,
+              ),
+            ),
+          ),
+          Expanded(
+            child: cart.busy
+                ? const Center(child: CircularProgressIndicator())
+                : cart.lines.isEmpty
+                    ? const Center(child: Text('No items selected yet'))
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          await _loadSelectedProject();
+                          await context.read<CartCubit>().refresh();
+                        },
+                        child: ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(12),
+                          itemCount: cart.lines.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final l = cart.lines[i];
+                            final productId = (l['product_id'] ?? '').toString();
+                            final quantity = parseFlexibleInt(l['quantity'], fallback: 1);
+                            final unitPrice = parseFlexibleNumber(l['unit_price']) ?? 0;
+                            final name = (l['name'] ?? 'Material').toString();
+                            return Dismissible(
+                              key: ValueKey(productId),
+                              direction: controlsEnabled ? DismissDirection.endToStart : DismissDirection.none,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 16),
+                                color: Colors.red,
+                                child: const Icon(Icons.delete, color: Colors.white),
+                              ),
+                              onDismissed: (_) => context.read<CartCubit>().remove(productId),
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(name,
+                                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '${unitPrice.toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)} each',
+                                                  style: const TextStyle(color: Colors.black54),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline),
+                                            onPressed: controlsEnabled
+                                                ? () => context.read<CartCubit>().remove(productId)
+                                                : null,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(children: [
+                                        SizedBox(
+                                          width: 64,
+                                          height: 56,
+                                          child: ElevatedButton(
+                                            onPressed: controlsEnabled
+                                                ? () => context.read<CartCubit>().setQuantity(productId, quantity - 1)
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.grey.shade100,
+                                              foregroundColor: Colors.black87,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                              padding: EdgeInsets.zero,
+                                              elevation: 0,
+                                            ),
+                                            child: Icon(quantity <= 1 ? Icons.delete_outline : Icons.remove, size: 28),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Center(
+                                            child: Text(
+                                              '$quantity',
+                                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 64,
+                                          height: 56,
+                                          child: ElevatedButton(
+                                            onPressed: controlsEnabled
+                                                ? () => context.read<CartCubit>().setQuantity(productId, quantity + 1)
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFFE6F4EF),
+                                              foregroundColor: Colors.teal,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                              padding: EdgeInsets.zero,
+                                              elevation: 0,
+                                            ),
+                                            child: const Icon(Icons.add, size: 28),
+                                          ),
+                                        ),
+                                      ]),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
+      ),
       bottomNavigationBar: cart.lines.isEmpty
           ? null
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  if (_checkoutError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF4E5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFFD59E)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Order could not be sent yet', style: TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 6),
+                          Text(_checkoutError!, style: const TextStyle(height: 1.35)),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton.icon(
+                              onPressed: _checkingOut ? null : _checkout,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry order'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -142,9 +315,15 @@ class _CartScreenState extends State<CartScreen> {
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _checkingOut ? null : _checkout,
-                      child: Text(_checkingOut ? 'Submitting…' : 'Place order now'),
+                    height: 58,
+                    child: ElevatedButton.icon(
+                      onPressed: _checkingOut ? null : (_hasSelectedProject ? _checkout : _selectProject),
+                      icon: Icon(_hasSelectedProject ? Icons.check_circle_outline : Icons.folder_open),
+                      label: Text(
+                        _checkingOut
+                            ? 'Submitting…'
+                            : (_hasSelectedProject ? 'Place order now' : 'Select project first'),
+                      ),
                     ),
                   ),
                 ]),

@@ -116,6 +116,7 @@ PRODUCTS = [
     {"supplier": "Nordbau Trade Partner", "sku": "NTP408", "name": "Baustellenlampe LED kompakt", "unit": "pcs", "price": "28.60", "category": "Tools", "description": "compact led site lamp"},
     {"supplier": "ACME Construction Supplies", "sku": "C029", "name": "Torx screws 4x40 zinc", "unit": "pcs", "price": "0.09", "category": "Fasteners", "description": "torx screw 4x40 zinc plated variant"},
     {"supplier": "ACME Construction Supplies", "sku": "C030", "name": "Site flood light LED 50W", "unit": "pcs", "price": "33.50", "category": "Tools", "description": "site flood light led 50w"},
+    {"supplier": "ACME Construction Supplies", "sku": "C031", "name": "Cross-peen hammer 300g", "unit": "pcs", "price": "14.90", "category": "Tools", "description": "cross peen hammer for sheet metal and fitting work", "manufacturer": "ACME Proline", "manufacturer_sku": "AC-HAM-300P", "ean": "7610000031002", "image_url": "https://demo.comstruct.local/catalog/c031.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.96", "base_discount_pct": "3.0", "bulk_discount_pct": "6.5", "bulk_discount_threshold": "8", "packaging_qty": "1", "special_info": {"tool_type": "cross-peen hammer", "head_material": "forged steel", "handle_material": "ash wood", "weight_class": "300 g", "use_case": "sheet metal and fitting work"}},
     {"supplier": "Alpine Fasteners AG", "sku": "ALP107", "name": "Concrete screw 7.5x80 zinc", "unit": "box", "price": "34.90", "category": "Anchors", "description": "concrete screw zinc 7.5x80"},
     {"supplier": "Alpine Fasteners AG", "sku": "ALP108", "name": "Universal TX screw 4x40", "unit": "pcs", "price": "0.10", "category": "Fasteners", "description": "tx screw 4x40 universal fastener"},
     {"supplier": "Helvetia Safety GmbH", "sku": "HEL207", "name": "Respirator masks FFP2 contractor pack", "unit": "pack", "price": "15.20", "category": "PPE", "description": "contractor respirator masks ffp2"},
@@ -125,9 +126,15 @@ PRODUCTS = [
     {"supplier": "Nordbau Trade Partner", "sku": "NTP409", "name": "TX20 Schrauben 4x40 verzinkt", "unit": "pcs", "price": "0.09", "category": "Fasteners", "description": "german tx20 screw 4x40 zinc"},
     {"supplier": "Nordbau Trade Partner", "sku": "NTP410", "name": "Baustrahler LED 50W", "unit": "pcs", "price": "29.40", "category": "Tools", "description": "baustrahler led 50w compact"},
     {"supplier": "Nordbau Trade Partner", "sku": "NTP411", "name": "Atemschutzmaske FFP2 Profipack", "unit": "pack", "price": "14.60", "category": "PPE", "description": "ffp2 mask professional pack"},
+    {"supplier": "Nordbau Trade Partner", "sku": "NTP412", "name": "Zimmermannshammer claw hammer 600g", "unit": "pcs", "price": "21.30", "category": "Tools", "description": "forged claw hammer for carpentry and roof timber work", "manufacturer": "Nordbau Profi", "manufacturer_sku": "NB-HAM-600C", "ean": "7610000412001", "image_url": "https://demo.comstruct.local/catalog/ntp412.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.95", "base_discount_pct": "3.5", "bulk_discount_pct": "7.0", "bulk_discount_threshold": "6", "packaging_qty": "1", "special_info": {"tool_type": "claw hammer", "head_material": "drop-forged steel", "handle_material": "hickory", "weight_class": "600 g", "use_case": "carpentry and roof timber work"}},
+    {"supplier": "Nordbau Trade Partner", "sku": "NTP413", "name": "Faeustel club hammer 1250g", "unit": "pcs", "price": "26.70", "category": "Tools", "description": "club hammer for anchors, masonry and breaker prep", "manufacturer": "Nordbau Profi", "manufacturer_sku": "NB-HAM-1250", "ean": "7610000413008", "image_url": "https://demo.comstruct.local/catalog/ntp413.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.94", "base_discount_pct": "4.0", "bulk_discount_pct": "7.5", "bulk_discount_threshold": "5", "packaging_qty": "1", "special_info": {"tool_type": "club hammer", "head_material": "hardened steel", "handle_material": "fiberglass", "weight_class": "1250 g", "use_case": "anchors, masonry and breaker prep"}},
 
-    {"supplier": "Swiss Fix AG", "sku": "SFX501", "name": "Claw hammer 16oz", "unit": "pcs", "price": "18.50", "category": "Tools", "description": "claw hammer carpenter hammer for nails"},
-    {"supplier": "Swiss Fix AG", "sku": "SFX502", "name": "Sledge hammer 5kg", "unit": "pcs", "price": "65.00", "category": "Tools", "description": "sledge hammer heavy demolition tool"},
+    {"supplier": "Swiss Fix AG", "sku": "SFX501", "name": "Claw hammer 16oz", "unit": "pcs", "price": "18.50", "category": "Tools", "description": "claw hammer carpenter hammer for nails", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-HAM-16CL", "ean": "7610000501006", "image_url": "https://demo.comstruct.local/catalog/sfx501.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.97", "base_discount_pct": "3.5", "bulk_discount_pct": "7", "bulk_discount_threshold": "6", "packaging_qty": "1", "special_info": {"tool_type": "claw hammer", "head_material": "drop-forged steel", "handle_material": "anti-slip fiberglass", "weight_class": "16 oz", "use_case": "general carpentry and nailing"}},
+    {"supplier": "Swiss Fix AG", "sku": "SFX502", "name": "Sledge hammer 5kg", "unit": "pcs", "price": "65.00", "category": "Tools", "description": "sledge hammer heavy demolition tool", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-SLG-5KG", "ean": "7610000502003", "image_url": "https://demo.comstruct.local/catalog/sfx502.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "3", "expected_delivery_days": "3", "delivery_confidence": "0.95", "base_discount_pct": "4", "bulk_discount_pct": "8.5", "bulk_discount_threshold": "4", "packaging_qty": "1", "special_info": {"tool_type": "sledge hammer", "head_material": "hardened steel", "handle_material": "reinforced fiberglass", "weight_class": "5 kg", "use_case": "heavy demolition and concrete breakup"}},
+    {"supplier": "Swiss Fix AG", "sku": "SFX506", "name": "Framing hammer 20oz anti-vibration", "unit": "pcs", "price": "24.90", "category": "Tools", "description": "framing hammer anti vibration milled face for carpentry crews", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-FRM-20AV", "ean": "7610000506009", "image_url": "https://demo.comstruct.local/catalog/sfx506.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.96", "base_discount_pct": "4.0", "bulk_discount_pct": "7.5", "bulk_discount_threshold": "6", "packaging_qty": "1", "special_info": {"tool_type": "framing hammer", "head_material": "milled forged steel", "handle_material": "shock-absorbing composite", "weight_class": "20 oz", "use_case": "timber framing and repetitive site work"}},
+    {"supplier": "Swiss Fix AG", "sku": "SFX507", "name": "Club hammer 1.5kg fiberglass", "unit": "pcs", "price": "29.80", "category": "Tools", "description": "club hammer with fiberglass handle for masonry and anchor work", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-CLB-15F", "ean": "7610000507006", "image_url": "https://demo.comstruct.local/catalog/sfx507.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.95", "base_discount_pct": "4.0", "bulk_discount_pct": "8.0", "bulk_discount_threshold": "5", "packaging_qty": "1", "special_info": {"tool_type": "club hammer", "head_material": "forged steel", "handle_material": "fiberglass", "weight_class": "1.5 kg", "use_case": "masonry, anchors and controlled demolition"}},
+    {"supplier": "Swiss Fix AG", "sku": "SFX508", "name": "Rubber mallet white 65mm", "unit": "pcs", "price": "16.40", "category": "Tools", "description": "rubber mallet for paving, tiles and surface-safe assembly", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-RMB-65W", "ean": "7610000508003", "image_url": "https://demo.comstruct.local/catalog/sfx508.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.97", "base_discount_pct": "3.0", "bulk_discount_pct": "6.5", "bulk_discount_threshold": "8", "packaging_qty": "1", "special_info": {"tool_type": "rubber mallet", "head_material": "non-marking rubber", "handle_material": "ash wood", "weight_class": "65 mm face", "use_case": "paving, tiles and surface-safe assembly"}},
+    {"supplier": "Swiss Fix AG", "sku": "SFX509", "name": "Brick hammer chisel edge 600g", "unit": "pcs", "price": "22.60", "category": "Tools", "description": "brick hammer with chisel edge for concrete blocks and paving repair", "manufacturer": "Swiss Fix Pro", "manufacturer_sku": "SF-BRK-600", "ean": "7610000509000", "image_url": "https://demo.comstruct.local/catalog/sfx509.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "2", "expected_delivery_days": "2", "delivery_confidence": "0.95", "base_discount_pct": "3.5", "bulk_discount_pct": "7.0", "bulk_discount_threshold": "6", "packaging_qty": "1", "special_info": {"tool_type": "brick hammer", "head_material": "forged steel", "handle_material": "fiberglass", "weight_class": "600 g", "use_case": "concrete blocks, bricks and paving repair"}},
     {"supplier": "Swiss Fix AG", "sku": "SFX503", "name": "Concrete screws 8mm pack", "unit": "box", "price": "38.90", "category": "Anchors", "description": "concrete screws 8mm anchor fixing"},
     {"supplier": "Swiss Fix AG", "sku": "SFX504", "name": "Hex nuts zinc-plated M10", "unit": "pack", "price": "5.40", "category": "Fasteners", "description": "hex nuts zinc plated m10"},
     {"supplier": "Swiss Fix AG", "sku": "SFX505", "name": "Joint filler drywall 5kg", "unit": "bag", "price": "12.80", "category": "Drywall", "description": "joint filler for drywall finishing"},
@@ -137,8 +144,11 @@ PRODUCTS = [
     {"supplier": "Urban Build Tools", "sku": "UBT603", "name": "Foam backer rod 10mm", "unit": "roll", "price": "7.20", "category": "Sanitary", "description": "foam backer rod 10mm joint fill"},
     {"supplier": "Urban Build Tools", "sku": "UBT604", "name": "Cleaning wipes construction", "unit": "pack", "price": "6.90", "category": "Site Supplies", "description": "construction cleaning wipes"},
     {"supplier": "Urban Build Tools", "sku": "UBT605", "name": "Hard hats white", "unit": "pcs", "price": "12.90", "category": "PPE", "description": "white hard hats site safety"},
+    {"supplier": "Urban Build Tools", "sku": "UBT606", "name": "Dead blow hammer 45mm", "unit": "pcs", "price": "27.50", "category": "Tools", "description": "dead blow hammer for controlled impact without rebound", "manufacturer": "Urban Build", "manufacturer_sku": "UB-HAM-45DB", "ean": "7610000606004", "image_url": "https://demo.comstruct.local/catalog/ubt606.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "3", "expected_delivery_days": "3", "delivery_confidence": "0.93", "base_discount_pct": "3.0", "bulk_discount_pct": "6.5", "bulk_discount_threshold": "6", "packaging_qty": "1", "special_info": {"tool_type": "dead blow hammer", "head_material": "polyurethane shell with steel shot", "handle_material": "rubber grip steel core", "weight_class": "45 mm face", "use_case": "controlled impact without rebound"}},
+    {"supplier": "Urban Build Tools", "sku": "UBT607", "name": "Drilling hammer 3lb", "unit": "pcs", "price": "31.90", "category": "Tools", "description": "drilling hammer for chisels, anchors and demolition prep", "manufacturer": "Urban Build", "manufacturer_sku": "UB-HAM-3LB", "ean": "7610000607001", "image_url": "https://demo.comstruct.local/catalog/ubt607.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "3", "expected_delivery_days": "3", "delivery_confidence": "0.94", "base_discount_pct": "3.5", "bulk_discount_pct": "7.0", "bulk_discount_threshold": "5", "packaging_qty": "1", "special_info": {"tool_type": "drilling hammer", "head_material": "hardened steel", "handle_material": "shock-resistant fiberglass", "weight_class": "3 lb", "use_case": "chisels, anchors and demolition prep"}},
 
     {"supplier": "ProSite Safety Outlet", "sku": "PSO701", "name": "High-vis safety vest XL", "unit": "pcs", "price": "9.10", "category": "PPE", "description": "high visibility safety vest xl"},
+    {"supplier": "ProSite Safety Outlet", "sku": "PSO706", "name": "Sledge hammer 4kg safety grip", "unit": "pcs", "price": "58.40", "category": "Tools", "description": "sledge hammer with safety grip for demolition and site breakup", "manufacturer": "ProSite Industrial", "manufacturer_sku": "PS-SLG-4KG", "ean": "7610000706008", "image_url": "https://demo.comstruct.local/catalog/pso706.jpg", "source": "seeded-hammer-showcase", "source_delivery_days": "3", "expected_delivery_days": "3", "delivery_confidence": "0.94", "base_discount_pct": "4.0", "bulk_discount_pct": "8.0", "bulk_discount_threshold": "4", "packaging_qty": "1", "special_info": {"tool_type": "sledge hammer", "head_material": "heat-treated steel", "handle_material": "safety-grip fiberglass", "weight_class": "4 kg", "use_case": "demolition and site breakup"}},
     {"supplier": "ProSite Safety Outlet", "sku": "PSO702", "name": "Anchor bolts M12 premium", "unit": "box", "price": "41.70", "category": "Anchors", "description": "premium anchor bolts m12"},
     {"supplier": "ProSite Safety Outlet", "sku": "PSO703", "name": "Expanding foam fire-rated", "unit": "can", "price": "8.40", "category": "Sanitary", "description": "fire rated expanding foam"},
     {"supplier": "ProSite Safety Outlet", "sku": "PSO704", "name": "Cable ties 300mm heavy duty", "unit": "pack", "price": "4.90", "category": "Electrical", "description": "cable ties 300mm heavy duty"},
@@ -181,33 +191,40 @@ async def upsert_product(db, supplier_id: UUID, product: dict) -> None:
         row = Product(
             supplier_id=supplier_id,
             sku=product["sku"],
-            internal_sku=f"INT-{product['sku']}",
-            material_class="C",
-            packaging_qty=Decimal("1"),
-            currency="CHF",
+            internal_sku=product.get("internal_sku") or f"INT-{product['sku']}",
+            material_class=product.get("material_class") or "C",
+            packaging_qty=Decimal(str(product.get("packaging_qty") or "1")),
+            currency=product.get("currency") or "CHF",
             is_active=True,
         )
         db.add(row)
 
     taxonomy = infer_taxonomy_fields(product)
+    row.internal_sku = product.get("internal_sku") or f"INT-{product['sku']}"
+    row.material_class = product.get("material_class") or "C"
+    row.packaging_qty = Decimal(str(product.get("packaging_qty") or "1"))
     row.name = product["name"]
     row.description = product["description"]
     row.category = product["category"]
     row.manufacturer = product.get("manufacturer") or product["supplier"]
     row.manufacturer_sku = product.get("manufacturer_sku") or product["sku"]
     row.ean = product.get("ean") or f"761{abs(hash(product['sku'])) % 1000000000:09d}"
-    row.image_url = product.get("image_url")
+    row.image_url = product.get("image_url") or row.image_url
     row.special_info = {
         "source": product.get("source", "seeded-demo"),
         "finish": "zinc-coated" if any(token in product["name"].lower() for token in ["zinc", "verzinkt", "galvanized"]) else "standard",
         "project_fit": product["category"],
+        **(product.get("special_info") or {}),
     }
     row.taxonomy_code = taxonomy["taxonomy_code"]
     row.taxonomy_label = taxonomy["taxonomy_label"]
     row.unit = product["unit"]
     row.unit_price = Decimal(product["price"])
-    row.currency = "CHF"
-    row.source_delivery_days = Decimal(str(product.get("source_delivery_days") or (1.0 if "Safety" in product["supplier"] else 2.0 if "Swiss Fix" in product["supplier"] else 3.0)))
+    row.currency = product.get("currency") or "CHF"
+    default_delivery = product.get("source_delivery_days") or (1.0 if "Safety" in product["supplier"] else 2.0 if "Swiss Fix" in product["supplier"] else 3.0)
+    row.source_delivery_days = Decimal(str(default_delivery))
+    row.expected_delivery_days = Decimal(str(product.get("expected_delivery_days") or default_delivery))
+    row.delivery_confidence = Decimal(str(product.get("delivery_confidence") or "0.92"))
     row.must_order = bool(product.get("must_order") or product["category"] == "PPE")
     row.base_discount_pct = Decimal(str(product.get("base_discount_pct") or (2.5 if row.must_order else 0)))
     row.bulk_discount_pct = Decimal(str(product.get("bulk_discount_pct") or (6 if product["unit"] in {"pcs", "pack"} else 4)))

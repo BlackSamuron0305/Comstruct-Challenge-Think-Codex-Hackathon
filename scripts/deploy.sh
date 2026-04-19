@@ -47,7 +47,14 @@ warn_if_localhost_env() {
   if grep -Eq '^CORS_ORIGIN=.*localhost' .env; then
     echo "Warning: CORS_ORIGIN still points to localhost in .env."
     echo "Set it to your public host, for example:"
-    echo "  CORS_ORIGIN=http://YOUR_VM_IP:8080"
+    echo "  CORS_ORIGIN=http://YOUR_VM_IP:8080,http://YOUR_VM_IP:8090"
+  fi
+
+  if [ -d apps/mobile/build/web ] && [ -f apps/mobile/build/web/index.html ]; then
+    echo "Flutter web build detected — mobile-web will be served on :8090"
+  else
+    echo "Note: No Flutter web build found. To enable the Flutter web demo:"
+    echo "  ./scripts/deploy-mobile-web.sh build http://YOUR_VM_IP:8001"
   fi
 }
 
