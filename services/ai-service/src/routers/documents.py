@@ -31,6 +31,7 @@ router = APIRouter(prefix="/ai", tags=["documents"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
 MAX_DOC_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_MARKDOWN_CHARS_FOR_PROMPT = 12000  # keeps prompt size bounded for predictable token usage
 
 
 class ExtractionResult(BaseModel):
@@ -99,7 +100,10 @@ Return JSON: {{
   "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "CHF", "category": "...", "confidence": 0.0-1.0}}],
   "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "CHF"}}
 }}""",
-            messages=[{"role": "user", "content": f"Markdown:\n{markdown[:12000]}\n\nTabular rows:\n{sample}"}],
+            messages=[{
+                "role": "user",
+                "content": f"Markdown:\n{markdown[:MAX_MARKDOWN_CHARS_FOR_PROMPT]}\n\nTabular rows:\n{sample}",
+            }],
             max_tokens=2048,
             temperature=0.0,
             stub={

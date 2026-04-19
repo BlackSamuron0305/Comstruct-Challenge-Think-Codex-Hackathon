@@ -78,6 +78,8 @@ async def compute_order_request_risk(
         mean = statistics.fmean(history)
         stddev = statistics.pstdev(history)
         if stddev == 0:
+            # Guardrail for flat histories: use a small adaptive spread (10% of mean)
+            # with an absolute floor of 1 unit to avoid divide-by-zero and overfitting.
             stddev = max(mean * 0.1, 1.0)
 
         z_score = (current_qty - mean) / stddev

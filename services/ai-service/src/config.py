@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
+    ANTHROPIC_API_KEY: str = ""
 
     # ── Behaviour ──────────────────────────────────────────────────
     MAX_INGEST_ROWS: int = 5000

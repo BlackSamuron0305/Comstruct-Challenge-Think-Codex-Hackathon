@@ -40,7 +40,7 @@ async def call_langchain_openai_json(
 
     try:
         from langchain_openai import ChatOpenAI
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
     except Exception as e:
         log.warning("LangChain import failed (%s), using stub", e)
         if stub is not None:
@@ -49,7 +49,14 @@ async def call_langchain_openai_json(
 
     lc_messages = [SystemMessage(content=system + "\n\nReturn valid JSON only.")]
     for m in messages:
-        lc_messages.append(HumanMessage(content=m.get("content", "")))
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "assistant":
+            lc_messages.append(AIMessage(content=content))
+        elif role == "system":
+            lc_messages.append(SystemMessage(content=content))
+        else:
+            lc_messages.append(HumanMessage(content=content))
 
     try:
         llm = ChatOpenAI(

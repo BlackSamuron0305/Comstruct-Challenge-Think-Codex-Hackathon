@@ -7,8 +7,11 @@ import re
 from typing import Any
 
 import pandas as pd
+from pypdf import PdfReader
 
 MAX_SAMPLE_VALUES = 5
+MARKDOWN_DIRECT_CONFIDENCE = 0.66
+_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 logger = logging.getLogger(__name__)
 
 
@@ -44,8 +47,6 @@ def parse_pdf_to_table(content: bytes) -> pd.DataFrame:
         logger.warning("pdfplumber extraction failed (%s), falling back to pypdf", e)
 
     # Fallback: plain text extraction via pypdf
-    from pypdf import PdfReader
-
     reader = PdfReader(io.BytesIO(content))
     rows: list[str] = []
     for page in reader.pages:
@@ -75,7 +76,6 @@ def parse_pdf_to_markdown(content: bytes) -> str:
     except Exception as e:
         logger.warning("pymupdf4llm markdown extraction failed (%s), falling back to text", e)
 
-    from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(content))
     chunks: list[str] = []
     for idx, page in enumerate(reader.pages, start=1):
@@ -100,7 +100,7 @@ def extract_catalog_from_markdown(markdown: str) -> list[dict]:
             continue
         if set("".join(cells)) <= {"-", ":"}:
             continue
-        sku = cells[0] if re.search(r"[A-Za-z0-9]", cells[0]) else ""
+        sku = cells[0] if _ALNUM_RE.search(cells[0]) else ""
         name = cells[1] if len(cells) > 1 else ""
         if not name:
             continue
@@ -111,7 +111,7 @@ def extract_catalog_from_markdown(markdown: str) -> list[dict]:
             "name": name,
             "unit_price": unit_price,
             "currency": "CHF",
-            "confidence": 0.66,
+            "confidence": MARKDOWN_DIRECT_CONFIDENCE,
             "extraction_mode": "markdown_direct",
         })
     return items

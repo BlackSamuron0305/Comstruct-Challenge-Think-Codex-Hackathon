@@ -140,6 +140,8 @@ type UploadResult = {
   items: ExtractedItem[];
 };
 
+const MIN_AUTO_APPROVAL_CONFIDENCE = 0.8;
+
 function Catalog() {
   const xlsxRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
@@ -199,7 +201,9 @@ function Catalog() {
   const importItems = () => {
     if (!uploadResult) return;
     const approved = uploadResult.items.filter(
-      (i) => i.decision !== "denied" && (i.decision === "approved" || i.confidence >= 0.8),
+      (i) =>
+        i.decision !== "denied" &&
+        (i.decision === "approved" || i.confidence >= MIN_AUTO_APPROVAL_CONFIDENCE),
     );
     // Add only items not already in catalog
     const existingSkus = new Set(catalogItems.map((c) => c.sku));
