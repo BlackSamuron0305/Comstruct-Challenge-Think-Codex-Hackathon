@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs ps seed migrate test lint gen-keys flutter-gen api-types clean
+.PHONY: help up down restart logs ps seed migrate test lint gen-keys flutter-gen api-types clean deploy-init deploy-update deploy-logs deploy-status mobile-web-build mobile-web-publish
 
 help:
 	@echo "comstruct dev shortcuts"
@@ -14,6 +14,12 @@ help:
 	@echo "  make lint         - run all linters"
 	@echo "  make api-types    - regenerate Dart + TS shared types"
 	@echo "  make flutter-gen  - flutter build_runner codegen"
+	@echo "  make deploy-init  - first-time VM deploy helper"
+	@echo "  make deploy-update - update deployed stack after git pull"
+	@echo "  make deploy-logs  - tail deployed stack logs"
+	@echo "  make deploy-status - show deployed stack status"
+	@echo "  make mobile-web-build - build Flutter web demo bundle"
+	@echo "  make mobile-web-publish - publish Flutter web demo on :8090"
 
 up:
 	@if [ ! -f .env ]; then cp .env.example .env; echo ">> Created .env from template. Edit it and re-run."; exit 1; fi
@@ -75,3 +81,21 @@ clean:
 	rm -rf node_modules apps/*/node_modules services/*/node_modules
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name .pytest_cache -prune -exec rm -rf {} +
+
+deploy-init:
+	./scripts/deploy.sh init
+
+deploy-update:
+	./scripts/deploy.sh update
+
+deploy-logs:
+	./scripts/deploy.sh logs
+
+deploy-status:
+	./scripts/deploy.sh status
+
+mobile-web-build:
+	./scripts/deploy-mobile-web.sh build
+
+mobile-web-publish:
+	./scripts/deploy-mobile-web.sh publish

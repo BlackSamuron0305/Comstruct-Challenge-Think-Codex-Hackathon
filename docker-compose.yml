@@ -209,6 +209,19 @@ services:
     networks:
       - comstruct-net
 
+  mobile-web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8090:80"
+    volumes:
+      - ./apps/mobile/build/web:/usr/share/nginx/html:ro
+      - ./infra/nginx/mobile-web.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - comstruct-net
+
 volumes:
   postgres_data:
   redis_data:

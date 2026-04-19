@@ -85,6 +85,64 @@ make seed                  # demo users + sample C-materials
 | PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6379` |
 
+## Hackathon Deploy
+
+For the fastest public demo deployment, use a single Google Compute Engine VM and keep the repo on that VM.
+
+1. Create an Ubuntu VM in Google Cloud Compute Engine.
+2. Install Docker and the Docker Compose plugin on the VM.
+3. Clone this repo onto the VM.
+4. Copy `.env.example` to `.env` and set the public host values:
+   `VITE_API_BASE_URL=http://YOUR_VM_IP:8001/api`
+   `VITE_WS_URL=ws://YOUR_VM_IP:8001/ws`
+   `CORS_ORIGIN=http://YOUR_VM_IP:8080`
+5. Run the first deploy:
+
+```bash
+make deploy-init
+```
+
+After that, updates are a one-command flow:
+
+```bash
+make deploy-update
+```
+
+That command will:
+- ensure `.env` exists
+- generate JWT keys if they are missing
+- `git pull --ff-only`
+- rebuild and restart the Docker Compose stack
+
+Useful deployment helpers:
+
+```bash
+make deploy-status
+make deploy-logs
+```
+
+To expose the Flutter foreman app in a browser too, build the Flutter web bundle on a machine with Flutter installed, then publish it with Docker Compose on the VM:
+
+```bash
+./scripts/deploy-mobile-web.sh build http://YOUR_VM_IP:8001
+./scripts/deploy-mobile-web.sh publish
+```
+
+That serves the Flutter web demo at `http://YOUR_VM_IP:8090`.
+
+If this is the first time you are targeting Flutter web, generate the missing platform scaffold once:
+
+```bash
+cd apps/mobile
+flutter create --platforms=web .
+```
+
+If both browser frontends should talk to the same backend, allow both origins in `.env`:
+
+```env
+CORS_ORIGIN=http://YOUR_VM_IP:8080,http://YOUR_VM_IP:8090
+```
+
 ## Demo Accounts (after `make seed`)
 
 | Role | Email | Password |
