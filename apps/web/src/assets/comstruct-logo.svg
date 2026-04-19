@@ -1,16 +1,19 @@
 <svg width="420" height="120" viewBox="0 0 420 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(8 10)">
-    <polygon points="44,0 2,24 56,21" fill="#5A7E96"/>
-    <polygon points="48,0 83,21 93,34" fill="#5A7E96"/>
-    <polygon points="0,31 18,34 12,72" fill="#5A7E96"/>
-    <polygon points="20,37 59,31 47,81" fill="#E5E7EB"/>
-    <polygon points="61,31 95,34 95,72" fill="#5A7E96"/>
-    <polygon points="13,74 45,83 31,100" fill="#5A7E96"/>
-    <polygon points="48,37 79,79 34,82" fill="#F2C94C"/>
-    <polygon points="47,85 83,82 53,99" fill="#5A7E96"/>
-    <polyline points="0,31 59,25 61,31 95,34" stroke="#4C6F86" stroke-width="3" stroke-linejoin="round"/>
-    <polyline points="20,37 47,81 79,79 48,37" stroke="#4C6F86" stroke-width="3" stroke-linejoin="round"/>
-    <line x1="59" y1="25" x2="47" y2="81" stroke="#4C6F86" stroke-width="3"/>
+  <rect x="8" y="8" width="104" height="104" rx="22" fill="#0B3B4E"/>
+  <g transform="translate(24 24)">
+    <polygon points="30,0 0,18 42,15" fill="#F3F4F6"/>
+    <polygon points="33,0 54,15 75,18" fill="#F3F4F6"/>
+    <polygon points="0,22 42,18 30,57" fill="#F3F4F6"/>
+    <polygon points="54,19 75,18 75,57" fill="#F3F4F6"/>
+    <polygon points="30,57 0,22 13,56" fill="#F3F4F6"/>
+    <polygon points="34,57 75,53 50,16" fill="#F2C94C"/>
+    <polygon points="0,59 31,63 41,76" fill="#F3F4F6"/>
+    <polygon points="34,63 75,59 45,78" fill="#F3F4F6"/>
+    <polyline points="0,22 42,18 54,19 75,57 34,63 30,57 0,22" stroke="#0B3B4E" stroke-width="3" stroke-linejoin="round"/>
+    <line x1="42" y1="18" x2="30" y2="57" stroke="#0B3B4E" stroke-width="3"/>
+    <line x1="54" y1="19" x2="34" y2="63" stroke="#0B3B4E" stroke-width="3"/>
+    <line x1="30" y1="0" x2="54" y2="19" stroke="#0B3B4E" stroke-width="3"/>
+    <line x1="13" y1="56" x2="41" y2="76" stroke="#0B3B4E" stroke-width="3"/>
   </g>
-  <text x="122" y="73" fill="#4F748B" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="700" letter-spacing="0.4">comstruct</text>
+  <text x="132" y="72" fill="#0B3B4E" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="700" letter-spacing="0.5">comstruct</text>
 </svg>
