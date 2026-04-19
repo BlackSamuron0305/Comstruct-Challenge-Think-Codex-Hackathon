@@ -2,8 +2,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import rateLimit from '@fastify/rate-limit';
-import multipart from '@fastify/multipart';
 import helmet from '@fastify/helmet';
+import { ZodError } from 'zod';
 
 import { config } from './config.js';
 import authPlugin from './authPlugin.js';
@@ -14,6 +14,34 @@ import { registerWebSocket } from './ws.js';
 const app = Fastify({ logger: { level: config.logLevel } });
 
 await app.register(sensible);
+
+app.setErrorHandler((error, _request, reply) => {
+  if (error instanceof ZodError) {
+    const message = error.issues[0]?.message ?? 'Invalid request payload';
+    return reply.code(400).send({
+      error: 'validation_error',
+      message,
+      issues: error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
+    });
+  }
+
+  const statusCode = (error as { statusCode?: number }).statusCode;
+  if (statusCode && statusCode >= 400 && statusCode < 500) {
+    return reply.code(statusCode).send({
+      error: 'request_error',
+      message: error.message || 'Request failed',
+    });
+  }
+
+  app.log.error(error);
+  return reply.code(500).send({
+    error: 'internal_server_error',
+    message: 'Unexpected server error',
+  });
+});
 
 // Security headers
 await app.register(helmet, {
@@ -47,7 +75,6 @@ await app.register(rateLimit, {
   },
 });
 
-await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
 await app.register(authPlugin);
 
 // Strict rate limit on auth endpoints

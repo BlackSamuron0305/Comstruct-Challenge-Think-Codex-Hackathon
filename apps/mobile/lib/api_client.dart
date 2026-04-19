@@ -133,6 +133,7 @@ class ApiClient {
       await tokens.save(access: r.data['access_token'] as String);
       return true;
     } catch (_) {
+      await tokens.clear();
       return false;
     }
   }
@@ -152,7 +153,12 @@ class ApiClient {
       access: data['access_token'] as String,
       refresh: data['refresh_token'] as String,
     );
-    return data['user'] as Map<String, dynamic>;
+    return Map<String, dynamic>.from(data['user'] as Map);
+  }
+
+  Future<Map<String, dynamic>> me() async {
+    final r = await dio.get('/auth/me');
+    return Map<String, dynamic>.from(r.data as Map);
   }
 
   // ── Catalog (with offline cache + pagination) ──────────────────────
@@ -287,6 +293,20 @@ class ApiClient {
       if (projectId != null) 'project_id': projectId,
     });
     final r = await dio.post('/api/ai/upload-image', data: formData);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
+  Future<Map<String, dynamic>> extractImageText(
+    String filePath, {
+    String documentType = 'order',
+    String defaultCurrency = 'CHF',
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+      'document_type': documentType,
+      'default_currency': defaultCurrency,
+    });
+    final r = await dio.post('/api/ai/extract-image', data: formData);
     return Map<String, dynamic>.from(r.data as Map);
   }
 

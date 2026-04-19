@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_scope.dart';
+import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../local_llm.dart';
 import '../theme.dart';
@@ -36,7 +37,8 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
 
       // Try the backend AI first (it uses OpenAI / Ollama on server side)
       try {
-        final res = await AppScope.api.recommend(task, projectName: projectName);
+        final res =
+            await AppScope.api.recommend(task, projectName: projectName);
         setState(() {
           _result = res;
           _source = LlmSource.openai;
@@ -48,11 +50,13 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
 
       // On-device fallback
       final llmResult = await AppScope.llm.generateJson(
-        prompt: 'You are a construction materials expert. Given the task: "$task", '
-        'return JSON {"summary": "...", "items": [{"name": "...", "rationale": "...", "suggested_qty": 1}]}',
+        prompt:
+            'You are a construction materials expert. Given the task: "$task", '
+            'return JSON {"summary": "...", "items": [{"name": "...", "rationale": "...", "suggested_qty": 1}]}',
       );
       if (llmResult.containsKey('error')) {
-        setState(() => _error = 'No AI service available. Check your connection.');
+        setState(() => _error =
+            'No AI service available at ${AppConfig.apiBaseUrl}. ${AppConfig.backendConnectionHelp}');
         return;
       }
       setState(() {
@@ -72,13 +76,15 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
       appBar: AppBar(title: const Text('Smart Add')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           TextField(
             controller: _ctrl,
             maxLines: 3,
             decoration: const InputDecoration(
               labelText: 'What do you need to do today?',
-              hintText: 'e.g. "Plumbing install 2nd floor bathroom, seal connections"',
+              hintText:
+                  'e.g. "Plumbing install 2nd floor bathroom, seal connections"',
             ),
           ),
           const SizedBox(height: 12),
@@ -88,18 +94,24 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
             label: Text(_busy ? 'Thinking…' : 'Get Suggestions'),
           ),
           const SizedBox(height: 16),
-          if (_error != null) Text(_error!, style: const TextStyle(color: ComstructColors.err)),
+          if (_error != null)
+            Text(_error!, style: const TextStyle(color: ComstructColors.err)),
           if (_source != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(children: [
                 Icon(
-                  _source == LlmSource.local ? Icons.phone_android : Icons.cloud,
-                  size: 16, color: Colors.black45,
+                  _source == LlmSource.local
+                      ? Icons.phone_android
+                      : Icons.cloud,
+                  size: 16,
+                  color: Colors.black45,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  _source == LlmSource.local ? 'On-device AI / offline mode' : 'Cloud AI',
+                  _source == LlmSource.local
+                      ? 'On-device AI / offline mode'
+                      : 'Cloud AI',
                   style: const TextStyle(fontSize: 12, color: Colors.black45),
                 ),
               ]),
@@ -119,13 +131,19 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                     return Card(
                       child: ListTile(
                         title: Row(children: [
-                          Expanded(child: Text((it['name'] as String?) ?? '—',
-                              style: const TextStyle(fontWeight: FontWeight.w600))),
+                          Expanded(
+                              child: Text((it['name'] as String?) ?? '—',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600))),
                           if (confidence != null)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: confidence >= 0.8 ? ComstructColors.ok.withValues(alpha: 0.15) : ComstructColors.warn.withValues(alpha: 0.15),
+                                color: confidence >= 0.8
+                                    ? ComstructColors.ok.withValues(alpha: 0.15)
+                                    : ComstructColors.warn
+                                        .withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
@@ -133,7 +151,9 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: confidence >= 0.8 ? ComstructColors.ok : ComstructColors.warn,
+                                  color: confidence >= 0.8
+                                      ? ComstructColors.ok
+                                      : ComstructColors.warn,
                                 ),
                               ),
                             ),
@@ -142,15 +162,18 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                         trailing: ElevatedButton(
                           onPressed: () async {
                             final ok = await context.read<CartCubit>().add(
-                              it['product_id'] as String,
-                              (it['suggested_qty'] as num?) ?? 1,
-                            );
+                                  it['product_id'] as String,
+                                  (it['suggested_qty'] as num?) ?? 1,
+                                );
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(ok ? 'Added to cart' : 'Could not add')),
+                              SnackBar(
+                                  content: Text(
+                                      ok ? 'Added to cart' : 'Could not add')),
                             );
                           },
-                          child: Text(((it['suggested_qty'] as num?) ?? 1).toString()),
+                          child: Text(
+                              ((it['suggested_qty'] as num?) ?? 1).toString()),
                         ),
                       ),
                     );

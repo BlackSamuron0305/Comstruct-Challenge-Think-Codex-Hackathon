@@ -1,5 +1,5 @@
-/// Image-based ordering screen — capture or pick a photo, AI auto-analyzes,
-/// user reviews quantities and places the order directly.
+// Image-based ordering screen — capture or pick a photo, AI auto-analyzes,
+// user reviews quantities and places the order directly.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../app_scope.dart';
+import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../offline_queue.dart';
@@ -28,16 +29,70 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
   bool _busy = false;
   bool _ordering = false;
   List<Map<String, dynamic>> _materials = [];
-  Map<int, int> _quantities = {};
+  final Map<String, int> _quantities = {};
+  final Set<String> _removingKeys = <String>{};
   String? _observation;
   String? _error;
 
-  int _qtyFor(int index) {
-    if (_quantities.containsKey(index)) return _quantities[index]!;
-    final m = _materials[index];
+  String _materialKey(Map<String, dynamic> material) {
+    final existing = material['_entry_key'] as String?;
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final stable = const Uuid().v4();
+    material['_entry_key'] = stable;
+    return stable;
+  }
+
+  List<Map<String, dynamic>> _withStableKeys(List<Map<String, dynamic>> items) {
+    return items
+        .map((item) {
+          final copy = Map<String, dynamic>.from(item);
+          copy['_entry_key'] = copy['_entry_key'] ?? const Uuid().v4();
+          return copy;
+        })
+        .toList();
+  }
+
+  int _detectedQty(Map<String, dynamic> material) {
     final raw =
-        m['quantity'] ?? m['quantity_estimate'] ?? m['suggested_qty'] ?? 1;
+        material['quantity'] ?? material['quantity_estimate'] ?? material['suggested_qty'] ?? 1;
     return raw is num ? raw.toInt() : (int.tryParse('$raw') ?? 1);
+  }
+
+  int _qtyFor(int index) {
+    final material = _materials[index];
+    final key = _materialKey(material);
+    return _quantities[key] ?? _detectedQty(material);
+  }
+
+  void _setQtyFor(int index, int newQty) {
+    if (index < 0 || index >= _materials.length) return;
+    final key = _materialKey(_materials[index]);
+
+    if (newQty > 0) {
+      setState(() {
+        _quantities[key] = newQty;
+        _removingKeys.remove(key);
+      });
+      return;
+    }
+
+    setState(() {
+      _quantities[key] = 0;
+      _removingKeys.add(key);
+    });
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      if (!_removingKeys.contains(key)) return;
+      if ((_quantities[key] ?? 0) > 0) return;
+
+      setState(() {
+        _materials.removeWhere((item) => _materialKey(item) == key);
+        _quantities.remove(key);
+        _removingKeys.remove(key);
+      });
+    });
   }
 
   Future<void> _pickAndAnalyze(ImageSource source) async {
@@ -51,7 +106,8 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
     setState(() {
       _image = File(picked.path);
       _materials = [];
-      _quantities = {};
+      _quantities.clear();
+      _removingKeys.clear();
       _observation = null;
       _error = null;
     });
@@ -64,7 +120,8 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
       _busy = true;
       _error = null;
       _materials = [];
-      _quantities = {};
+      _quantities.clear();
+      _removingKeys.clear();
       _observation = null;
     });
 
@@ -76,13 +133,29 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
       if (mounted) {
         setState(() {
-          _materials = localItems;
+          _materials = _withStableKeys(localItems);
           _observation = localSummary;
         });
       }
 
       final prefs = await SharedPreferences.getInstance();
       final projectId = prefs.getString('comstruct.selectedProject');
+
+      try {
+        final ocrRes = await AppScope.api.extractImageText(
+          _image!.path,
+          documentType: 'order',
+        );
+        final ocrItems = await OfflineCaptureAssistant.matchCatalogItems(
+          List<Map<String, dynamic>>.from((ocrRes['items'] as List?) ?? []),
+        );
+        if (mounted && ocrItems.isNotEmpty) {
+          setState(() {
+            _materials = _withStableKeys(ocrItems);
+            _observation = 'AI OCR detected ${ocrItems.length} likely item(s).';
+          });
+        }
+      } catch (_) {}
 
       try {
         final res = await AppScope.api.uploadImage(
@@ -103,14 +176,15 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
         if (mounted && (detected.isNotEmpty || (obs?.isNotEmpty ?? false))) {
           setState(() {
-            _materials = List<Map<String, dynamic>>.from(detected);
+            _materials = _withStableKeys(List<Map<String, dynamic>>.from(detected));
             _observation = obs ?? _observation;
           });
         }
       } catch (_) {
         if (mounted && _materials.isEmpty) {
           setState(() {
-            _error = 'No backend connection. Showing on-device OCR only.';
+            _error =
+                'No backend connection at ${AppConfig.apiBaseUrl}. Showing on-device OCR only. ${AppConfig.backendConnectionHelp}';
           });
         }
       }
@@ -125,8 +199,9 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
   Future<void> _orderNow() async {
     final prefs = await SharedPreferences.getInstance();
     final projectId = prefs.getString(kSelectedProjectKey);
+    if (!mounted) return;
+    final cart = context.read<CartCubit>();
     if (projectId == null) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Select a project first'),
@@ -138,7 +213,6 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
     setState(() => _ordering = true);
     try {
-      final cart = context.read<CartCubit>();
       int added = 0;
       for (int i = 0; i < _materials.length; i++) {
         final m = _materials[i];
@@ -182,7 +256,12 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
         notes: 'Photo order – ${_materials.length} items detected by AI',
       );
       if (!mounted) return;
-      context.go('/c-order-confirmed', extra: order);
+      final orderId = order['id'] as String?;
+      if (orderId != null && orderId.isNotEmpty) {
+        context.go('/c-order/$orderId', extra: order);
+      } else {
+        context.go('/c-orders');
+      }
     } catch (e) {
       try {
         final task = List.generate(_materials.length, (i) {
@@ -296,7 +375,7 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: CColors.tealLighter,
                       shape: BoxShape.circle,
                     ),
@@ -324,7 +403,8 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
   Widget _buildReviewScreen(BuildContext context) {
     final orderableCount = _materials.where((m) {
       final id = (m['product_id'] as String?) ?? (m['sku'] as String?);
-      return id != null && id.isNotEmpty;
+      final qty = _quantities[_materialKey(m)] ?? _detectedQty(m);
+      return id != null && id.isNotEmpty && qty > 0;
     }).length;
 
     return Scaffold(
@@ -337,7 +417,8 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
           onPressed: () => setState(() {
             _image = null;
             _materials = [];
-            _quantities = {};
+            _quantities.clear();
+            _removingKeys.clear();
             _observation = null;
             _error = null;
           }),
@@ -412,12 +493,16 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               itemCount: _materials.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _MaterialCard(
-                material: _materials[i],
-                qty: _qtyFor(i),
-                onQtyChanged: (newQty) =>
-                    setState(() => _quantities[i] = newQty),
-              ),
+              itemBuilder: (_, i) {
+                final material = _materials[i];
+                final key = _materialKey(material);
+                return _MaterialCard(
+                  material: material,
+                  qty: _qtyFor(i),
+                  isRemoving: _removingKeys.contains(key),
+                  onQtyChanged: (newQty) => _setQtyFor(i, newQty),
+                );
+              },
             ),
           ),
         if (_materials.isEmpty && !_busy && _error == null)
@@ -473,11 +558,13 @@ class _MaterialCard extends StatelessWidget {
     required this.material,
     required this.qty,
     required this.onQtyChanged,
+    this.isRemoving = false,
   });
 
   final Map<String, dynamic> material;
   final int qty;
   final ValueChanged<int> onQtyChanged;
+  final bool isRemoving;
 
   @override
   Widget build(BuildContext context) {
@@ -490,10 +577,13 @@ class _MaterialCard extends StatelessWidget {
     final hasProduct = (material['product_id'] as String?)?.isNotEmpty == true;
     final price = material['unit_price'];
 
-    return Container(
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: isRemoving ? 0.55 : 1,
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isRemoving ? const Color(0xFFFFFBF2) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
             color:
@@ -557,6 +647,21 @@ class _MaterialCard extends StatelessWidget {
             ),
         ]),
         const SizedBox(height: 10),
+        if (isRemoving)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Removing item…',
+                style: TextStyle(
+                  color: CColors.orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         // Quantity row — BIG glove-friendly buttons
         Row(children: [
           // Minus button — 56×56 minimum
@@ -564,7 +669,7 @@ class _MaterialCard extends StatelessWidget {
             width: 64,
             height: 56,
             child: ElevatedButton(
-              onPressed: qty > 1 ? () => onQtyChanged(qty - 1) : null,
+              onPressed: qty > 0 ? () => onQtyChanged(qty - 1) : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.grey.shade100,
                 foregroundColor: CColors.tealDark,
@@ -609,6 +714,6 @@ class _MaterialCard extends StatelessWidget {
           ),
         ]),
       ]),
-    );
+    ));
   }
 }

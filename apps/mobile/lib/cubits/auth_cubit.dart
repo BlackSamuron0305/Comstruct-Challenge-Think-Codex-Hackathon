@@ -18,8 +18,14 @@ class AuthCubit extends Cubit<AuthState> {
 
   Future<void> bootstrap() async {
     if (_api.tokens.access == null) return;
-    // We don't fetch a /me endpoint to keep deps small; mark logged-in with a stub
-    emit(AuthState(user: {'email': '(restored session)', 'role': 'foreman'}));
+    emit(state.copyWith(busy: true, error: null));
+    try {
+      final user = await _api.me();
+      emit(AuthState(user: user));
+    } catch (_) {
+      await _api.tokens.clear();
+      emit(AuthState(error: 'Session expired'));
+    }
   }
 
   Future<void> login(String email, String password) async {

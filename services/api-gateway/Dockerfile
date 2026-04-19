@@ -14,6 +14,8 @@ COPY --from=deps /workspace/services ./services
 COPY --from=deps /workspace/packages ./packages
 COPY services/api-gateway ./services/api-gateway
 COPY packages/ts-shared-types ./packages/ts-shared-types
+COPY --from=deps /workspace/services/api-gateway/node_modules ./services/api-gateway/node_modules
+COPY --from=deps /workspace/packages/ts-shared-types/node_modules ./packages/ts-shared-types/node_modules
 WORKDIR /workspace/packages/ts-shared-types
 RUN pnpm build
 WORKDIR /workspace/services/api-gateway

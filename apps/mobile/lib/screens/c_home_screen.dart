@@ -18,6 +18,7 @@ class CColors {
   static const green       = Color(0xFF34C759);
   static const red         = Color(0xFFFF3B30);
   static const yellow      = Color(0xFFF5C300);
+  static const orange      = Color(0xFFF28C28);
   static const bg          = Color(0xFFF0F2F2);
 }
 

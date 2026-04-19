@@ -34,6 +34,20 @@ type PreviewPayload = {
   };
 };
 
+type ImportResult = {
+  status: string;
+  supplier_id?: string;
+  rows_in?: number;
+  c_materials?: number;
+  excluded?: number;
+  excluded_count?: number;
+  excluded_samples?: Array<{
+    name?: string;
+    class?: string;
+    reason?: string;
+  }>;
+};
+
 type CatalogRow = {
   sku: string;
   name: string;
@@ -93,6 +107,16 @@ function Catalog() {
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [selectedTrade, setSelectedTrade] = useState<string>("all");
   const [standardsOnly, setStandardsOnly] = useState<boolean>(false);
+  const [lastImportResult, setLastImportResult] = useState<ImportResult | null>(null);
+
+  function resetImportDraft() {
+    setSelectedFile(null);
+    setFileName("");
+    setSelectedSupplierId("");
+    setMappingOverrides({});
+    setLastImportResult(null);
+    previewMutation.reset();
+  }
 
   const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
     queryKey: ["products"],
@@ -134,11 +158,37 @@ function Catalog() {
       if (overridePayload.length > 0) {
         formData.append("mapping_overrides", JSON.stringify(overridePayload));
       }
-      return api.post("/api/ingest/supplier-file", formData);
+      return api.post<ImportResult>("/api/ingest/supplier-file", formData);
     },
-    onSuccess: () => {
-      toast.success("Catalog import started");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+    onSuccess: (data) => {
+      setLastImportResult(data);
+
+      if (data.status === "ok") {
+        toast.success(`Imported ${data.c_materials ?? 0} C-material records`);
+        previewMutation.reset();
+        setSelectedFile(null);
+        setFileName("");
+        setMappingOverrides({});
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        return;
+      }
+
+      if (data.status === "no_c_materials") {
+        toast.error("The file was parsed, but no C-material rows were found.");
+        return;
+      }
+
+      if (data.status === "no_valid_rows") {
+        toast.error("The file was parsed, but the rows still need mapping review.");
+        return;
+      }
+
+      if (data.status === "empty") {
+        toast.error("The uploaded file did not contain any rows to import.");
+        return;
+      }
+
+      toast.error("Import finished with issues that need manual review.");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Import failed"),
   });
@@ -149,6 +199,7 @@ function Catalog() {
     setSelectedFile(file);
     setFileName(file.name);
     setMappingOverrides({});
+    setLastImportResult(null);
     previewMutation.mutate({ file, overrides: {} });
   }
 
@@ -195,8 +246,20 @@ function Catalog() {
 
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
   const previewIssues = mappedColumns.filter((entry) => !entry.target_field).length;
+  const mappedCount = mappedColumns.length - previewIssues;
   const needsReview = previewMutation.data ? previewIssues : rows.filter((item) => item.status === "needs-review").length;
   const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
+  const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
+  const canImport = Boolean(selectedFile && selectedSupplierId && previewReady && previewIssues === 0 && !importMutation.isPending);
+  const importBlockedReason = !selectedFile
+    ? "Upload a supplier file to generate a preview first."
+    : !selectedSupplierId
+      ? "Choose the supplier that owns this catalog."
+      : previewMutation.isPending
+        ? "Wait for the preview and AI mapping review to finish."
+        : previewIssues > 0
+          ? "Resolve or explicitly ignore the remaining unmapped columns before importing."
+          : null;
 
   if (productsLoading || suppliersLoading) {
     return (
@@ -267,10 +330,22 @@ function Catalog() {
           <button
             className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             onClick={() => importMutation.mutate()}
-            disabled={!selectedFile || !selectedSupplierId || importMutation.isPending}
+            disabled={!canImport}
           >
             {importMutation.isPending ? "Importing…" : "Confirm import"}
           </button>
+          <div className="mt-2 text-xs text-muted-foreground">
+            {importBlockedReason ?? "Ready for import. The mapped file will be normalized into the live catalog."}
+          </div>
+          {(selectedFile || lastImportResult) && (
+            <button
+              className="mt-3 w-full rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
+              onClick={resetImportDraft}
+              type="button"
+            >
+              Reset upload
+            </button>
+          )}
         </div>
 
         <div className="rounded-lg border border-border bg-card p-5">
@@ -316,6 +391,21 @@ function Catalog() {
                 Refresh preview
               </button>
             )}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Rows previewed</div>
+              <div className="mt-1 text-lg font-semibold">{previewMutation.data.rows_in}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Mapped columns</div>
+              <div className="mt-1 text-lg font-semibold">{mappedCount}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Needs confirmation</div>
+              <div className="mt-1 text-lg font-semibold">{previewIssues}</div>
+            </div>
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -370,6 +460,43 @@ function Catalog() {
         </div>
       )}
 
+      {lastImportResult && (
+        <div className="mb-6 rounded-lg border border-border bg-card p-5">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Latest import result</div>
+          <h3 className="mt-1 text-display text-lg font-semibold">
+            {lastImportResult.status === "ok" ? "Supplier catalog imported" : "Import needs follow-up"}
+          </h3>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Rows processed</div>
+              <div className="mt-1 text-lg font-semibold">{lastImportResult.rows_in ?? 0}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">C-materials kept</div>
+              <div className="mt-1 text-lg font-semibold">{lastImportResult.c_materials ?? 0}</div>
+            </div>
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Excluded rows</div>
+              <div className="mt-1 text-lg font-semibold">{lastImportResult.excluded ?? lastImportResult.excluded_count ?? 0}</div>
+            </div>
+          </div>
+
+          {lastImportResult.excluded_samples?.length ? (
+            <div className="mt-4 rounded-md border border-border p-3 text-sm">
+              <div className="font-medium">Rows needing manual follow-up</div>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                {lastImportResult.excluded_samples.map((sample, index) => (
+                  <li key={`${sample.name ?? "sample"}-${index}`}>
+                    {sample.name ?? "Unnamed item"} · {sample.class ?? "Unknown class"}
+                    {sample.reason ? ` · ${sample.reason}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
@@ -385,8 +512,8 @@ function Catalog() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((item) => (
-              <tr key={`${item.sku}-${item.name}`} className="border-t border-border hover:bg-secondary/60">
+            {rows.map((item, index) => (
+              <tr key={`${item.sku}-${item.supplier}-${index}`} className="border-t border-border hover:bg-secondary/60">
                 <td className="px-5 py-3 text-mono text-xs">{item.sku}</td>
                 <td className="px-5 py-3 font-medium">
                   {item.name}

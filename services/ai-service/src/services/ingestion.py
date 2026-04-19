@@ -13,6 +13,20 @@ from .parsing import apply_mapping, column_samples, parse_pdf_to_table, parse_ta
 
 log = logging.getLogger(__name__)
 
+_CANONICAL_FIELDS = [
+    "sku",
+    "name",
+    "description",
+    "category",
+    "unit",
+    "unit_price",
+    "currency",
+    "manufacturer",
+    "manufacturer_sku",
+    "ean",
+    "image_url",
+]
+
 
 def _coerce_price(v: Any) -> float | None:
     if v is None or v == "":
@@ -24,8 +38,70 @@ def _coerce_price(v: Any) -> float | None:
         return None
 
 
+def _merge_mapping_overrides(mapping: dict, mapping_overrides: list[dict] | None = None) -> dict:
+    if not mapping_overrides:
+        return mapping
+
+    overrides = {
+        str(item.get("source_column")): item
+        for item in mapping_overrides
+        if item.get("source_column")
+    }
+    merged = []
+    for entry in mapping.get("mappings", []):
+        source_column = str(entry.get("source_column"))
+        override = overrides.get(source_column)
+        if override:
+            merged.append({
+                **entry,
+                "target_field": override.get("target_field"),
+                "confidence": override.get("confidence", 1.0),
+                "reason": override.get("reason", "confirmed in UI"),
+            })
+        else:
+            merged.append(entry)
+    return {**mapping, "mappings": merged}
+
+
+async def preview_supplier_file(
+    *, filename: str, content: bytes, mapping_overrides: list[dict] | None = None,
+) -> dict:
+    if filename.lower().endswith(".pdf"):
+        df = parse_pdf_to_table(content)
+    else:
+        df = parse_tabular(filename, content)
+    df = df.head(settings.MAX_INGEST_ROWS)
+    if df.empty:
+        return {
+            "status": "empty",
+            "rows_in": 0,
+            "preview_rows": [],
+            "source_columns": [],
+            "canonical_fields": _CANONICAL_FIELDS,
+            "mapping": {"mappings": [], "warnings": ["No rows found in uploaded file."]},
+        }
+
+    cols = column_samples(df)
+    mapping = _merge_mapping_overrides(await map_columns(cols), mapping_overrides)
+    rows = apply_mapping(df, mapping.get("mappings", []))
+    preview_rows = rows[:10] if rows else df.head(10).to_dict(orient="records")
+    return {
+        "status": "ok",
+        "rows_in": len(df.index),
+        "preview_rows": preview_rows,
+        "source_columns": cols,
+        "canonical_fields": _CANONICAL_FIELDS,
+        "mapping": mapping,
+    }
+
+
 async def ingest_supplier_file(
-    *, supplier_id: str, filename: str, content: bytes, default_currency: str = "CHF",
+    *,
+    supplier_id: str,
+    filename: str,
+    content: bytes,
+    default_currency: str = "CHF",
+    mapping_overrides: list[dict] | None = None,
 ) -> dict:
     # 1. parse
     if filename.lower().endswith(".pdf"):
@@ -38,7 +114,7 @@ async def ingest_supplier_file(
 
     # 2. column mapping
     cols = column_samples(df)
-    mapping = await map_columns(cols)
+    mapping = _merge_mapping_overrides(await map_columns(cols), mapping_overrides)
     rows = apply_mapping(df, mapping["mappings"])
 
     # 3. normalise + filter incomplete

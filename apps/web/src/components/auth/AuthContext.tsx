@@ -1,40 +1,34 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-type User = { email: string; name: string };
+import { clearSession, getCurrentUser, loginWithCredentials, type AuthUser } from "@/lib/api";
+
 type AuthCtx = {
-  user: User | null;
+  user: AuthUser | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
-const KEY = "comstruct_auth_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
+    setUser(getCurrentUser());
     setReady(true);
   }, []);
 
   const login = async (email: string, password: string) => {
-    if (!email || !password || password.length < 4) {
-      throw new Error("Please enter a valid email and password (min. 4 chars).");
+    if (!email.trim() || !password) {
+      throw new Error("Please enter your email and password.");
     }
-    const u = { email, name: email.split("@")[0] };
-    localStorage.setItem(KEY, JSON.stringify(u));
-    setUser(u);
+    const nextUser = await loginWithCredentials(email.trim(), password);
+    setUser(nextUser);
   };
 
   const logout = () => {
-    localStorage.removeItem(KEY);
+    clearSession();
     setUser(null);
   };
 

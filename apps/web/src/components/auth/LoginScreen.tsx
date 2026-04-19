@@ -86,7 +86,7 @@ export function LoginScreen() {
           </form>
 
           <p className="mt-4 text-[11px] text-muted-foreground text-center">
-            Demo mode — any email and a 4+ char password works.
+            Use a seeded demo account, for example the foreman user with the shared demo password.
           </p>
         </div>
       </div>
