@@ -54,7 +54,7 @@ export function Sidebar() {
   }, [orders]);
 
   return (
-    <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r border-border bg-sidebar/95 backdrop-blur">
+    <aside className="sticky top-0 self-start flex h-screen w-60 sm:w-64 lg:w-72 shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-border bg-sidebar/95 backdrop-blur">
       <div className="px-5 py-4 border-b border-border">
         <img src={logo} alt="comstruct" className="h-10 w-auto max-w-[170px]" />
         <div className="mt-2 text-mono text-[10px] uppercase text-muted-foreground tracking-widest">
@@ -64,7 +64,7 @@ export function Sidebar() {
 
       <ProjectSwitcher />
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 px-3 py-4 space-y-0.5 min-h-0">
         <div className="mb-2 px-3 text-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
           Operations
         </div>

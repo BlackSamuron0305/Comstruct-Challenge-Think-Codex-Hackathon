@@ -188,11 +188,25 @@ async def seed():
             row.name = product["name"]
             row.description = product["description"]
             row.category = product["category"]
+            row.manufacturer = product.get("manufacturer") or product["supplier"]
+            row.manufacturer_sku = product.get("manufacturer_sku") or product["sku"]
+            row.ean = product.get("ean") or f"761{abs(hash(product['sku'])) % 1000000000:09d}"
+            row.image_url = product.get("image_url")
+            row.special_info = {
+                "source": product.get("source", "seeded-demo"),
+                "finish": "zinc-coated" if any(token in product["name"].lower() for token in ["zinc", "verzinkt", "galvanized"]) else "standard",
+                "project_fit": product["category"],
+            }
             row.taxonomy_code = taxonomy["taxonomy_code"]
             row.taxonomy_label = taxonomy["taxonomy_label"]
             row.unit = product["unit"]
             row.unit_price = Decimal(product["price"])
             row.currency = "CHF"
+            row.source_delivery_days = Decimal(str(product.get("source_delivery_days") or (1.0 if "Safety" in product["supplier"] else 2.0 if "Swiss Fix" in product["supplier"] else 3.0)))
+            row.must_order = bool(product.get("must_order") or product["category"] == "PPE")
+            row.base_discount_pct = Decimal(str(product.get("base_discount_pct") or (2.5 if row.must_order else 0)))
+            row.bulk_discount_pct = Decimal(str(product.get("bulk_discount_pct") or (6 if product["unit"] in {"pcs", "pack"} else 4)))
+            row.bulk_discount_threshold = Decimal(str(product.get("bulk_discount_threshold") or (50 if product["unit"] in {"pcs", "pack"} else 10)))
             row.is_active = True
             print(f"  + product {product['sku']}  {product['name']} · {product['supplier']}")
 

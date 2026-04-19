@@ -14,10 +14,17 @@ class CartLineOut(BaseModel):
     product_id: UUID
     name: str
     sku: str
+    supplier_id: str | None = None
+    supplier_name: str | None = None
     category: str | None = None
     taxonomy_code: str | None = None
     taxonomy_label: str | None = None
     material_class: str = "C"
+    expected_delivery_days: str | None = None
+    must_order: bool = False
+    base_discount_pct: str | None = None
+    bulk_discount_pct: str | None = None
+    bulk_discount_threshold: str | None = None
     quantity: float
     unit: str
     unit_price: str
@@ -71,6 +78,12 @@ class CheckoutRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
+
+
+class SupplierSelectionRequest(BaseModel):
+    order_item_id: UUID
+    product_id: UUID
+    note: str | None = None
 
 
 class ApprovalRuleOut(BaseModel):

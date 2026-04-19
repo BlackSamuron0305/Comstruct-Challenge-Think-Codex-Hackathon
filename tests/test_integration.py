@@ -220,6 +220,27 @@ async def test_text_extraction_via_gateway(auth_token):
         assert "summary" in data
 
 
+@pytest.mark.asyncio
+async def test_contract_text_extraction_detects_mandatory_supplier(auth_token):
+    """Framework contract text should lock sourcing to the named supplier."""
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=120) as client:
+        r = await client.post(
+            "/api/ai/extract-text",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "text": "Framework contract for Project Alpenblick: fire-rated foam and backer rod must be purchased exclusively from Swiss Fix AG.",
+                "extraction_type": "contract",
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["metadata"]["source_locked"] is True
+        assert data["metadata"]["contract_binding"] == "mandatory_supplier"
+        assert data["metadata"]["mandatory_supplier_name"] == "Swiss Fix AG"
+        assert len(data["items"]) >= 1
+        assert all(item.get("required_supplier_name") == "Swiss Fix AG" for item in data["items"])
+
+
 # ── Service Health Checks ─────────────────────────────────────────
 
 @pytest.mark.asyncio

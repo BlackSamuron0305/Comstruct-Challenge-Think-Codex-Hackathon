@@ -25,7 +25,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _fullName = TextEditingController();
   final _position = TextEditingController(text: 'Foreman');
   final _phone = TextEditingController();
-  final _pageController = PageController();
+  final _authScrollController = ScrollController();
+  final _pageController = PageController(viewportFraction: 0.94);
 
   bool _hidePassword = true;
   late bool _registerMode;
@@ -74,16 +75,23 @@ class _LoginScreenState extends State<LoginScreen> {
     _fullName.dispose();
     _position.dispose();
     _phone.dispose();
+    _authScrollController.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
   void _switchMode(bool register) {
     if (_registerMode == register) return;
+    context.read<AuthCubit>().clearError();
     setState(() {
       _registerMode = register;
       if (!register) {
         _applyDemoDefaults();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_authScrollController.hasClients) {
+        _authScrollController.jumpTo(0);
       }
     });
     context.go(register ? '/register' : '/login');
@@ -123,7 +131,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthCubit>();
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -138,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottomInset),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
             child: Align(
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
@@ -154,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildSignIn(AuthCubit auth) {
     return SingleChildScrollView(
+      controller: _authScrollController,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -208,10 +216,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildRegisterFlow(AuthCubit auth) {
-    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-    final onFormPage = _introPage >= _introCards.length;
-
     return SingleChildScrollView(
+      controller: _authScrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -227,71 +233,47 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (onFormPage) ...[
-            TextButton.icon(
-              onPressed: () => setState(() => _introPage = _introCards.length - 1),
-              icon: const Icon(Icons.arrow_back),
-              label: const Text('Back to intro'),
+          const Text(
+            'Create your account',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: ComstructColors.ink),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Your project assignment will come from your email. Add your position so recommendations fit your work.',
+            style: TextStyle(fontSize: 15, height: 1.45, color: Colors.black54),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 168,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _introCards.length,
+              onPageChanged: (value) => setState(() => _introPage = value),
+              itemBuilder: (context, index) {
+                final item = _introCards[index];
+                return _CompactIntroCard(title: item.$1, body: item.$2, icon: item.$3);
+              },
             ),
-            const Text(
-              'Create your account',
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: ComstructColors.ink),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Your project assignment will come from your email. Add your position so recommendations fit your work.',
-              style: TextStyle(fontSize: 15, height: 1.45, color: Colors.black54),
-            ),
-            const SizedBox(height: 16),
-            _buildAuthCard(auth, registerMode: true),
-          ] else ...[
-            SizedBox(
-              height: keyboardOpen ? 320 : 430,
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: _introCards.length,
-                onPageChanged: (value) => setState(() => _introPage = value),
-                itemBuilder: (context, index) {
-                  final item = _introCards[index];
-                  return _FullIntroPage(title: item.$1, body: item.$2, icon: item.$3);
-                },
-              ),
-            ),
-            if (!keyboardOpen) ...[
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  _introCards.length,
-                  (index) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    width: _introPage == index ? 20 : 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: _introPage == index ? ComstructColors.brand : Colors.black26,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              _introCards.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: _introPage == index ? 18 : 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: _introPage == index ? ComstructColors.brand : Colors.black26,
+                  borderRadius: BorderRadius.circular(99),
                 ),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    if (_introPage < _introCards.length - 1) {
-                      _pageController.nextPage(duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
-                    } else {
-                      setState(() => _introPage = _introCards.length);
-                    }
-                  },
-                  icon: const Icon(Icons.swipe_rounded),
-                  label: Text(_introPage < _introCards.length - 1 ? 'Swipe / continue' : 'Go to sign up'),
-                ),
-              ),
-            ],
-          ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildAuthCard(auth, registerMode: true),
         ],
       ),
     );
@@ -426,17 +408,21 @@ class _AuthBrandRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        const Text(
-          'comstruct',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ComstructColors.ink),
+        const Flexible(
+          child: Text(
+            'comstruct',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ComstructColors.ink),
+          ),
         ),
       ],
     );
   }
 }
 
-class _FullIntroPage extends StatelessWidget {
-  const _FullIntroPage({required this.title, required this.body, required this.icon});
+class _CompactIntroCard extends StatelessWidget {
+  const _CompactIntroCard({required this.title, required this.body, required this.icon});
 
   final String title;
   final String body;
@@ -445,31 +431,46 @@ class _FullIntroPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFDDE8EA),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFC6D7DB)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Spacer(),
           Container(
-            width: 74,
-            height: 74,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: ComstructColors.brand, size: 36),
+            child: Icon(icon, color: ComstructColors.brand, size: 24),
           ),
-          const SizedBox(height: 20),
-          Text(title, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: ComstructColors.ink)),
-          const SizedBox(height: 10),
-          Text(body, style: const TextStyle(fontSize: 17, height: 1.5, color: Colors.black54)),
-          const Spacer(),
-          const Text('Swipe right to continue', style: TextStyle(fontSize: 14, color: Colors.black45, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: ComstructColors.ink),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12.5, height: 1.35, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -24,8 +24,9 @@ class Settings(BaseSettings):
 
     # ── OpenAI / ChatGPT (production/web) ─────────────────────────
     OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_VISION_MODEL: str = "gpt-4o-mini"
+    OPENAI_MODEL: str = "gpt-4.1-mini"
+    OPENAI_VISION_MODEL: str = "gpt-4.1-mini"
+    OPENAI_AUDIO_MODEL: str = "gpt-4o-mini-transcribe"
     OPENAI_EMBED_MODEL: str = "text-embedding-3-small"
     ANTHROPIC_API_KEY: str = ""
 

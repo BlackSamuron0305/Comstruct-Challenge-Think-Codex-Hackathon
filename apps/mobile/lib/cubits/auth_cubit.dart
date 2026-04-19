@@ -62,6 +62,12 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
+  void clearError() {
+    if (state.error != null || state.busy) {
+      emit(AuthState(user: state.user, error: null, busy: false));
+    }
+  }
+
   Future<void> logout() async {
     await _api.tokens.clear();
     emit(AuthState());

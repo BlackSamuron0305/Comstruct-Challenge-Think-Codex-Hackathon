@@ -30,6 +30,28 @@ export type ProjectRecord = {
   trade?: string | null;
 };
 
+export type ProductRecommendationChoice = {
+  id: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  sku?: string | null;
+  name: string;
+  category?: string | null;
+  unit?: string | null;
+  currency?: string | null;
+  must_order?: boolean;
+  effective_unit_price?: number | string | null;
+  expected_delivery_days?: number | string | null;
+  base_discount_pct?: number | string | null;
+  bulk_discount_pct?: number | string | null;
+  bulk_discount_threshold?: number | string | null;
+  overall_score?: number | string | null;
+  price_score?: number | string | null;
+  delivery_score?: number | string | null;
+  recommendation_bucket?: string | null;
+  recommendation_tags?: string[];
+};
+
 export type OrderSummary = {
   id: string;
   project_id?: string | null;
@@ -60,6 +82,14 @@ export type OrderSummary = {
       material_class?: string | null;
       supplier_id?: string | null;
       supplier_name?: string | null;
+      must_order?: boolean;
+      expected_delivery_days?: number | string | null;
+      base_discount_pct?: number | string | null;
+      bulk_discount_pct?: number | string | null;
+      bulk_discount_threshold?: number | string | null;
+      special_info?: Record<string, unknown> | null;
+      recommended_supplier?: ProductRecommendationChoice | null;
+      supplier_recommendations?: ProductRecommendationChoice[];
     };
   }>;
 };
@@ -78,6 +108,11 @@ export type ProductRecord = {
   sku?: string | null;
   name: string;
   category?: string | null;
+  manufacturer?: string | null;
+  manufacturer_sku?: string | null;
+  ean?: string | null;
+  image_url?: string | null;
+  special_info?: Record<string, unknown> | null;
   taxonomy_code?: string | null;
   taxonomy_label?: string | null;
   unit?: string | null;
@@ -86,6 +121,13 @@ export type ProductRecord = {
   currency?: string | null;
   supplier_id?: string | null;
   supplier_name?: string | null;
+  source_delivery_days?: number | null;
+  expected_delivery_days?: number | null;
+  delivery_confidence?: number | null;
+  must_order?: boolean;
+  base_discount_pct?: number | null;
+  bulk_discount_pct?: number | null;
+  bulk_discount_threshold?: number | null;
   is_active?: boolean;
 };
 

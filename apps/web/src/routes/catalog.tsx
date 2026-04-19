@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Sparkles, Upload } from "lucide-react";
+import { Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { api, formatCurrency, shortId, type ProductRecord, type SupplierRecord } from "@/lib/api";
-import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
 
 export const Route = createFileRoute("/catalog")({
   head: () => ({
@@ -59,11 +58,17 @@ type CatalogRow = {
   supplier: string;
   price: number;
   currency: string;
+  expectedDelivery?: number | null;
+  mustOrder: boolean;
+  discountLabel: string;
+  specialInfo: string;
   status: "mapped" | "needs-review";
   standard: boolean;
   tradeFit: string;
   variant: "Good" | "Better" | "Best";
 };
+
+type SupplierChannel = "API/PunchOut" | "Excel/PDF upload";
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -79,6 +84,19 @@ function renderPreviewValue(value: unknown): string {
 function formatCatalogPrice(price: number, currency: string): string {
   if (!Number.isFinite(price) || price <= 0) return "Awaiting price";
   return formatCurrency(price, currency);
+}
+
+function formatDelivery(days?: number | null): string {
+  if (!Number.isFinite(Number(days)) || Number(days) <= 0) return "Open";
+  const value = Number(days);
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)} d`;
+}
+
+function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "Unknown size";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const tradeMatchers: Record<string, RegExp> = {
@@ -120,12 +138,10 @@ function Catalog() {
   const [standardsOnly, setStandardsOnly] = useState<boolean>(false);
   const [lastImportResult, setLastImportResult] = useState<ImportResult | null>(null);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
-  const [localSuppliers, setLocalSuppliers] = useState<LocalSupplierDraft[]>(() => loadLocalSuppliers());
   const [draftSupplierName, setDraftSupplierName] = useState("");
   const [draftSupplierContact, setDraftSupplierContact] = useState("");
   const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
   const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
-  const [draftSupplierChannel, setDraftSupplierChannel] = useState<SupplierChannel>("Excel/PDF upload");
 
   useEffect(() => {
     if (!selectedFile) {
@@ -153,7 +169,6 @@ function Catalog() {
     setDraftSupplierContact("");
     setDraftSupplierEmail("");
     setDraftSupplierPhone("");
-    setDraftSupplierChannel("Excel/PDF upload");
   }
 
   function handleSupplierSelect(nextValue: string) {
@@ -175,7 +190,6 @@ function Catalog() {
       contact_name: draftSupplierContact.trim() || undefined,
       email: draftSupplierEmail.trim() || undefined,
       phone: draftSupplierPhone.trim() || undefined,
-      channel: draftSupplierChannel,
     });
   }
 
@@ -190,14 +204,9 @@ function Catalog() {
   });
 
   const createSupplierMutation = useMutation({
-    mutationFn: async (payload: { name: string; contact_name?: string; email?: string; phone?: string; channel: SupplierChannel }) => {
-      const { channel: _channel, ...body } = payload;
-      return api.post<SupplierRecord>("/api/suppliers", body);
-    },
+    mutationFn: (payload: { name: string; contact_name?: string; email?: string; phone?: string }) =>
+      api.post<SupplierRecord>("/api/suppliers", payload),
     onSuccess: (created) => {
-      const dedupedLocal = localSuppliers.filter((supplier) => supplier.name.trim().toLowerCase() !== created.name.trim().toLowerCase());
-      setLocalSuppliers(dedupedLocal);
-      saveLocalSuppliers(dedupedLocal);
       setSelectedSupplierId(created.id);
       setShowAddSupplier(false);
       resetSupplierDraft();
@@ -205,37 +214,21 @@ function Catalog() {
       void queryClient.invalidateQueries({ queryKey: ["catalog-suppliers"] });
       void queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
-    onError: (error, payload) => {
-      const localDraft = createLocalSupplierDraft(payload);
-      const next = [
-        localDraft,
-        ...localSuppliers.filter((supplier) => supplier.name.trim().toLowerCase() !== payload.name.trim().toLowerCase()),
-      ];
-      setLocalSuppliers(next);
-      saveLocalSuppliers(next);
-      setSelectedSupplierId(localDraft.id);
-      setShowAddSupplier(false);
-      resetSupplierDraft();
-      toast.success(`${payload.name} added locally for this workspace.`);
-      if (error instanceof Error && error.message.trim()) {
-        toast.message(error.message);
-      }
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Supplier could not be saved.");
     },
   });
 
   const supplierOptions = useMemo(() => {
-    const live = suppliers.map((supplier) => ({
-      ...supplier,
-      channel: products.some((product) => product.supplier_id === supplier.id)
-        ? ("API/PunchOut" as SupplierChannel)
-        : ("Excel/PDF upload" as SupplierChannel),
-    }));
-
-    const seen = new Set(live.map((supplier) => supplier.name.trim().toLowerCase()));
-    const manual = localSuppliers.filter((supplier) => !seen.has(supplier.name.trim().toLowerCase()));
-
-    return [...manual, ...live].sort((left, right) => left.name.localeCompare(right.name));
-  }, [localSuppliers, products, suppliers]);
+    return suppliers
+      .map((supplier) => ({
+        ...supplier,
+        channel: products.some((product) => product.supplier_id === supplier.id)
+          ? ("API/PunchOut" as SupplierChannel)
+          : ("Excel/PDF upload" as SupplierChannel),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [products, suppliers]);
 
   const previewMutation = useMutation({
     mutationFn: ({ file, overrides }: { file: File; overrides?: Record<string, string> }) => {
@@ -262,7 +255,7 @@ function Catalog() {
       const formData = new FormData();
       formData.append("supplier_id", selectedSupplierId);
       formData.append("file", selectedFile);
-      formData.append("default_currency", "EUR");
+      formData.append("default_currency", "CHF");
       const overridePayload = toMappingOverridePayload(mappingOverrides);
       if (overridePayload.length > 0) {
         formData.append("mapping_overrides", JSON.stringify(overridePayload));
@@ -288,7 +281,7 @@ function Catalog() {
       }
 
       if (data.status === "no_valid_rows") {
-        toast.error("The file was parsed, but the rows still need mapping review.");
+        toast.error("The file was parsed, but no usable product content was found for import.");
         return;
       }
 
@@ -310,7 +303,7 @@ function Catalog() {
     setMappingOverrides({});
     setApprovedMappings({});
     setLastImportResult(null);
-    previewMutation.mutate({ file, overrides: {} });
+    previewMutation.reset();
   }
 
   const baseRows = useMemo(() => {
@@ -324,6 +317,17 @@ function Catalog() {
       supplier: supplierOptions.find((supplier) => supplier.id === product.supplier_id)?.name ?? shortId(product.supplier_id),
       price: Number(product.unit_price ?? 0),
       currency: product.currency ?? "EUR",
+      expectedDelivery: Number(product.expected_delivery_days ?? product.source_delivery_days ?? 0) || null,
+      mustOrder: Boolean(product.must_order),
+      discountLabel: [
+        Number(product.base_discount_pct ?? 0) > 0 ? `${Number(product.base_discount_pct ?? 0)}% base` : null,
+        Number(product.bulk_discount_pct ?? 0) > 0
+          ? `${Number(product.bulk_discount_pct ?? 0)}% bulk from ${Number(product.bulk_discount_threshold ?? 0) || "—"}`
+          : null,
+      ].filter(Boolean).join(" · ") || "No discount",
+      specialInfo: Object.entries(product.special_info ?? {})
+        .map(([key, value]) => `${key}: ${String(value)}`)
+        .join(" · ") || "No extra info",
       status: product.is_active === false || !product.category ? "needs-review" as const : "mapped" as const,
     }));
   }, [products, supplierOptions]);
@@ -365,6 +369,10 @@ function Catalog() {
         row.tradeFit,
         row.variant,
         row.currency,
+        row.discountLabel,
+        row.specialInfo,
+        formatDelivery(row.expectedDelivery),
+        row.mustOrder ? "must order" : "optional",
         numericPrice.toFixed(2),
         Math.round(numericPrice).toString(),
       ].join(" ").toLowerCase();
@@ -374,7 +382,8 @@ function Catalog() {
   }, [baseRows, selectedTrade, selectedSupplierFilter, standardsOnly, searchQuery]);
 
   const previewRows = previewMutation.data?.preview_rows ?? [];
-  const firstPreviewRow = previewRows[0] ?? null;
+  const previewWarnings = previewMutation.data?.mapping?.warnings ?? [];
+  const firstPreviewRow = previewRows[0] ?? {};
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
   const reviewEntries = mappedColumns.map((entry) => {
     const targetField = mappingOverrides[entry.source_column] ?? entry.target_field ?? "";
@@ -382,17 +391,16 @@ function Catalog() {
       ...entry,
       targetField,
       approved: approvedMappings[entry.source_column] ?? false,
-      sampleValue: firstPreviewRow ? renderPreviewValue(firstPreviewRow[entry.source_column]) : "—",
+      sampleValue: renderPreviewValue(firstPreviewRow[entry.source_column]),
     };
   });
+  const approvedCount = reviewEntries.filter((entry) => entry.approved).length;
   const previewIssues = reviewEntries.filter((entry) => !entry.targetField).length;
   const pendingApprovalCount = reviewEntries.filter((entry) => entry.targetField && !entry.approved).length;
-  const mappedCount = reviewEntries.filter((entry) => entry.targetField).length;
-  const approvedCount = reviewEntries.filter((entry) => entry.approved).length;
-  const reviewProgress = reviewEntries.length ? Math.round((approvedCount / reviewEntries.length) * 100) : 0;
-  const needsReview = previewMutation.data ? previewIssues + pendingApprovalCount : rows.filter((item) => item.status === "needs-review").length;
+  const needsReview = previewMutation.data
+    ? previewIssues + pendingApprovalCount
+    : rows.filter((item) => item.status === "needs-review").length;
   const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
-  const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
   const hasLiveWarning = productsError || suppliersError;
   const documentType = fileName.toLowerCase().includes("offer")
     ? "Offer / quote"
@@ -401,18 +409,30 @@ function Catalog() {
       : fileName.toLowerCase().includes("pdf")
         ? "PDF commercial document"
         : "Catalog or price list";
-  const isReviewMode = Boolean(selectedFile || previewMutation.data);
-  const canImport = Boolean(selectedFile && selectedSupplierId && previewReady && previewIssues === 0 && pendingApprovalCount === 0 && !importMutation.isPending);
+  const selectedSupplierName = supplierOptions.find((supplier) => supplier.id === selectedSupplierId)?.name ?? "";
+  const hasActiveUpload = Boolean(selectedFile || previewMutation.isPending || previewMutation.data);
+  const showReviewWorkspace = Boolean(previewMutation.data);
+  const readyToExtract = Boolean(selectedFile && selectedSupplierId && !previewMutation.isPending);
+  const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
+  const canImport = Boolean(
+    selectedFile
+      && selectedSupplierId
+      && previewReady
+      && reviewEntries.length > 0
+      && previewIssues === 0
+      && pendingApprovalCount === 0
+      && !importMutation.isPending,
+  );
   const importBlockedReason = !selectedFile
-    ? "Upload a supplier file to start the review workspace."
+    ? "Upload a supplier file to begin."
     : !selectedSupplierId
       ? "Choose the supplier that owns this document."
-      : previewMutation.isPending
-        ? "Wait while the document is being extracted."
+      : !previewReady
+        ? "Click Extract with AI to generate the review output."
         : previewIssues > 0
-          ? "Choose a target field for each extracted column before importing."
+          ? "Choose a target field for each extracted value."
           : pendingApprovalCount > 0
-            ? "Approve the extracted fields one by one or use Auto approve all."
+            ? "Approve the extracted fields manually or use Auto approve all."
             : null;
 
   if (productsLoading && suppliersLoading && products.length === 0 && suppliers.length === 0) {
@@ -453,6 +473,16 @@ function Catalog() {
         </p>
       </div>
 
+      <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
+        <div className="font-medium">Documents that work best</div>
+        <div className="mt-2 grid gap-2 md:grid-cols-2 text-muted-foreground">
+          <div>• supplier quotes and offers with article numbers</div>
+          <div>• Excel or CSV price lists</div>
+          <div>• framework contracts with quantity breaks</div>
+          <div>• PDFs that show clear tables or line items</div>
+        </div>
+      </div>
+
       <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div className="font-medium">Import checklist</div>
         <div className="mt-3 grid gap-2 md:grid-cols-4">
@@ -462,15 +492,15 @@ function Catalog() {
           </div>
           <div className={["rounded-md border px-3 py-2", selectedSupplierId ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 2</div>
-            <div className="mt-1 font-medium">Assign the supplier</div>
+            <div className="mt-1 font-medium">Select the supplier</div>
           </div>
           <div className={["rounded-md border px-3 py-2", previewReady ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 3</div>
-            <div className="mt-1 font-medium">Approve extracted fields</div>
+            <div className="mt-1 font-medium">Run AI extraction</div>
           </div>
           <div className={["rounded-md border px-3 py-2", canImport ? "border-primary/40 bg-primary/10" : "border-border bg-secondary/30"].join(" ")}>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 4</div>
-            <div className="mt-1 font-medium">Import into the live catalog</div>
+            <div className="mt-1 font-medium">Review and import</div>
           </div>
         </div>
       </div>
@@ -484,6 +514,13 @@ function Catalog() {
               <div className="text-xs text-muted-foreground">{fileName || "Select PDF, CSV, or Excel to start review"}</div>
             </div>
           </div>
+          <div className="mt-3 text-xs text-muted-foreground">Supported: PDF, Excel, CSV • best with line items, supplier names, and prices.</div>
+          {selectedFile && (
+            <div className="mt-3 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+              <div><span className="font-medium text-foreground">Current file:</span> {selectedFile.name}</div>
+              <div className="mt-1">{documentType} • {formatFileSize(selectedFile.size)}</div>
+            </div>
+          )}
           <input type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
         </label>
 
@@ -491,7 +528,7 @@ function Catalog() {
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground"><Sparkles className="h-4 w-4" /></div>
             <div className="flex-1">
-              <div className="font-medium text-sm">Assign supplier and import</div>
+              <div className="font-medium text-sm">Select supplier and extract</div>
               <select
                 value={selectedSupplierId}
                 onChange={(event) => handleSupplierSelect(event.target.value)}
@@ -505,18 +542,30 @@ function Catalog() {
               </select>
             </div>
           </div>
-          <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-            {previewMutation.data
-              ? `${previewMutation.data.rows_in} rows extracted · ${needsReview} checks remaining`
-              : "Upload a document to open the review workspace."}
+          <button
+            className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            type="button"
+            disabled={!readyToExtract}
+            onClick={() => {
+              if (selectedFile) {
+                previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides });
+              }
+            }}
+          >
+            {previewMutation.isPending ? "Extracting…" : "Extract with AI"}
+          </button>
+          <div className="mt-2 text-xs text-muted-foreground">
+            {selectedSupplierName
+              ? `Assigned supplier: ${selectedSupplierName}`
+              : "Choose the supplier that owns this document, or add one first."}
           </div>
-          <div className="mt-3 text-xs text-muted-foreground">
-            {importBlockedReason ?? "Everything is approved and ready to import into the live catalog."}
+          <div className="mt-2 text-xs text-muted-foreground">
+            {importBlockedReason ?? "Extraction is reviewed and ready for import."}
           </div>
         </div>
       </div>
 
-      {!isReviewMode && (
+      {!hasActiveUpload && (
         <div className="mb-6 rounded-lg border border-border bg-card p-5">
           <div className="font-medium text-sm">Browse live catalog</div>
           <div className="mt-3 grid gap-3 md:grid-cols-4">
@@ -542,14 +591,14 @@ function Catalog() {
         </div>
       )}
 
-      {isReviewMode && (
+      {showReviewWorkspace && (
         <div className="mb-6 rounded-xl border-2 border-primary/15 bg-card p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Document review workspace</div>
-              <h3 className="text-display text-lg font-semibold">Compare extracted fields with the original file</h3>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI extracted output</div>
+              <h3 className="text-display text-lg font-semibold">Review extracted fields against the original PDF</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Approve each extracted field one by one, or use auto-approve when everything looks correct.
+                Review each extracted field manually or use auto approve all when everything looks correct.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -559,7 +608,7 @@ function Catalog() {
                   onClick={() => previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides })}
                   type="button"
                 >
-                  Refresh preview
+                  Re-run extraction
                 </button>
               )}
               <button
@@ -567,7 +616,13 @@ function Catalog() {
                 type="button"
                 disabled={reviewEntries.length === 0}
                 onClick={() => {
-                  setApprovedMappings(Object.fromEntries(reviewEntries.filter((entry) => entry.targetField).map((entry) => [entry.source_column, true])));
+                  setApprovedMappings(
+                    Object.fromEntries(
+                      reviewEntries
+                        .filter((entry) => entry.targetField)
+                        .map((entry) => [entry.source_column, true]),
+                    ),
+                  );
                 }}
               >
                 Auto approve all
@@ -589,12 +644,12 @@ function Catalog() {
               <div className="mt-1 text-sm font-medium">{documentType}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Rows previewed</div>
-              <div className="mt-1 text-sm font-medium">{previewMutation.data?.rows_in ?? 0}</div>
+              <div className="text-xs text-muted-foreground">Extracted fields</div>
+              <div className="mt-1 text-sm font-medium">{reviewEntries.length}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Mapped fields</div>
-              <div className="mt-1 text-sm font-medium">{mappedCount}</div>
+              <div className="text-xs text-muted-foreground">Approved</div>
+              <div className="mt-1 text-sm font-medium">{approvedCount}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Still to review</div>
@@ -602,30 +657,21 @@ function Catalog() {
             </div>
           </div>
 
-          <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="font-medium">Review progress</div>
-                <div className="text-xs text-muted-foreground">{approvedCount} of {reviewEntries.length} extracted fields approved</div>
-              </div>
-              <div className="text-sm font-semibold">{reviewProgress}%</div>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
-              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${reviewProgress}%` }} />
-            </div>
-          </div>
-
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
-            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[420px]">
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
               <div className="border-b border-border px-4 py-3">
-                <div className="font-medium text-sm">Original document</div>
-                <div className="text-xs text-muted-foreground">Use this panel to compare the extraction with the uploaded file.</div>
+                <div className="font-medium text-sm">Original PDF</div>
+                <div className="text-xs text-muted-foreground">Only the document is shown here for comparison.</div>
               </div>
               {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
-                <iframe title="Uploaded document preview" src={documentPreviewUrl} className="h-[420px] w-full bg-white" />
+                <embed
+                  title="Uploaded PDF preview"
+                  src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                  type="application/pdf"
+                  className="h-[520px] w-full bg-white"
+                />
               ) : previewRows.length > 0 ? (
-                <div className="max-h-[420px] overflow-auto p-4">
-                  <div className="text-xs text-muted-foreground mb-2">Preview of the uploaded content</div>
+                <div className="max-h-[520px] overflow-auto p-4">
                   <div className="overflow-x-auto rounded-md border border-border">
                     <table className="w-full text-sm">
                       <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -648,19 +694,23 @@ function Catalog() {
                   </div>
                 </div>
               ) : (
-                <div className="p-4 text-sm text-muted-foreground">Upload a document to see a side-by-side preview here.</div>
+                <div className="p-4 text-sm text-muted-foreground">No document preview is available yet.</div>
               )}
             </div>
 
-            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[420px]">
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
               <div className="border-b border-border px-4 py-3">
                 <div className="font-medium text-sm">Extracted fields</div>
-                <div className="text-xs text-muted-foreground">Approve each field, or use Auto approve all at the top.</div>
+                <div className="text-xs text-muted-foreground">Approve one by one or use the auto approve button above.</div>
               </div>
-              <div className="max-h-[420px] overflow-auto p-4 space-y-3">
-                {previewMutation.isPending ? (
-                  <div className="text-sm text-muted-foreground">Extracting fields from the document…</div>
-                ) : reviewEntries.length > 0 ? reviewEntries.map((entry) => (
+              <div className="max-h-[520px] overflow-auto p-4 space-y-3">
+                {previewWarnings.length > 0 ? (
+                  <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-muted-foreground">
+                    {previewWarnings.slice(0, 3).join(" · ")}
+                  </div>
+                ) : null}
+
+                {reviewEntries.length > 0 ? reviewEntries.map((entry) => (
                   <div key={entry.source_column} className="rounded-md border border-border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -699,7 +749,7 @@ function Catalog() {
                     </div>
                   </div>
                 )) : (
-                  <div className="text-sm text-muted-foreground">No extracted fields are ready yet. Upload a file and wait for the preview.</div>
+                  <div className="text-sm text-muted-foreground">No extracted fields are ready yet.</div>
                 )}
               </div>
             </div>
@@ -741,6 +791,11 @@ function Catalog() {
               </ul>
             </div>
           ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <Link to="/suppliers" className="rounded-md border border-border px-3 py-2 hover:bg-accent">Review suppliers</Link>
+            <Link to="/" className="rounded-md border border-border px-3 py-2 hover:bg-accent">Return to overview</Link>
+          </div>
         </div>
       )}
 
@@ -802,7 +857,7 @@ function Catalog() {
         </div>
       )}
 
-      {!isReviewMode && (
+      {!hasActiveUpload && (
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <table className="w-full text-sm">
           <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
@@ -813,6 +868,10 @@ function Catalog() {
               <th className="text-left font-normal px-5 py-3">Pack / Unit</th>
               <th className="text-left font-normal px-5 py-3">Supplier</th>
               <th className="text-right font-normal px-5 py-3">Price</th>
+              <th className="text-left font-normal px-5 py-3">ETA</th>
+              <th className="text-left font-normal px-5 py-3">Discounts</th>
+              <th className="text-left font-normal px-5 py-3">Must order</th>
+              <th className="text-left font-normal px-5 py-3">Special info</th>
               <th className="text-left font-normal px-5 py-3">Standard</th>
               <th className="text-left font-normal px-5 py-3">Price position</th>
             </tr>
@@ -828,7 +887,17 @@ function Catalog() {
                 <td className="px-5 py-3 text-muted-foreground">{item.group}</td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{item.pack} · <span className="text-mono">{item.unit}</span></td>
                 <td className="px-5 py-3">{item.supplier}</td>
-                <td className="px-5 py-3 text-right tabular">{formatCatalogPrice(item.price, item.currency)}</td>
+                <td className="px-5 py-3 text-right tabular">
+                  {Number.isFinite(item.price) && item.price > 0 ? formatCurrency(item.price, item.currency) : "Awaiting price"}
+                </td>
+                <td className="px-5 py-3 text-xs text-muted-foreground">{formatDelivery(item.expectedDelivery)}</td>
+                <td className="px-5 py-3 text-xs text-muted-foreground">{item.discountLabel}</td>
+                <td className="px-5 py-3">
+                  <span className={["text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded", item.mustOrder ? "bg-primary/15 text-primary" : "bg-secondary text-foreground"].join(" ")}>
+                    {item.mustOrder ? "Must" : "Flexible"}
+                  </span>
+                </td>
+                <td className="px-5 py-3 text-xs text-muted-foreground max-w-[16rem]">{item.specialInfo}</td>
                 <td className="px-5 py-3">
                   <span className={[
                     "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
@@ -849,7 +918,7 @@ function Catalog() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={12} className="px-5 py-10 text-center text-sm text-muted-foreground">
                   No catalog records match the current name, number, or supplier filters.
                 </td>
               </tr>

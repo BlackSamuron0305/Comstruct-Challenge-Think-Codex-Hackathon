@@ -25,6 +25,12 @@ _CANONICAL_FIELDS = [
     "manufacturer_sku",
     "ean",
     "image_url",
+    "special_info",
+    "source_delivery_days",
+    "must_order",
+    "base_discount_pct",
+    "bulk_discount_pct",
+    "bulk_discount_threshold",
 ]
 
 
@@ -32,10 +38,31 @@ def _coerce_price(v: Any) -> float | None:
     if v is None or v == "":
         return None
     try:
-        s = str(v).replace("CHF", "").replace("EUR", "").replace("'", "").replace(",", ".").strip()
+        s = str(v).replace("CHF", "").replace("EUR", "").replace("'", "").replace("%", "").replace(",", ".").strip()
         return float(s)
     except (TypeError, ValueError):
         return None
+
+
+def _coerce_bool(v: Any) -> bool | None:
+    if v is None or v == "":
+        return None
+    if isinstance(v, bool):
+        return v
+    value = str(v).strip().lower()
+    if value in {"1", "true", "yes", "y", "required", "must"}:
+        return True
+    if value in {"0", "false", "no", "n", "optional"}:
+        return False
+    return None
+
+
+def _coerce_special_info(v: Any) -> dict | None:
+    if v is None or v == "":
+        return None
+    if isinstance(v, dict):
+        return v
+    return {"note": str(v).strip()}
 
 
 def _merge_mapping_overrides(mapping: dict, mapping_overrides: list[dict] | None = None) -> dict:
@@ -135,6 +162,12 @@ async def ingest_supplier_file(
             "manufacturer_sku": (r.get("manufacturer_sku") or None),
             "ean": (r.get("ean") or None),
             "image_url": r.get("image_url") or None,
+            "special_info": _coerce_special_info(r.get("special_info")),
+            "source_delivery_days": _coerce_price(r.get("source_delivery_days")),
+            "must_order": _coerce_bool(r.get("must_order")) or False,
+            "base_discount_pct": _coerce_price(r.get("base_discount_pct")) or 0,
+            "bulk_discount_pct": _coerce_price(r.get("bulk_discount_pct")) or 0,
+            "bulk_discount_threshold": _coerce_price(r.get("bulk_discount_threshold")),
         })
 
     if not normalised:
@@ -197,6 +230,12 @@ async def ingest_supplier_file(
             "manufacturer_sku": p.get("manufacturer_sku"),
             "ean": p.get("ean"),
             "image_url": p.get("image_url"),
+            "special_info": p.get("special_info"),
+            "source_delivery_days": p.get("source_delivery_days"),
+            "must_order": p.get("must_order") or False,
+            "base_discount_pct": p.get("base_discount_pct") or 0,
+            "bulk_discount_pct": p.get("bulk_discount_pct") or 0,
+            "bulk_discount_threshold": p.get("bulk_discount_threshold"),
             "material_class": "C",
             "embedding": p["embedding"],
         }

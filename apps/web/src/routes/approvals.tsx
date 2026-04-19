@@ -8,7 +8,7 @@ import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { useProject, ALL_PROJECTS } from "@/components/dashboard/ProjectContext";
-import { api, formatCurrency, normalizeCurrency, shortId, type ApprovalRule, type OrderSummary, type ProjectRecord } from "@/lib/api";
+import { api, formatCurrency, normalizeCurrency, shortId, type ApprovalRule, type OrderSummary, type ProductRecommendationChoice, type ProjectRecord } from "@/lib/api";
 
 export const Route = createFileRoute("/approvals")({
   head: () => ({
@@ -98,6 +98,19 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("de-CH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function formatEta(value?: number | string | null) {
+  const days = Number(value ?? 0);
+  if (!Number.isFinite(days) || days <= 0) return "Open";
+  return `${days.toFixed(days % 1 === 0 ? 0 : 1)} d`;
+}
+
+function formatRecommendationLabel(bucket?: string | null) {
+  if (bucket === "best_score") return "Best score";
+  if (bucket === "cheapest") return "Cheapest";
+  if (bucket === "fastest") return "Fastest";
+  return "Alternative";
+}
+
 function Approvals() {
   const queryClient = useQueryClient();
   const { project } = useProject();
@@ -150,6 +163,21 @@ function Approvals() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : "Rejection failed");
+    },
+  });
+
+  const selectSupplierMutation = useMutation({
+    mutationFn: ({ orderId, orderItemId, productId }: { orderId: string; orderItemId: string; productId: string }) =>
+      api.post<OrderSummary>(`/api/orders/${orderId}/select-supplier-option`, { order_item_id: orderItemId, product_id: productId, note: note.trim() || undefined }),
+    onSuccess: (updatedOrder) => {
+      toast.success("Supplier option updated", { description: "The order now uses the selected ranked supplier option." });
+      setSelected(updatedOrder);
+      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Supplier update failed");
     },
   });
 
@@ -353,6 +381,56 @@ function Approvals() {
                 <div className="text-xs text-muted-foreground mt-0.5">Order currency: {normalizeCurrency(selected.currency)}</div>
               </div>
 
+              <div className="rounded-md border border-border p-4 text-sm">
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Ranked supplier choices</div>
+                <div className="mt-3 space-y-3">
+                  {selected.items?.some((item) => (item.product_snapshot?.supplier_recommendations?.length ?? 0) > 0) ? selected.items?.map((item) => {
+                    const options = (item.product_snapshot?.supplier_recommendations ?? []) as ProductRecommendationChoice[];
+                    if (!options.length) return null;
+
+                    return (
+                      <div key={`recommend-${item.id}`} className="rounded-md border border-border/70 p-3">
+                        <div className="font-medium">{item.product_snapshot?.name ?? item.product_snapshot?.sku ?? "Material item"}</div>
+                        <div className="mt-2 space-y-2">
+                          {options.slice(0, 6).map((option) => {
+                            const isCurrent = String(option.id) === item.product_id;
+                            return (
+                              <div key={`${item.id}-${option.id}`} className={["rounded-md border px-3 py-2", isCurrent ? "border-primary/40 bg-primary/5" : "border-border bg-secondary/20"].join(" ")}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="font-medium">{option.supplier_name ?? option.name}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                      {formatRecommendationLabel(option.recommendation_bucket)} · {formatCurrency(Number(option.effective_unit_price ?? 0), selected.currency)} · ETA {formatEta(option.expected_delivery_days)}
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                      Score {Number(option.overall_score ?? 0).toFixed(1)} / 100{option.must_order ? " · must-order standard" : ""}
+                                    </div>
+                                  </div>
+                                  {(["pending", "pending_approval"].includes(normalizeStatus(selected.status))) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => selectSupplierMutation.mutate({ orderId: selected.id, orderItemId: item.id, productId: option.id })}
+                                      disabled={selectSupplierMutation.isPending || isCurrent}
+                                      className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
+                                    >
+                                      {isCurrent ? "Selected" : "Use"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="rounded-md border border-border px-3 py-2 text-muted-foreground">
+                      No ranked alternatives are available for this order yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
@@ -418,10 +496,10 @@ function Approvals() {
 
             {(["pending", "pending_approval"].includes(normalizeStatus(selected.status))) ? (
               <div className="px-6 py-4 border-t border-border flex gap-3 shrink-0 bg-background">
-                <button onClick={() => approveMutation.mutate(selected.id)} disabled={approveMutation.isPending || rejectMutation.isPending} className="flex-1 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-60">
+                <button onClick={() => approveMutation.mutate(selected.id)} disabled={approveMutation.isPending || rejectMutation.isPending || selectSupplierMutation.isPending} className="flex-1 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-60">
                   <Check className="h-4 w-4" /> Approve
                 </button>
-                <button onClick={() => rejectMutation.mutate({ orderId: selected.id, reason: note.trim() || "Rejected during approval review" })} disabled={approveMutation.isPending || rejectMutation.isPending} className="flex-1 h-10 rounded-md border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 flex items-center justify-center gap-2 disabled:opacity-60">
+                <button onClick={() => rejectMutation.mutate({ orderId: selected.id, reason: note.trim() || "Rejected during approval review" })} disabled={approveMutation.isPending || rejectMutation.isPending || selectSupplierMutation.isPending} className="flex-1 h-10 rounded-md border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 flex items-center justify-center gap-2 disabled:opacity-60">
                   <X className="h-4 w-4" /> Reject
                 </button>
               </div>

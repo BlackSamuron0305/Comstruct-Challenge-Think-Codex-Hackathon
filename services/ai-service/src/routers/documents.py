@@ -9,13 +9,16 @@ Provides:
 All extraction endpoints run delta detection against the catalog DB to flag
 price changes vs new entries.
 """
+import base64
 import logging
+import re
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 
+from ..config import settings
 from ..dependencies import require_internal_secret
-from ..llm.ollama_client import call_ollama_json
+from ..llm.ollama_client import call_ollama_json, call_ollama_vision
 from ..services.delta_detection import detect_deltas
 from ..services.parsing import (
     DEFAULT_PAGE_OVERLAP,
@@ -103,6 +106,116 @@ def _merge_extracted_items(items: list[dict]) -> list[dict]:
     return list(merged.values())
 
 
+_MANDATORY_SUPPLIER_PATTERNS = [
+    re.compile(r"(?:must|shall|required to)\s+(?:be\s+)?(?:purchased|ordered|procured|sourced|bought)\s+(?:exclusively\s+)?from\s+(?P<supplier>[A-Z][A-Za-z0-9&.,'’\- ]{2,80})", re.IGNORECASE),
+    re.compile(r"(?:only|exclusively)\s+from\s+(?P<supplier>[A-Z][A-Za-z0-9&.,'’\- ]{2,80})", re.IGNORECASE),
+    re.compile(r"(?:mandatory supplier|mandatory buy(?:ing)? source)\s*(?:is|:)?\s*(?P<supplier>[A-Z][A-Za-z0-9&.,'’\- ]{2,80})", re.IGNORECASE),
+]
+
+_PREFERRED_SUPPLIER_PATTERNS = [
+    re.compile(r"(?:preferred supplier|framework contract supplier|framework agreement supplier)\s*(?:is|:)?\s*(?P<supplier>[A-Z][A-Za-z0-9&.,'’\- ]{2,80})", re.IGNORECASE),
+]
+
+
+def _clean_supplier_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    name = re.sub(r"\s+", " ", value).strip(" .,:;\n\t")
+    lower = name.lower()
+    for marker in (" under ", " for ", " because ", " due to ", " with "):
+        idx = lower.find(marker)
+        if idx > 0:
+            name = name[:idx].strip(" .,:;")
+            break
+    return name or None
+
+
+def _detect_procurement_constraints(
+    text: str,
+    *,
+    default_supplier: str | None = None,
+    document_type: str | None = None,
+) -> dict:
+    raw = text or ""
+    lowered = raw.lower()
+    supplier_name = _clean_supplier_name(default_supplier)
+    binding = "none"
+    reason = None
+
+    for pattern in _MANDATORY_SUPPLIER_PATTERNS:
+        match = pattern.search(raw)
+        if match:
+            supplier_name = _clean_supplier_name(match.group("supplier")) or supplier_name
+            binding = "mandatory_supplier"
+            reason = "Document contains a mandatory purchase clause tied to a supplier."
+            break
+
+    if binding == "none":
+        for pattern in _PREFERRED_SUPPLIER_PATTERNS:
+            match = pattern.search(raw)
+            if match:
+                supplier_name = _clean_supplier_name(match.group("supplier")) or supplier_name
+                binding = "preferred_supplier"
+                reason = "Document references a preferred or framework supplier."
+                break
+
+    if binding == "none" and any(keyword in lowered for keyword in (
+        "mandatory buy",
+        "mandatory supplier",
+        "exclusive supplier",
+        "must be purchased from",
+        "must be ordered from",
+        "exclusively from",
+        "only from",
+    )):
+        binding = "mandatory_supplier"
+        reason = "Document contains a supplier-lock clause."
+
+    if binding == "none" and any(keyword in lowered for keyword in (
+        "framework contract",
+        "framework agreement",
+        "preferred supplier",
+    )):
+        binding = "preferred_supplier"
+        reason = "Document references a framework or preferred-supplier arrangement."
+
+    source_locked = binding == "mandatory_supplier"
+    result = {
+        "source_locked": source_locked,
+        "contract_binding": binding,
+        "mandatory_supplier_name": supplier_name if source_locked else None,
+        "preferred_supplier_name": supplier_name if binding in {"mandatory_supplier", "preferred_supplier"} else None,
+        "mandatory_reason": reason,
+    }
+    if document_type:
+        result["document_type"] = document_type
+    return result
+
+
+def _apply_procurement_constraints(items: list[dict], metadata: dict) -> list[dict]:
+    if not items:
+        return items
+
+    binding = metadata.get("contract_binding")
+    preferred_name = metadata.get("preferred_supplier_name") or metadata.get("mandatory_supplier_name")
+    source_locked = bool(metadata.get("source_locked"))
+    if binding in (None, "none") and not preferred_name and not source_locked:
+        return items
+
+    enriched: list[dict] = []
+    for item in items:
+        row = dict(item)
+        if binding not in (None, "none"):
+            row["procurement_constraint"] = binding
+        if preferred_name:
+            row["preferred_supplier_name"] = preferred_name
+        if source_locked:
+            row["required_supplier_name"] = preferred_name
+            row["source_locked"] = True
+        enriched.append(row)
+    return enriched
+
+
 async def _extract_pdf_chunk_with_retry(
     markdown: str,
     *,
@@ -112,12 +225,14 @@ async def _extract_pdf_chunk_with_retry(
     max_attempts: int = 2,
 ) -> dict:
     deterministic_items = extract_catalog_from_markdown(markdown)
+    procurement_meta = _detect_procurement_constraints(markdown, document_type=document_type)
     stub = {
-        "items": deterministic_items,
+        "items": _apply_procurement_constraints(deterministic_items, procurement_meta),
         "metadata": {
             "document_type": document_type,
             "page_range": page_range,
             "note": "Fallback extraction from markdown chunk",
+            **procurement_meta,
         },
     }
 
@@ -133,9 +248,10 @@ Use null for missing numeric or date values instead of guessing.
 Do not invent supplier names, SKUs, quantities, units, or prices that are not explicitly shown.
 
 Return JSON: {{
-  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "..."}}],
-  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "{default_currency}", "page_range": "{page_range}"}}
-}}""",
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "...", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "{default_currency}", "page_range": "{page_range}", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null, "mandatory_reason": null}}
+}}
+Also detect framework-contract language such as mandatory-buy, exclusive supplier, preferred supplier, or only-from-supplier clauses.""",
                 messages=[{"role": "user", "content": f"Markdown chunk from pages {page_range}:\n\n{markdown}"}],
                 max_tokens=2048,
                 temperature=0.0,
@@ -198,6 +314,13 @@ async def extract_pdf(
                 metadata[field] = chunk_metadata[field]
 
     items = _merge_extracted_items(items)
+    procurement_meta = _detect_procurement_constraints(
+        "\n\n".join(chunk.get("markdown", "") for chunk in markdown_chunks),
+        default_supplier=metadata.get("supplier_name"),
+        document_type=document_type,
+    )
+    metadata.update({k: v for k, v in procurement_meta.items() if v not in (None, "none") or k in {"source_locked", "contract_binding"}})
+    items = _apply_procurement_constraints(items, metadata)
 
     if not items and not df.empty:
         sample = df.head(20).to_dict(orient="records")
@@ -221,6 +344,8 @@ Return JSON: {{
         )
         items = _merge_extracted_items(result.get("items", []))
         metadata.update(result.get("metadata", {}))
+        metadata.update(_detect_procurement_constraints(str(sample), default_supplier=metadata.get("supplier_name"), document_type=document_type))
+        items = _apply_procurement_constraints(items, metadata)
         metadata["extraction_mode"] = "table_ai_fallback"
 
     deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
@@ -260,9 +385,10 @@ Map the columns to standard fields and extract product data.
 Source columns: {columns}
 
 Return JSON: {{
-  "items": [{{"name": "...", "sku": "...", "unit_price": ..., "currency": "{default_currency}", "unit": "...", "category": "...", "manufacturer": "..."}}],
-  "metadata": {{"column_mapping": {{}}, "supplier_id": "{supplier_id}"}}
-}}""",
+  "items": [{{"name": "...", "sku": "...", "unit_price": ..., "currency": "{default_currency}", "unit": "...", "category": "...", "manufacturer": "...", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"column_mapping": {{}}, "supplier_id": "{supplier_id}", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null}}
+}}
+If the sheet or notes indicate mandatory-buy or exclusive-supplier obligations, capture that in metadata.""",
         messages=[{"role": "user", "content": f"Excel data sample:\n{sample}"}],
         max_tokens=2048,
         temperature=0.0,
@@ -272,7 +398,9 @@ Return JSON: {{
         },
     )
 
-    items = result.get("items", [])
+    metadata = result.get("metadata", {})
+    metadata.update(_detect_procurement_constraints(str(sample), default_supplier=metadata.get("supplier_name")))
+    items = _apply_procurement_constraints(result.get("items", []), metadata)
     deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
 
     return ExtractionResult(
@@ -280,7 +408,7 @@ Return JSON: {{
         items=items,
         deltas=deltas,
         delta_summary=delta_summary,
-        metadata=result.get("metadata", {}),
+        metadata=metadata,
         raw_row_count=len(df),
     )
 
@@ -302,6 +430,41 @@ async def extract_image(
         from fastapi import HTTPException
         raise HTTPException(400, "File too large (max 50MB)")
 
+    if settings.LLM_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        try:
+            vision_result = await call_ollama_vision(
+                system=f"""You are a document OCR and extraction AI for construction materials procurement.
+Read the uploaded {document_type} image directly and extract only information that is actually visible.
+Be especially accurate with supplier names, quantities, units, prices, and any preferred or mandatory supplier clauses.
+
+Return JSON: {{
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "...", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "ocr_quality": "good|fair|poor", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null}}
+}}""",
+                user_message="Extract the document contents from this image and return structured JSON.",
+                image_b64=base64.b64encode(content).decode("utf-8"),
+                max_tokens=2048,
+                temperature=0.0,
+                stub={"items": [], "metadata": {"document_type": document_type, "ocr": "vision_unavailable"}},
+                content_type=file.content_type or "image/jpeg",
+            )
+            metadata = {"document_type": document_type, **(vision_result.get("metadata", {}) or {})}
+            metadata.update(_detect_procurement_constraints(str(vision_result), default_supplier=metadata.get("supplier_name"), document_type=document_type))
+            items = _apply_procurement_constraints(vision_result.get("items", []), metadata)
+            if items:
+                metadata["ocr"] = "openai_vision"
+                deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
+                return ExtractionResult(
+                    status="ok",
+                    items=items,
+                    deltas=deltas,
+                    delta_summary=delta_summary,
+                    metadata=metadata,
+                    raw_row_count=len(items),
+                )
+        except Exception as e:
+            logger.warning("OpenAI vision OCR failed for image extraction, falling back to local OCR: %s", e)
+
     df = parse_image_to_table(content)
 
     if df.empty:
@@ -319,9 +482,10 @@ The text may have OCR artifacts — be tolerant of typos and misaligned columns.
 Only extract values supported by the OCR lines. Use null for missing values instead of guessing.
 
 Return JSON: {{
-  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "..."}}],
-  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "ocr_quality": "good|fair|poor"}}
-}}""",
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "...", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "ocr_quality": "good|fair|poor", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null}}
+}}
+If the OCR text mentions exclusive supplier or mandatory-buy clauses, preserve them in metadata.""",
         messages=[{"role": "user", "content": f"OCR text lines:\n{sample}"}],
         max_tokens=2048,
         temperature=0.0,
@@ -331,7 +495,9 @@ Return JSON: {{
         },
     )
 
-    items = result.get("items", [])
+    metadata = result.get("metadata", {})
+    metadata.update(_detect_procurement_constraints(str(sample), default_supplier=metadata.get("supplier_name"), document_type=document_type))
+    items = _apply_procurement_constraints(result.get("items", []), metadata)
     deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
 
     return ExtractionResult(
@@ -339,7 +505,7 @@ Return JSON: {{
         items=items,
         deltas=deltas,
         delta_summary=delta_summary,
-        metadata=result.get("metadata", {}),
+        metadata=metadata,
         raw_row_count=len(df),
     )
 
@@ -355,11 +521,12 @@ async def extract_text(body: TextExtractionRequest):
     result = await call_ollama_json(
         system=f"""You are a text extraction AI for construction procurement.
 Extract structured data from this {body.extraction_type} text.
-Look for: material names, quantities, units, prices, dates, supplier names, addresses.
+Look for: material names, quantities, units, prices, dates, supplier names, addresses, and any framework-contract clauses.
+If the text says a product must be bought only from a specific supplier, mark that as a mandatory supplier binding.
 
 Return JSON: {{
-  "items": [{{"name": "...", "quantity": ..., "unit": "...", "estimated_price": ..., "currency": "CHF"}}],
-  "metadata": {{"sender": "...", "date": "...", "urgency": "low|medium|high", "project_reference": "..."}},
+  "items": [{{"name": "...", "quantity": ..., "unit": "...", "estimated_price": ..., "currency": "CHF", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"sender": "...", "date": "...", "urgency": "low|medium|high", "project_reference": "...", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null, "mandatory_reason": null}},
   "summary": "Brief summary in the source language"
 }}""",
         messages=[{"role": "user", "content": body.text}],
@@ -377,4 +544,11 @@ Return JSON: {{
             "summary": f"Fallback extraction generated from {len(body.text.split())} words of source text.",
         },
     )
-    return result
+    metadata = result.get("metadata", {}) if isinstance(result, dict) else {}
+    metadata.update(_detect_procurement_constraints(body.text, default_supplier=metadata.get("sender"), document_type=body.extraction_type))
+    items = _apply_procurement_constraints(result.get("items", []), metadata) if isinstance(result, dict) else []
+    return {
+        **(result if isinstance(result, dict) else {}),
+        "items": items,
+        "metadata": metadata,
+    }

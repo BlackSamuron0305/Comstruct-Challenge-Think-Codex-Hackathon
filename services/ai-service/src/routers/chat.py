@@ -328,7 +328,7 @@ async def _try_openai_transcription(content: bytes, filename: str, content_type:
         response = await client.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
-            data={"model": "whisper-1", "language": language},
+            data={"model": settings.OPENAI_AUDIO_MODEL, "language": language},
             files={"file": (filename, content, content_type)},
         )
         response.raise_for_status()

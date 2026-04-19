@@ -19,6 +19,7 @@ from src.llm.ollama_client import (
     EMBED_DIM,
 )
 from src.services.classification import _stub_classify
+from src.routers.documents import _detect_procurement_constraints
 
 
 # ── JSON extraction ───────────────────────────────────────────────
@@ -157,6 +158,16 @@ class TestClassificationStub:
 
 
 # ── Workflow Logic ────────────────────────────────────────────────
+
+class TestDocumentConstraints:
+    def test_detects_mandatory_supplier_from_contract_text(self):
+        result = _detect_procurement_constraints(
+            "Framework contract: fire-rated foam and foam backer rod must be purchased exclusively from Swiss Fix AG."
+        )
+        assert result["source_locked"] is True
+        assert result["contract_binding"] == "mandatory_supplier"
+        assert result["mandatory_supplier_name"] == "Swiss Fix AG"
+
 
 class TestWorkflowLogic:
     """Test workflow decision logic (without Ollama — pure business rules)."""
