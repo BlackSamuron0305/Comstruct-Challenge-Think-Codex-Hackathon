@@ -188,7 +188,7 @@ async def checkout(
         ))
     order.total_amount = total
     await db.flush()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
 
     # Approval evaluation
     engine = ApprovalEngine(db)
@@ -252,7 +252,7 @@ async def checkout(
             )
 
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await cart_clear(user.id)
@@ -289,7 +289,7 @@ async def approve_order(
         payload={"approver_id": str(user.id)},
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_approved", {
@@ -326,7 +326,7 @@ async def reject_order(
         payload={"reason": body.reason},
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_rejected", {
@@ -353,7 +353,7 @@ async def select_supplier_option(
     if order.status not in {OrderStatus.DRAFT.value, OrderStatus.PENDING_APPROVAL.value}:
         raise HTTPException(409, "Supplier options can only be changed for draft or pending approval orders")
 
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     item = next((entry for entry in order.items if entry.id == body.order_item_id), None)
     if item is None:
         raise HTTPException(404, "Order item not found")
@@ -399,7 +399,7 @@ async def select_supplier_option(
         },
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await _attach_foreman_names(db, order)
     return order
 
@@ -426,7 +426,7 @@ async def mark_in_transit(
         action="order.in_transit", entity_type="order", entity_id=order.id,
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await _attach_foreman_names(db, order)
@@ -454,7 +454,7 @@ async def mark_delivered(
         action="order.delivered", entity_type="order", entity_id=order.id,
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items"])
+    await db.refresh(order, attribute_names=["items", "updated_at"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_delivered", {

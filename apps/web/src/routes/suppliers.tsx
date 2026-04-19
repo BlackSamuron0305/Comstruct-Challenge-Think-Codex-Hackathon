@@ -12,7 +12,10 @@ export const Route = createFileRoute("/suppliers")({
   head: () => ({
     meta: [
       { title: "Suppliers · comstruct C-Materials" },
-      { name: "description", content: "C-material suppliers, integration channels and sync health." },
+      {
+        name: "description",
+        content: "C-material suppliers, integration channels and sync health.",
+      },
     ],
   }),
   component: Suppliers,
@@ -49,7 +52,12 @@ function Suppliers() {
   const [draftEmail, setDraftEmail] = useState("");
   const [draftPhone, setDraftPhone] = useState("");
 
-  const { data: suppliers = [], isLoading, isError, refetch } = useQuery({
+  const {
+    data: suppliers = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["suppliers", "cards"],
     queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
   });
@@ -59,8 +67,12 @@ function Suppliers() {
   });
 
   const createSupplierMutation = useMutation({
-    mutationFn: (payload: { name: string; contact_name?: string; email?: string; phone?: string }) =>
-      api.post<SupplierRecord>("/api/suppliers", payload),
+    mutationFn: (payload: {
+      name: string;
+      contact_name?: string;
+      email?: string;
+      phone?: string;
+    }) => api.post<SupplierRecord>("/api/suppliers", payload),
     onSuccess: (created) => {
       toast.success(`${created.name} saved to the supplier database.`);
       setShowAdd(false);
@@ -76,7 +88,10 @@ function Suppliers() {
   const suppliersList = useMemo<SupplierCard[]>(() => {
     function toCard(supplier: SupplierRecord): SupplierCard {
       const linkedProducts = products.filter((product) => product.supplier_id === supplier.id);
-      const spend = linkedProducts.reduce((sum, product) => sum + Number(product.unit_price ?? 0), 0);
+      const spend = linkedProducts.reduce(
+        (sum, product) => sum + Number(product.unit_price ?? 0),
+        0,
+      );
       const items = linkedProducts.length;
       const autoSync = items > 0;
       const channel: SupplierChannel = autoSync ? "API/PunchOut" : "Excel/PDF upload";
@@ -94,7 +109,9 @@ function Suppliers() {
         integrationNotes: autoSync
           ? "This supplier already has live catalog items in the database."
           : "This supplier is stored in the database and is ready for its first catalog import.",
-        lastActivity: autoSync ? "Live catalog data is available now" : "Waiting for the first uploaded price list",
+        lastActivity: autoSync
+          ? "Live catalog data is available now"
+          : "Waiting for the first uploaded price list",
       };
     }
 
@@ -129,7 +146,8 @@ function Suppliers() {
   function handleSupplierAction(supplier: SupplierCard) {
     if (supplier.autoSync) {
       toast.success(`${supplier.name} sync requested`, {
-        description: "API suppliers can be refreshed on demand and also auto-sync in the background.",
+        description:
+          "API suppliers can be refreshed on demand and also auto-sync in the background.",
       });
       return;
     }
@@ -140,10 +158,18 @@ function Suppliers() {
 
   return (
     <>
-      <DashboardLayout title="Suppliers" subtitle="Supplier directory, sync model, and latest commercial source data">
+      <DashboardLayout
+        title="Suppliers"
+        subtitle="Supplier directory, sync model, and latest commercial source data"
+      >
         <div className="mb-4 flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">Every supplier shown here now comes from the live database.</p>
-          <button onClick={() => setShowAdd(true)} className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm inline-flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            Every supplier shown here now comes from the live database.
+          </p>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm inline-flex items-center gap-2"
+          >
             <Plus className="h-3.5 w-3.5" /> Add supplier
           </button>
         </div>
@@ -159,25 +185,43 @@ function Suppliers() {
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs text-muted-foreground">Current catalog value</div>
-            <div className="mt-1 text-2xl font-semibold">{formatCurrency(totalCatalogValue, "EUR")}</div>
+            <div className="mt-1 text-2xl font-semibold">
+              {formatCurrency(totalCatalogValue, "EUR")}
+            </div>
           </div>
         </div>
 
         {readyForImportCount > 0 && (
           <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
-            <div className="font-medium text-warning-foreground">Some suppliers are stored but still need a first file import.</div>
-            <div className="mt-1 text-muted-foreground">Open the catalog workspace to upload their first PDF, CSV, or Excel price list.</div>
+            <div className="font-medium text-warning-foreground">
+              Some suppliers are stored but still need a first file import.
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              Open the catalog workspace to upload their first PDF, CSV, or Excel price list.
+            </div>
           </div>
         )}
 
         {isLoading ? (
-          <QueryState kind="loading" title="Loading live suppliers" description="API suppliers and uploaded file sources are being prepared now." />
+          <QueryState
+            kind="loading"
+            title="Loading live suppliers"
+            description="API suppliers and uploaded file sources are being prepared now."
+          />
         ) : isError ? (
-          <QueryState kind="error" title="Suppliers could not be loaded" description="The supplier directory is temporarily unavailable." onRetry={() => void refetch()} />
+          <QueryState
+            kind="error"
+            title="Suppliers could not be loaded"
+            description="The supplier directory is temporarily unavailable."
+            onRetry={() => void refetch()}
+          />
         ) : suppliersList.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-8 text-sm">
             <div className="font-medium">No suppliers are connected yet.</div>
-            <div className="mt-1 text-muted-foreground">Add a supplier first, then import a PDF, CSV, or Excel price list from the catalog workspace.</div>
+            <div className="mt-1 text-muted-foreground">
+              Add a supplier first, then import a PDF, CSV, or Excel price list from the catalog
+              workspace.
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -197,29 +241,50 @@ function Suppliers() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">{supplier.channel}</div>
+                    <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {supplier.channel}
+                    </div>
                     <h3 className="text-display text-lg font-semibold mt-1">{supplier.name}</h3>
                   </div>
-                  <span className={["text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded shrink-0", statusStyles[supplier.statusTone]].join(" ")}>
+                  <span
+                    className={[
+                      "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded shrink-0",
+                      statusStyles[supplier.statusTone],
+                    ].join(" ")}
+                  >
                     {supplier.statusLabel}
                   </span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">Catalog items</div>
-                    <div className="tabular font-medium">{supplier.items.toLocaleString("de-CH")}</div>
+                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">
+                      Catalog items
+                    </div>
+                    <div className="tabular font-medium">
+                      {supplier.items.toLocaleString("de-CH")}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">Catalog value</div>
-                    <div className="tabular font-medium">{formatCurrency(supplier.spend, "EUR")}</div>
+                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">
+                      Catalog value
+                    </div>
+                    <div className="tabular font-medium">
+                      {formatCurrency(supplier.spend, "EUR")}
+                    </div>
                   </div>
                   <div className="col-span-2">
-                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">Contact</div>
-                    <div className="text-sm">{supplier.contact_name ?? supplier.email ?? "No contact registered"}</div>
+                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">
+                      Contact
+                    </div>
+                    <div className="text-sm">
+                      {supplier.contact_name ?? supplier.email ?? "No contact registered"}
+                    </div>
                   </div>
                   <div className="col-span-2">
-                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">Integration model</div>
+                    <div className="text-mono text-[10px] uppercase text-muted-foreground tracking-wider">
+                      Integration model
+                    </div>
                     <div className="text-xs text-muted-foreground">{supplier.integrationNotes}</div>
                   </div>
                   <div className="col-span-2 rounded-md bg-secondary/40 px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
@@ -236,7 +301,11 @@ function Suppliers() {
                     }}
                     className="text-sm flex-1 px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center gap-2"
                   >
-                    {supplier.autoSync ? <RefreshCw className="h-3.5 w-3.5" /> : <ArrowUpFromLine className="h-3.5 w-3.5" />}
+                    {supplier.autoSync ? (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowUpFromLine className="h-3.5 w-3.5" />
+                    )}
                     {supplier.actionLabel}
                   </button>
                   <button
@@ -262,19 +331,41 @@ function Suppliers() {
           <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/30">
               <div>
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Supplier snapshot</div>
-                <div className="text-display text-base font-semibold mt-0.5">{settingsSupplier.name}</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Supplier snapshot
+                </div>
+                <div className="text-display text-base font-semibold mt-0.5">
+                  {settingsSupplier.name}
+                </div>
               </div>
-              <button onClick={() => setSettingsSupplier(null)} className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent">
+              <button
+                onClick={() => setSettingsSupplier(null)}
+                className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-3 text-sm">
-              <div><span className="font-medium">Channel:</span> {settingsSupplier.channel}</div>
-              <div><span className="font-medium">Owner:</span> {settingsSupplier.owner}</div>
-              <div><span className="font-medium">Phone:</span> {settingsSupplier.phone ?? "Not provided"}</div>
-              <div><span className="font-medium">Email:</span> {settingsSupplier.email ?? "Not provided"}</div>
-              <div><span className="font-medium">Current mode:</span> {settingsSupplier.autoSync ? "API auto-sync with optional manual refresh" : "Manual PDF/Excel refresh when a new file arrives"}</div>
+              <div>
+                <span className="font-medium">Channel:</span> {settingsSupplier.channel}
+              </div>
+              <div>
+                <span className="font-medium">Owner:</span> {settingsSupplier.owner}
+              </div>
+              <div>
+                <span className="font-medium">Phone:</span>{" "}
+                {settingsSupplier.phone ?? "Not provided"}
+              </div>
+              <div>
+                <span className="font-medium">Email:</span>{" "}
+                {settingsSupplier.email ?? "Not provided"}
+              </div>
+              <div>
+                <span className="font-medium">Current mode:</span>{" "}
+                {settingsSupplier.autoSync
+                  ? "API auto-sync with optional manual refresh"
+                  : "Manual PDF/Excel refresh when a new file arrives"}
+              </div>
               <div className="text-muted-foreground">{settingsSupplier.lastActivity}</div>
             </div>
           </div>
@@ -289,13 +380,44 @@ function Suppliers() {
               <div className="text-display text-base font-semibold">Add supplier</div>
             </div>
             <div className="px-6 py-5 space-y-3 text-sm">
-              <input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Supplier name" className="w-full rounded-md border border-border bg-background px-3 py-2" />
-              <input value={draftContact} onChange={(event) => setDraftContact(event.target.value)} placeholder="Contact person" className="w-full rounded-md border border-border bg-background px-3 py-2" />
-              <input value={draftEmail} onChange={(event) => setDraftEmail(event.target.value)} placeholder="Email" className="w-full rounded-md border border-border bg-background px-3 py-2" />
-              <input value={draftPhone} onChange={(event) => setDraftPhone(event.target.value)} placeholder="Phone" className="w-full rounded-md border border-border bg-background px-3 py-2" />
+              <input
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                placeholder="Supplier name"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftContact}
+                onChange={(event) => setDraftContact(event.target.value)}
+                placeholder="Contact person"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftEmail}
+                onChange={(event) => setDraftEmail(event.target.value)}
+                placeholder="Email"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftPhone}
+                onChange={(event) => setDraftPhone(event.target.value)}
+                placeholder="Phone"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
               <div className="flex justify-end gap-2 pt-2">
-                <button onClick={() => setShowAdd(false)} className="rounded-md border border-border px-3 py-2 hover:bg-accent">Cancel</button>
-                <button onClick={handleCreateSupplier} disabled={createSupplierMutation.isPending} className="rounded-md bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{createSupplierMutation.isPending ? "Saving…" : "Save supplier"}</button>
+                <button
+                  onClick={() => setShowAdd(false)}
+                  className="rounded-md border border-border px-3 py-2 hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateSupplier}
+                  disabled={createSupplierMutation.isPending}
+                  className="rounded-md bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {createSupplierMutation.isPending ? "Saving…" : "Save supplier"}
+                </button>
               </div>
             </div>
           </div>

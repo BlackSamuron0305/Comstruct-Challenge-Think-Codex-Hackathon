@@ -236,12 +236,45 @@ def column_samples(df: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 def apply_mapping(df: pd.DataFrame, mappings: list[dict]) -> list[dict]:
-    """Apply a column_mapper response to produce canonical product rows."""
-    rename: dict[str, str] = {}
-    for m in mappings:
-        if m.get("target_field"):
-            rename[m["source_column"]] = m["target_field"]
-    sliced = df.rename(columns=rename)
-    keep = [c for c in sliced.columns if c in rename.values()]
-    sliced = sliced[keep].copy()
-    return sliced.to_dict(orient="records")
+    """Apply the selected database-field mapping and preserve extra detail in special_info."""
+    rows: list[dict] = []
+
+    for _, df_row in df.iterrows():
+        mapped_row: dict[str, Any] = {}
+        special_info: dict[str, Any] = {}
+
+        for mapping in mappings:
+            source_column = str(mapping.get("source_column") or "")
+            target_field = mapping.get("target_field")
+            if not source_column or not target_field or source_column not in df.columns:
+                continue
+
+            raw_value = df_row.get(source_column)
+            if pd.isna(raw_value):
+                continue
+
+            value = str(raw_value).strip()
+            if value == "":
+                continue
+
+            if target_field == "special_info":
+                special_info[source_column] = value
+                continue
+
+            if target_field not in mapped_row or mapped_row[target_field] in (None, ""):
+                mapped_row[target_field] = value
+            else:
+                special_info[source_column] = value
+
+        if special_info:
+            existing_special = mapped_row.get("special_info")
+            if isinstance(existing_special, dict):
+                mapped_row["special_info"] = {**existing_special, **special_info}
+            elif existing_special not in (None, ""):
+                mapped_row["special_info"] = {"note": existing_special, **special_info}
+            else:
+                mapped_row["special_info"] = special_info
+
+        rows.append(mapped_row)
+
+    return rows

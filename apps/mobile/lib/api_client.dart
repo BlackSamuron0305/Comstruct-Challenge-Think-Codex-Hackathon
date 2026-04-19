@@ -51,6 +51,180 @@ String normalizeCurrencyCode(String? currency) {
   return code == 'CHF' ? 'EUR' : code;
 }
 
+num? parseFlexibleNumber(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value;
+
+  final raw = value.toString().trim();
+  if (raw.isEmpty) return null;
+
+  final cleaned = raw.replaceAll(RegExp(r'[^0-9,\.\-]'), '');
+  if (cleaned.isEmpty || cleaned == '-' || cleaned == '.' || cleaned == ',') {
+    return null;
+  }
+
+  final normalized = cleaned.contains(',') && cleaned.contains('.')
+      ? cleaned.replaceAll(',', '')
+      : cleaned.replaceAll(',', '.');
+
+  return num.tryParse(normalized);
+}
+
+int parseFlexibleInt(Object? value, {int fallback = 1}) {
+  final parsed = parseFlexibleNumber(value);
+  if (parsed == null) return fallback;
+  final asInt = parsed.toInt();
+  return asInt > 0 ? asInt : fallback;
+}
+
+const Set<String> _catalogIntentStopwords = {
+  'a', 'an', 'and', 'the', 'i', 'need', 'want', 'some', 'please', 'for', 'to',
+  'of', 'my', 'our', 'me', 'we', 'order', 'get', 'find', 'show', 'with', 'from',
+};
+
+const Set<String> _catalogAnchorWords = {
+  'hammer', 'drill', 'screw', 'anchor', 'anchors', 'bolt', 'bolts', 'glove',
+  'gloves', 'mask', 'masks', 'tape', 'pipe', 'pipes', 'cable', 'cables',
+  'sealant', 'silicone', 'foam', 'light', 'lights', 'battery', 'batteries',
+  'helmet', 'tool', 'tools', 'ladder', 'lamp', 'lamps', 'tie', 'ties',
+};
+
+List<String> _catalogIntentTokens(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\s-]'), ' ')
+      .split(RegExp(r'\s+'))
+      .map((token) => token.trim())
+      .where((token) =>
+          token.length > 1 &&
+          !_catalogIntentStopwords.contains(token) &&
+          !RegExp(r'^\d+$').hasMatch(token) &&
+          !RegExp(r'^(mm|cm|m|kg|g|gr|oz|ml|l|x)$').hasMatch(token))
+      .toList();
+}
+
+String _catalogDisplayLabel(Map<String, dynamic> item) {
+  final raw = (item['display_name'] ??
+          item['requested_label'] ??
+          item['matched_name'] ??
+          item['name'] ??
+          item['material'] ??
+          item['category'] ??
+          '')
+      .toString()
+      .trim();
+
+  if (raw.isEmpty) return 'Material';
+
+  final tokens = _catalogIntentTokens(raw);
+  if (tokens.isEmpty) return raw;
+
+  final noun = tokens.reversed.firstWhere(
+    (token) => _catalogAnchorWords.contains(token),
+    orElse: () => tokens.length > 1 ? tokens[1] : tokens.last,
+  );
+  final descriptor = tokens.first == noun ? noun : '${tokens.first} $noun';
+  return descriptor
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .take(3)
+      .map((part) => part[0].toUpperCase() + part.substring(1))
+      .join(' ');
+}
+
+bool itemMatchesClarificationOption(Map<String, dynamic> item, String option) {
+  final labelTokens = _catalogIntentTokens(_catalogDisplayLabel(item));
+  final optionTokens = _catalogIntentTokens(option);
+  if (optionTokens.isEmpty) return false;
+  return optionTokens.every(labelTokens.contains);
+}
+
+Map<String, dynamic> buildDeferredSelectionState(
+  String query,
+  List<Map<String, dynamic>> items,
+) {
+  if (items.isEmpty) {
+    return {
+      'items': <Map<String, dynamic>>[],
+      'needsClarification': false,
+      'clarificationQuestion': null,
+      'clarificationOptions': <String>[],
+      'statusNote': null,
+    };
+  }
+
+  final grouped = <String, List<Map<String, dynamic>>>{};
+  for (final item in items) {
+    final copy = Map<String, dynamic>.from(item);
+    final label = _catalogDisplayLabel(copy);
+    grouped.putIfAbsent(label, () => <Map<String, dynamic>>[]).add(copy);
+  }
+
+  final representatives = grouped.entries.map((entry) {
+    final representative = Map<String, dynamic>.from(entry.value.first);
+    representative['display_name'] = entry.key;
+    representative['catalog_offer_count'] = entry.value.length;
+    representative['selection_deferred'] = true;
+    representative['candidate_names'] = entry.value
+        .map((candidate) => (candidate['name'] ?? '').toString().trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .take(4)
+        .toList();
+    return representative;
+  }).toList();
+
+  final queryTokens = _catalogIntentTokens(query);
+  final specificMatches = queryTokens.length > 1
+      ? representatives.where((item) {
+          final labelTokens = _catalogIntentTokens(
+            (item['display_name'] ?? '').toString(),
+          );
+          return queryTokens.every(labelTokens.contains);
+        }).toList()
+      : <Map<String, dynamic>>[];
+
+  final labels = representatives
+      .map((item) => (item['display_name'] ?? '').toString().trim())
+      .where((label) => label.isNotEmpty)
+      .toList();
+
+  final needsClarification = labels.length > 1 && specificMatches.length != 1;
+
+  String? clarificationQuestion;
+  if (needsClarification) {
+    var focus = 'item';
+    for (final token in queryTokens.reversed) {
+      final matching = labels
+          .where((label) => _catalogIntentTokens(label).contains(token))
+          .length;
+      if (matching >= 2) {
+        focus = token;
+        break;
+      }
+    }
+    clarificationQuestion =
+        'I found several similar $focus options in the catalogue. Which type do you need?';
+  }
+
+  final selectedItems = specificMatches.length == 1 ? specificMatches : representatives;
+  final offerCount = items.length;
+  final groupedCount = selectedItems.length;
+  final statusNote = needsClarification
+      ? 'Tell me the type first. The final supplier and exact model will be selected later during backend scoring.'
+      : offerCount > groupedCount
+          ? 'I found $offerCount matching offers. The final supplier and exact model will be selected automatically later during scoring.'
+          : null;
+
+  return {
+    'items': selectedItems,
+    'needsClarification': needsClarification,
+    'clarificationQuestion': clarificationQuestion,
+    'clarificationOptions': needsClarification ? labels.take(4).toList() : <String>[],
+    'statusNote': statusNote,
+  };
+}
+
 // ─── Secure Token Storage ─────────────────────────────────────────────
 class TokenStore {
   static const _kAccess = 'comstruct.access';

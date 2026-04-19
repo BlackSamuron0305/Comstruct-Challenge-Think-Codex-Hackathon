@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.vite
+**/.dart_tool
+**/build
+.git
+.gitignore
+README.md

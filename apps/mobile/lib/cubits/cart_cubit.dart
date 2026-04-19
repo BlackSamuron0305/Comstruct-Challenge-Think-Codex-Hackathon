@@ -39,7 +39,7 @@ class CartCubit extends Cubit<CartState> {
   int quantityFor(String productId) {
     final match = state.lines.where((line) => line['product_id'] == productId);
     if (match.isEmpty) return 0;
-    return ((match.first['quantity'] as num?) ?? 0).toInt();
+    return parseFlexibleInt(match.first['quantity'], fallback: 0);
   }
 
   Future<void> refresh() async {

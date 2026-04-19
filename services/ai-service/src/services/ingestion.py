@@ -6,33 +6,117 @@ from typing import Any
 
 from ..config import settings
 from ..llm.openai_client import embed_batch
+from ..prompts.column_mapper import CANONICAL_FIELDS as _CANONICAL_FIELDS
 from .catalog_client import bulk_upsert_products
 from .classification import classify
 from .column_mapping import map_columns
 from .parsing import apply_mapping, column_samples, parse_pdf_to_table, parse_tabular
+from .pdf_extractor import extract_pdf_items
+
+_CANONICAL_FIELDS_SET = set(_CANONICAL_FIELDS)
+
+# Fields from LLM extraction that don't map 1:1 to canonical fields but should
+# be preserved in special_info when constructing the tabular preview.
+_PDF_EXTRA_FIELDS = {
+    "quantity", "is_alternative", "alternative_to_pos",
+    "list_price", "surcharge_pct", "procurement_constraint",
+    "required_supplier_name",
+}
+
+
+def _items_to_preview_mapping(items: list[dict]) -> dict:
+    """Build a synthetic column-mapping response from LLM-extracted items.
+
+    The UI expects mapping.mappings = [{source_column, target_field, confidence, reason}].
+    Since the LLM already returns canonical field names we pre-confirm each one.
+    Extra fields (quantity, is_alternative, etc.) are routed to special_info.
+    """
+    # Collect every field that has at least one non-null value across all items
+    present: set[str] = set()
+    for item in items:
+        for k, v in item.items():
+            if v not in (None, "", False, [], {}):
+                present.add(k)
+
+    mappings = []
+    for field in sorted(present):
+        if field == "special_info":
+            # Will be surfaced as a single canonical mapping
+            mappings.append({
+                "source_column": "special_info",
+                "target_field": "special_info",
+                "confidence": 1.0,
+                "reason": "Extracted by AI (NPK code, Rabattgruppe, dimensions, etc.)",
+            })
+        elif field in _CANONICAL_FIELDS_SET:
+            mappings.append({
+                "source_column": field,
+                "target_field": field,
+                "confidence": 1.0,
+                "reason": "Extracted by AI",
+            })
+        elif field in _PDF_EXTRA_FIELDS:
+            mappings.append({
+                "source_column": field,
+                "target_field": "special_info",
+                "confidence": 0.9,
+                "reason": "Extracted by AI (stored in special_info)",
+            })
+    return {"mappings": mappings, "warnings": []}
+from .pdf_extractor import extract_pdf_items
+
+_CANONICAL_FIELDS_SET = set(_CANONICAL_FIELDS)
+
+# Fields from LLM extraction that don't map 1:1 to canonical fields but should
+# be preserved in special_info when constructing the tabular preview.
+_PDF_EXTRA_FIELDS = {
+    "quantity", "is_alternative", "alternative_to_pos",
+    "list_price", "surcharge_pct", "procurement_constraint",
+    "required_supplier_name",
+}
+
+
+def _items_to_preview_mapping(items: list[dict]) -> dict:
+    """Build a synthetic column-mapping response from LLM-extracted items.
+
+    The UI expects mapping.mappings = [{source_column, target_field, confidence, reason}].
+    Since the LLM already returns canonical field names we pre-confirm each one.
+    Extra fields (quantity, is_alternative, etc.) are routed to special_info.
+    """
+    # Collect every field that has at least one non-null value across all items
+    present: set[str] = set()
+    for item in items:
+        for k, v in item.items():
+            if v not in (None, "", False, [], {}):
+                present.add(k)
+
+    mappings = []
+    for field in sorted(present):
+        if field == "special_info":
+            # Will be surfaced as a single canonical mapping
+            mappings.append({
+                "source_column": "special_info",
+                "target_field": "special_info",
+                "confidence": 1.0,
+                "reason": "Extracted by AI (NPK code, Rabattgruppe, dimensions, etc.)",
+            })
+        elif field in _CANONICAL_FIELDS_SET:
+            mappings.append({
+                "source_column": field,
+                "target_field": field,
+                "confidence": 1.0,
+                "reason": "Extracted by AI",
+            })
+        elif field in _PDF_EXTRA_FIELDS:
+            mappings.append({
+                "source_column": field,
+                "target_field": "special_info",
+                "confidence": 0.9,
+                "reason": "Extracted by AI (stored in special_info)",
+            })
+    return {"mappings": mappings, "warnings": []}
 
 log = logging.getLogger(__name__)
-
-_CANONICAL_FIELDS = [
-    "sku",
-    "name",
-    "description",
-    "category",
-    "unit",
-    "unit_price",
-    "currency",
-    "manufacturer",
-    "manufacturer_sku",
-    "ean",
-    "image_url",
-    "special_info",
-    "source_delivery_days",
-    "must_order",
-    "base_discount_pct",
-    "bulk_discount_pct",
-    "bulk_discount_threshold",
-]
-
 
 def _coerce_price(v: Any) -> float | None:
     if v is None or v == "":
@@ -93,10 +177,30 @@ def _merge_mapping_overrides(mapping: dict, mapping_overrides: list[dict] | None
 async def preview_supplier_file(
     *, filename: str, content: bytes, mapping_overrides: list[dict] | None = None,
 ) -> dict:
+    # PDFs: use LLM-based structured extraction (not pdfplumber table parsing)
     if filename.lower().endswith(".pdf"):
-        df = parse_pdf_to_table(content)
-    else:
-        df = parse_tabular(filename, content)
+        items, _meta = await extract_pdf_items(content)
+        if not items:
+            return {
+                "status": "empty",
+                "rows_in": 0,
+                "preview_rows": [],
+                "source_columns": [],
+                "canonical_fields": _CANONICAL_FIELDS,
+                "mapping": {"mappings": [], "warnings": ["No line items found in PDF."]},
+            }
+        mapping = _merge_mapping_overrides(_items_to_preview_mapping(items), mapping_overrides)
+        return {
+            "status": "ok",
+            "rows_in": len(items),
+            "preview_rows": items,  # return ALL items for PDF table view
+            "source_columns": [],
+            "canonical_fields": _CANONICAL_FIELDS,
+            "mapping": mapping,
+            "pdf_metadata": _meta,
+        }
+
+    df = parse_tabular(filename, content)
     df = df.head(settings.MAX_INGEST_ROWS)
     if df.empty:
         return {
@@ -132,17 +236,23 @@ async def ingest_supplier_file(
 ) -> dict:
     # 1. parse
     if filename.lower().endswith(".pdf"):
-        df = parse_pdf_to_table(content)
+        # PDFs: use LLM-based structured extraction
+        items, _meta = await extract_pdf_items(content, default_currency=default_currency)
+        items = items[:settings.MAX_INGEST_ROWS]
+        if not items:
+            return {"status": "empty", "rows_in": 0}
+        rows = items
+        mapping: dict = {"mappings": [], "warnings": []}
     else:
         df = parse_tabular(filename, content)
-    df = df.head(settings.MAX_INGEST_ROWS)
-    if df.empty:
-        return {"status": "empty", "rows_in": 0}
+        df = df.head(settings.MAX_INGEST_ROWS)
+        if df.empty:
+            return {"status": "empty", "rows_in": 0}
 
-    # 2. column mapping
-    cols = column_samples(df)
-    mapping = _merge_mapping_overrides(await map_columns(cols), mapping_overrides)
-    rows = apply_mapping(df, mapping["mappings"])
+        # 2. column mapping
+        cols = column_samples(df)
+        mapping = _merge_mapping_overrides(await map_columns(cols), mapping_overrides)
+        rows = apply_mapping(df, mapping["mappings"])
 
     # 3. normalise + filter incomplete
     normalised: list[dict] = []
@@ -150,20 +260,27 @@ async def ingest_supplier_file(
         name = (r.get("name") or "").strip()
         if not name:
             continue
+        # Merge PDF-specific extra fields into special_info so nothing is lost
+        base_special = _coerce_special_info(r.get("special_info") or r.get("datasheet_url")) or {}
+        for extra_field in ("is_alternative", "alternative_to_pos", "list_price", "surcharge_pct", "quantity"):
+            val = r.get(extra_field)
+            if val not in (None, "", False):
+                base_special[extra_field] = val
         normalised.append({
             "sku": (r.get("sku") or "").strip() or None,
             "name": name,
             "description": (r.get("description") or "").strip() or None,
             "category": (r.get("category") or "").strip() or None,
             "unit": (r.get("unit") or "pc").strip() or "pc",
+            "packaging_qty": _coerce_price(r.get("packaging_qty") or r.get("pack_size") or r.get("min_order_qty")) or 1,
             "unit_price": _coerce_price(r.get("unit_price")),
             "currency": (r.get("currency") or default_currency).upper(),
             "manufacturer": (r.get("manufacturer") or None),
             "manufacturer_sku": (r.get("manufacturer_sku") or None),
             "ean": (r.get("ean") or None),
             "image_url": r.get("image_url") or None,
-            "special_info": _coerce_special_info(r.get("special_info")),
-            "source_delivery_days": _coerce_price(r.get("source_delivery_days")),
+            "special_info": base_special or None,
+            "source_delivery_days": _coerce_price(r.get("source_delivery_days") or r.get("lead_time_days")),
             "must_order": _coerce_bool(r.get("must_order")) or False,
             "base_discount_pct": _coerce_price(r.get("base_discount_pct")) or 0,
             "bulk_discount_pct": _coerce_price(r.get("bulk_discount_pct")) or 0,
@@ -217,6 +334,7 @@ async def ingest_supplier_file(
     # 6. bulk upsert into catalog
     upsert_payload = [
         {
+            "supplier_id": supplier_id,
             "sku": p["sku"] or f"AUTO-{i:06d}",
             "name": p["name"],
             "description": p.get("description"),
@@ -224,6 +342,7 @@ async def ingest_supplier_file(
             "taxonomy_code": p.get("taxonomy_code"),
             "taxonomy_label": p.get("taxonomy_label"),
             "unit": p.get("unit") or "pc",
+            "packaging_qty": p.get("packaging_qty") or 1,
             "unit_price": p.get("unit_price") or 0,
             "currency": p.get("currency") or default_currency,
             "manufacturer": p.get("manufacturer"),

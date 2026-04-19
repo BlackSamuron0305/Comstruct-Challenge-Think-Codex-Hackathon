@@ -32,6 +32,8 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
   bool _speechReady = false;
   String? _speechError;
   String? _statusNote;
+  String? _clarificationQuestion;
+  List<String> _clarificationOptions = const [];
   List<Map<String, dynamic>> _results = [];
   bool _approved = false;
   DateTime? _recordingStartedAt;
@@ -117,6 +119,8 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       _results = [];
       _approved = false;
       _speechError = null;
+      _clarificationQuestion = null;
+      _clarificationOptions = const [];
       _heardSpeech = false;
       _recordingStartedAt = DateTime.now();
       _statusNote = 'Listening… keep speaking until you tap stop.';
@@ -174,9 +178,35 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       _approved = false;
       _statusNote = null;
       _speechError = null;
+      _clarificationQuestion = null;
+      _clarificationOptions = const [];
       _recordingStartedAt = null;
       _heardSpeech = false;
     });
+  }
+
+  Map<String, dynamic> _normalizeResultItem(Map<String, dynamic> item) {
+    final normalized = Map<String, dynamic>.from(item);
+    normalized['product_id'] = item['product_id']?.toString();
+    normalized['unit_price'] = parseFlexibleNumber(item['unit_price']);
+    normalized['suggested_qty'] = parseFlexibleInt(item['suggested_qty']);
+    normalized['currency'] = normalizeCurrencyCode(item['currency'] as String?);
+    return normalized;
+  }
+
+  Future<void> _chooseClarification(String option) async {
+    final current = _transcriptCtrl.text.trim();
+    final next = current.toLowerCase().contains(option.toLowerCase())
+        ? current
+        : '$current $option';
+    setState(() {
+      _transcript = next;
+      _transcriptCtrl.text = next;
+      _statusNote = 'Refining your request…';
+      _clarificationQuestion = null;
+      _clarificationOptions = const [];
+    });
+    await _startProcessing();
   }
 
   Future<void> _startProcessing() async {
@@ -195,43 +225,72 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       _busy = true;
       _phase = _Phase.results;
       _statusNote = 'Processing your request…';
+      _clarificationQuestion = null;
+      _clarificationOptions = const [];
     });
     try {
       final local = await OfflineCaptureAssistant.analyzeVoiceText(query);
-      var items = List<Map<String, dynamic>>.from((local['items'] as List?) ?? []);
+      var items = List<Map<String, dynamic>>.from((local['items'] as List?) ?? [])
+          .map(_normalizeResultItem)
+          .toList();
       final summary = local['summary'] as String?;
 
       final hasCatalogMatch = items.any((item) => (item['product_id'] as String?)?.isNotEmpty == true);
       if (!hasCatalogMatch) {
         try {
           final res = await AppScope.api.recommend(query, projectName: projectName, trade: trade);
-          final remoteItems = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
+          final remoteItems = List<Map<String, dynamic>>.from((res['items'] as List?) ?? [])
+              .map(_normalizeResultItem)
+              .toList();
           if (remoteItems.isNotEmpty) {
             items = remoteItems;
           }
         } catch (_) {}
       }
 
+      final deferred = buildDeferredSelectionState(query, items);
+      final preparedItems = List<Map<String, dynamic>>.from(
+        (deferred['items'] as List?) ?? const [],
+      );
+      final deferredNote = (deferred['statusNote'] as String?)?.trim();
+
       if (!mounted) return;
       setState(() {
-        _results = items;
-        _statusNote = summary ?? _statusNote;
+        _results = preparedItems;
+        _clarificationQuestion = deferred['clarificationQuestion'] as String?;
+        _clarificationOptions = List<String>.from(
+          (deferred['clarificationOptions'] as List?) ?? const [],
+        );
+        _statusNote = [summary, deferredNote]
+            .where((value) => value != null && value.trim().isNotEmpty)
+            .join('\n\n');
       });
     } catch (_) {
       try {
         final prods = await AppScope.api.products(q: query.split(' ').first);
         if (!mounted) return;
-        setState(() => _results = prods
-            .take(4)
-            .map((p) => {
+        final fallbackItems = prods
+            .take(6)
+            .map((p) => _normalizeResultItem({
                   'product_id': p['id'],
                   'name': p['name'],
                   'unit_price': p['unit_price'],
                   'currency': p['currency'],
                   'unit': p['unit'],
                   'suggested_qty': 1,
-                })
-            .toList());
+                }))
+            .toList();
+        final deferred = buildDeferredSelectionState(query, fallbackItems);
+        setState(() {
+          _results = List<Map<String, dynamic>>.from(
+            (deferred['items'] as List?) ?? const [],
+          );
+          _clarificationQuestion = deferred['clarificationQuestion'] as String?;
+          _clarificationOptions = List<String>.from(
+            (deferred['clarificationOptions'] as List?) ?? const [],
+          );
+          _statusNote = (deferred['statusNote'] as String?) ?? _statusNote;
+        });
       } catch (e) {
         if (!mounted) return;
         setState(() =>
@@ -250,9 +309,8 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       for (final m in _results) {
         final id = m['product_id'] as String?;
         if (id == null) continue;
-        final qty = (m['suggested_qty'] ?? 1);
-        final n = qty is num ? qty : (int.tryParse('$qty') ?? 1);
-        final ok = await cart.add(id, n);
+        final qty = parseFlexibleInt(m['suggested_qty']);
+        final ok = await cart.add(id, qty);
         if (ok) added++;
       }
 
@@ -602,6 +660,44 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
           child: Text(_statusNote!,
               style: const TextStyle(color: CColors.tealDark, fontSize: 13)),
         ),
+      if (_clarificationQuestion != null && _clarificationOptions.isNotEmpty)
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE1E7EE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _clarificationQuestion!,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: CColors.tealDark,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _clarificationOptions
+                    .map(
+                      (option) => ActionChip(
+                        label: Text(option),
+                        onPressed: () => _chooseClarification(option),
+                        backgroundColor: CColors.tealLighter,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          ),
+        ),
       Expanded(
         child: ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -609,9 +705,15 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
             final item = _results[i];
-            final price =
-                (item['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
+            final unitPrice = parseFlexibleNumber(item['unit_price']);
+            final price = unitPrice?.toStringAsFixed(2) ?? '?';
             final currency = normalizeCurrencyCode(item['currency'] as String?);
+            final qty = parseFlexibleInt(item['suggested_qty']);
+            final offerCount = parseFlexibleInt(item['catalog_offer_count'], fallback: 1);
+            final title = (item['display_name'] as String?) ?? (item['name'] as String?) ?? '—';
+            final subtitle = offerCount > 1
+                ? '$offerCount similar offers • final choice later'
+                : '$price $currency / ${item['unit'] ?? 'Stk'}';
             return Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -635,16 +737,16 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text(item['name'] as String? ?? '—',
+                      Text(title,
                           style: const TextStyle(
                               fontWeight: FontWeight.w600, fontSize: 15)),
-                      Text('$price $currency / ${item['unit'] ?? 'Stk'}',
+                      Text(subtitle,
                           style: const TextStyle(
                               color: CColors.teal,
                               fontWeight: FontWeight.w600,
                               fontSize: 13)),
                     ])),
-                Text('×${item['suggested_qty'] ?? 1}',
+                Text('×$qty',
                     style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 18,
@@ -683,7 +785,7 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
                   height: 64,
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _approveAll,
+                    onPressed: _clarificationOptions.isNotEmpty ? null : _approveAll,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: CColors.teal,
                       foregroundColor: Colors.white,
@@ -693,7 +795,9 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
                           fontSize: 18, fontWeight: FontWeight.w700),
                     ),
                     icon: const Icon(Icons.check_circle, size: 24),
-                    label: Text('Approve ${_results.length} Items'),
+                    label: Text(_clarificationOptions.isNotEmpty
+                        ? 'Choose a type above first'
+                        : 'Review ${_results.length} Request${_results.length == 1 ? '' : 's'}'),
                   ),
                 ),
                 const SizedBox(height: 8),

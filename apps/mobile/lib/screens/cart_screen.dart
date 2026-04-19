@@ -99,6 +99,8 @@ class _CartScreenState extends State<CartScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
                       final l = cart.lines[i];
+                      final quantity = parseFlexibleInt(l['quantity'], fallback: 1);
+                      final unitPrice = parseFlexibleNumber(l['unit_price']) ?? 0;
                       return Dismissible(
                         key: ValueKey(l['product_id']),
                         direction: DismissDirection.endToStart,
@@ -112,7 +114,7 @@ class _CartScreenState extends State<CartScreen> {
                         child: Card(
                           child: ListTile(
                             title: Text(l['name'] as String),
-                            subtitle: Text('${l['quantity']} × ${(l['unit_price'] as num).toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)}'),
+                            subtitle: Text('$quantity × ${unitPrice.toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () => context.read<CartCubit>().remove(l['product_id'] as String),

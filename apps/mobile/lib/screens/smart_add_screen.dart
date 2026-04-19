@@ -22,6 +22,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
   Map<String, dynamic>? _result;
   LlmSource? _source;
   String? _error;
+  List<String> _clarificationOptions = const [];
 
   Future<void> _run() async {
     final task = _ctrl.text.trim();
@@ -31,6 +32,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
       _error = null;
       _result = null;
       _source = null;
+      _clarificationOptions = const [];
     });
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -40,8 +42,21 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
       try {
         final res =
             await AppScope.api.recommend(task, projectName: projectName);
+        final items = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
+        final deferred = buildDeferredSelectionState(task, items);
+        final deferredNote = (deferred['statusNote'] as String?)?.trim();
+        final question = (deferred['clarificationQuestion'] as String?)?.trim();
         setState(() {
-          _result = res;
+          _result = {
+            ...res,
+            'summary': [question ?? res['summary'] as String?, if (question == null) deferredNote]
+                .where((value) => value != null && value.trim().isNotEmpty)
+                .join('\n\n'),
+            'items': question == null ? (deferred['items'] as List?) ?? const [] : const [],
+          };
+          _clarificationOptions = List<String>.from(
+            (deferred['clarificationOptions'] as List?) ?? const [],
+          );
           _source = LlmSource.openai;
         });
         return;
@@ -122,6 +137,23 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
           if (_result != null)
             Expanded(
               child: ListView(children: [
+                if (_clarificationOptions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _clarificationOptions.map((option) => ActionChip(
+                        label: Text(option),
+                        onPressed: () {
+                          _ctrl.text = _ctrl.text.toLowerCase().contains(option.toLowerCase())
+                              ? _ctrl.text
+                              : '${_ctrl.text} $option';
+                          _run();
+                        },
+                      )).toList(),
+                    ),
+                  ),
                 if (_result!['summary'] != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -130,12 +162,14 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                   ),
                 ...((_result!['items'] as List?) ?? []).map(
                   (it) {
-                    final confidence = (it['confidence'] as num?)?.toDouble();
+                    final confidence = parseFlexibleNumber(it['confidence'])?.toDouble();
+                    final offerCount = parseFlexibleInt(it['catalog_offer_count'], fallback: 1);
+                    final title = (it['display_name'] as String?) ?? (it['name'] as String?) ?? '—';
                     return Card(
                       child: ListTile(
                         title: Row(children: [
                           Expanded(
-                              child: Text((it['name'] as String?) ?? '—',
+                              child: Text(title,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600))),
                           if (confidence != null)
@@ -161,12 +195,16 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                               ),
                             ),
                         ]),
-                        subtitle: Text((it['rationale'] as String?) ?? ''),
+                        subtitle: Text(
+                          offerCount > 1
+                              ? '$offerCount similar offers found. Final supplier choice happens later during scoring.'
+                              : ((it['rationale'] as String?) ?? ''),
+                        ),
                         trailing: ElevatedButton(
                           onPressed: () async {
                             final ok = await context.read<CartCubit>().add(
                                   it['product_id'] as String,
-                                  (it['suggested_qty'] as num?) ?? 1,
+                                  parseFlexibleNumber(it['suggested_qty']) ?? 1,
                                 );
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -176,7 +214,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                             );
                           },
                           child: Text(
-                              ((it['suggested_qty'] as num?) ?? 1).toString()),
+                              (parseFlexibleInt(it['suggested_qty'], fallback: 1)).toString()),
                         ),
                       ),
                     );

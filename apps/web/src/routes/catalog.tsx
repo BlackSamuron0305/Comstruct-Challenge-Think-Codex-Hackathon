@@ -17,12 +17,28 @@ export const Route = createFileRoute("/catalog")({
   component: Catalog,
 });
 
+type PdfMeta = {
+  supplier_name?: string | null;
+  document_date?: string | null;
+  document_number?: string | null;
+  valid_until?: string | null;
+  delivery_date?: string | null;
+  total_amount?: number | null;
+  vat_rate?: number | null;
+  vat_amount?: number | null;
+  total_with_vat?: number | null;
+  weight_kg?: number | null;
+  payment_terms?: string | null;
+  currency?: string | null;
+};
+
 type PreviewPayload = {
   status: string;
   rows_in: number;
   preview_rows: Array<Record<string, unknown>>;
   source_columns?: Array<Record<string, unknown>>;
   canonical_fields?: string[];
+  pdf_metadata?: PdfMeta | null;
   mapping?: {
     warnings?: string[];
     mappings?: Array<{
@@ -97,6 +113,25 @@ function formatFileSize(bytes?: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function findSampleValue(
+  rows: Array<Record<string, unknown>>,
+  sourceColumn: string,
+  targetField?: string | null,
+): unknown {
+  const lookupKeys = [targetField, sourceColumn].filter(Boolean) as string[];
+
+  for (const row of rows) {
+    for (const key of lookupKeys) {
+      const value = row[key];
+      if (value !== null && value !== undefined && value !== "") {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 const tradeMatchers: Record<string, RegExp> = {
@@ -242,7 +277,13 @@ function Catalog() {
     },
     onSuccess: (data) => {
       if (Object.keys(mappingOverrides).length === 0 && data.mapping?.mappings?.length) {
-        setMappingOverrides(Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, entry.target_field ?? ""])));
+        const overrides = Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, entry.target_field ?? ""]));
+        setMappingOverrides(overrides);
+        // Auto-approve all for PDF LLM extraction (source_columns is empty — fields are already canonical)
+        const isPdf = (data.source_columns?.length ?? 0) === 0 && (data.preview_rows?.length ?? 0) > 0;
+        if (isPdf) {
+          setApprovedMappings(Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, true])));
+        }
       }
     },
     onError: (error) => toast.error(toErrorMessage(error)),
@@ -383,15 +424,16 @@ function Catalog() {
 
   const previewRows = previewMutation.data?.preview_rows ?? [];
   const previewWarnings = previewMutation.data?.mapping?.warnings ?? [];
-  const firstPreviewRow = previewRows[0] ?? {};
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
+  const pdfMeta = previewMutation.data?.pdf_metadata ?? null;
+  const isPdfMode = (previewMutation.data?.source_columns?.length ?? 0) === 0 && previewRows.length > 0;
   const reviewEntries = mappedColumns.map((entry) => {
     const targetField = mappingOverrides[entry.source_column] ?? entry.target_field ?? "";
     return {
       ...entry,
       targetField,
       approved: approvedMappings[entry.source_column] ?? false,
-      sampleValue: renderPreviewValue(firstPreviewRow[entry.source_column]),
+      sampleValue: renderPreviewValue(findSampleValue(previewRows, entry.source_column, targetField)),
     };
   });
   const approvedCount = reviewEntries.filter((entry) => entry.approved).length;
@@ -593,12 +635,17 @@ function Catalog() {
 
       {showReviewWorkspace && (
         <div className="mb-6 rounded-xl border-2 border-primary/15 bg-card p-5">
+          {/* Header */}
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI extracted output</div>
-              <h3 className="text-display text-lg font-semibold">Review extracted fields against the original PDF</h3>
+              <h3 className="text-display text-lg font-semibold">
+                {isPdfMode ? `${previewRows.length} line items extracted from PDF` : "Review extracted fields against the original document"}
+              </h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Review each extracted field manually or use auto approve all when everything looks correct.
+                {isPdfMode
+                  ? "All fields were mapped automatically. Review the items below and import when ready."
+                  : "Review each extracted field manually or use auto approve all when everything looks correct."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -611,149 +658,305 @@ function Catalog() {
                   Re-run extraction
                 </button>
               )}
-              <button
-                className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-                type="button"
-                disabled={reviewEntries.length === 0}
-                onClick={() => {
-                  setApprovedMappings(
-                    Object.fromEntries(
-                      reviewEntries
-                        .filter((entry) => entry.targetField)
-                        .map((entry) => [entry.source_column, true]),
-                    ),
-                  );
-                }}
-              >
-                Auto approve all
-              </button>
+              {!isPdfMode && (
+                <button
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+                  type="button"
+                  disabled={reviewEntries.length === 0}
+                  onClick={() => {
+                    setApprovedMappings(
+                      Object.fromEntries(
+                        reviewEntries
+                          .filter((entry) => entry.targetField)
+                          .map((entry) => [entry.source_column, true]),
+                      ),
+                    );
+                  }}
+                >
+                  Auto approve all
+                </button>
+              )}
               <button
                 className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 onClick={() => importMutation.mutate()}
                 disabled={!canImport}
                 type="button"
               >
-                {importMutation.isPending ? "Importing…" : "Import approved fields"}
+                {importMutation.isPending ? "Importing…" : isPdfMode ? `Import ${previewRows.length} items` : "Import approved fields"}
               </button>
             </div>
           </div>
 
+          {/* Stats strip */}
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Document type</div>
               <div className="mt-1 text-sm font-medium">{documentType}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Extracted fields</div>
-              <div className="mt-1 text-sm font-medium">{reviewEntries.length}</div>
+              <div className="text-xs text-muted-foreground">{isPdfMode ? "Line items" : "Extracted fields"}</div>
+              <div className="mt-1 text-sm font-medium">{isPdfMode ? previewRows.length : reviewEntries.length}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Approved</div>
-              <div className="mt-1 text-sm font-medium">{approvedCount}</div>
+              <div className="mt-1 text-sm font-medium">{isPdfMode ? reviewEntries.length : approvedCount}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Still to review</div>
-              <div className="mt-1 text-sm font-medium">{needsReview}</div>
+              <div className="mt-1 text-sm font-medium">{isPdfMode ? 0 : needsReview}</div>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-2">
-            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
-              <div className="border-b border-border px-4 py-3">
-                <div className="font-medium text-sm">Original PDF</div>
-                <div className="text-xs text-muted-foreground">Only the document is shown here for comparison.</div>
-              </div>
-              {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
-                <embed
-                  title="Uploaded PDF preview"
-                  src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                  type="application/pdf"
-                  className="h-[520px] w-full bg-white"
-                />
-              ) : previewRows.length > 0 ? (
-                <div className="max-h-[520px] overflow-auto p-4">
-                  <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full text-sm">
-                      <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                        <tr>
-                          {Object.keys(previewRows[0] ?? {}).map((key) => (
-                            <th key={key} className="px-3 py-2 font-normal">{key}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.slice(0, 8).map((row, index) => (
-                          <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
-                            {Object.keys(previewRows[0] ?? {}).map((key) => (
-                              <td key={key} className="px-3 py-2 text-muted-foreground">{renderPreviewValue(row[key])}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+          {/* PDF mode: metadata banner */}
+          {isPdfMode && pdfMeta && (
+            <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-4">
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Document summary</div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {pdfMeta.document_number && (
+                  <div>
+                    <span className="text-muted-foreground">Doc no. </span>
+                    <span className="font-medium">{pdfMeta.document_number}</span>
                   </div>
-                </div>
-              ) : (
-                <div className="p-4 text-sm text-muted-foreground">No document preview is available yet.</div>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
-              <div className="border-b border-border px-4 py-3">
-                <div className="font-medium text-sm">Extracted fields</div>
-                <div className="text-xs text-muted-foreground">Approve one by one or use the auto approve button above.</div>
-              </div>
-              <div className="max-h-[520px] overflow-auto p-4 space-y-3">
-                {previewWarnings.length > 0 ? (
-                  <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-muted-foreground">
-                    {previewWarnings.slice(0, 3).join(" · ")}
+                )}
+                {pdfMeta.document_date && (
+                  <div>
+                    <span className="text-muted-foreground">Dated </span>
+                    <span className="font-medium">{pdfMeta.document_date}</span>
                   </div>
-                ) : null}
-
-                {reviewEntries.length > 0 ? reviewEntries.map((entry) => (
-                  <div key={entry.source_column} className="rounded-md border border-border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Source field</div>
-                        <div className="font-medium">{entry.source_column}</div>
-                      </div>
-                      <span className={["rounded-full px-2 py-1 text-[10px] uppercase tracking-wider", entry.approved ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/20 text-warning-foreground"].join(" ")}>
-                        {entry.approved ? "Approved" : "Needs review"}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">Extracted value</div>
-                    <div className="mt-1 rounded-md bg-secondary/40 px-3 py-2 text-sm">{entry.sampleValue}</div>
-                    <select
-                      value={entry.targetField}
-                      onChange={(event) => {
-                        setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }));
-                        setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: false }));
-                      }}
-                      className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">Choose target field</option>
-                      {(previewMutation.data?.canonical_fields ?? []).map((field) => (
-                        <option key={field} value={field}>{field}</option>
-                      ))}
-                    </select>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <div className="text-xs text-muted-foreground">Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}</div>
-                      <button
-                        type="button"
-                        disabled={!entry.targetField}
-                        onClick={() => setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: !entry.approved }))}
-                        className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
-                      >
-                        {entry.approved ? "Undo" : "Approve"}
-                      </button>
-                    </div>
+                )}
+                {pdfMeta.valid_until && (
+                  <div>
+                    <span className="text-muted-foreground">Valid until </span>
+                    <span className="font-medium">{pdfMeta.valid_until}</span>
                   </div>
-                )) : (
-                  <div className="text-sm text-muted-foreground">No extracted fields are ready yet.</div>
+                )}
+                {pdfMeta.delivery_date && (
+                  <div>
+                    <span className="text-muted-foreground">Delivery </span>
+                    <span className="font-medium">{pdfMeta.delivery_date}</span>
+                  </div>
+                )}
+                {pdfMeta.total_amount != null && (
+                  <div>
+                    <span className="text-muted-foreground">Total excl. VAT </span>
+                    <span className="font-medium">{formatCurrency(pdfMeta.total_amount, pdfMeta.currency ?? "CHF")}</span>
+                  </div>
+                )}
+                {pdfMeta.vat_rate != null && pdfMeta.vat_amount != null && (
+                  <div>
+                    <span className="text-muted-foreground">VAT {pdfMeta.vat_rate}% </span>
+                    <span className="font-medium">{formatCurrency(pdfMeta.vat_amount, pdfMeta.currency ?? "CHF")}</span>
+                  </div>
+                )}
+                {pdfMeta.total_with_vat != null && (
+                  <div>
+                    <span className="text-muted-foreground">Total incl. VAT </span>
+                    <span className="font-semibold text-foreground">{formatCurrency(pdfMeta.total_with_vat, pdfMeta.currency ?? "CHF")}</span>
+                  </div>
+                )}
+                {pdfMeta.weight_kg != null && (
+                  <div>
+                    <span className="text-muted-foreground">Weight </span>
+                    <span className="font-medium">{pdfMeta.weight_kg.toLocaleString()} kg</span>
+                  </div>
+                )}
+                {pdfMeta.payment_terms && (
+                  <div className="sm:col-span-2">
+                    <span className="text-muted-foreground">Payment </span>
+                    <span className="font-medium">{pdfMeta.payment_terms}</span>
+                  </div>
                 )}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* PDF mode: line items table + PDF side-by-side */}
+          {isPdfMode ? (
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              {/* Left: PDF embed */}
+              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[560px]">
+                <div className="border-b border-border px-4 py-3">
+                  <div className="font-medium text-sm">Original document</div>
+                  <div className="text-xs text-muted-foreground">Compare extracted items against the source PDF.</div>
+                </div>
+                {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
+                  <embed
+                    title="Uploaded PDF preview"
+                    src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                    type="application/pdf"
+                    className="h-[560px] w-full bg-white"
+                  />
+                ) : (
+                  <div className="p-4 text-sm text-muted-foreground">No document preview available.</div>
+                )}
+              </div>
+
+              {/* Right: items table */}
+              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[560px]">
+                <div className="border-b border-border px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm">Extracted line items</div>
+                    <div className="text-xs text-muted-foreground">{previewRows.length} items ready for import · all fields auto-approved</div>
+                  </div>
+                  <span className="rounded-full bg-success/15 px-2 py-1 text-[10px] uppercase tracking-wider text-[oklch(0.42_0.13_155)]">
+                    All approved
+                  </span>
+                </div>
+                <div className="overflow-auto" style={{ maxHeight: 520 }}>
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 bg-secondary z-10">
+                      <tr className="text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                        <th className="px-3 py-2 font-normal w-8">#</th>
+                        <th className="px-3 py-2 font-normal min-w-[180px]">Name</th>
+                        <th className="px-3 py-2 font-normal">SKU</th>
+                        <th className="px-3 py-2 font-normal text-right">Qty</th>
+                        <th className="px-3 py-2 font-normal">Unit</th>
+                        <th className="px-3 py-2 font-normal text-right">Unit price</th>
+                        <th className="px-3 py-2 font-normal text-right">Discount</th>
+                        <th className="px-3 py-2 font-normal">Category</th>
+                        <th className="px-3 py-2 font-normal">NPK / Rabatt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, idx) => {
+                        const specialInfo = row.special_info as Record<string, unknown> | null | undefined;
+                        const npk = specialInfo?.npk_code as string | undefined;
+                        const rabatt = specialInfo?.rabattgruppe as string | undefined;
+                        const discount = Number(row.base_discount_pct ?? 0);
+                        const listPrice = Number(row.list_price ?? 0);
+                        const unitPrice = Number(row.unit_price ?? 0);
+                        const currency = String(row.currency ?? pdfMeta?.currency ?? "CHF");
+                        return (
+                          <tr key={idx} className={["border-t border-border", idx % 2 === 0 ? "" : "bg-secondary/20"].join(" ")}>
+                            <td className="px-3 py-2 text-muted-foreground tabular-nums">{idx + 1}</td>
+                            <td className="px-3 py-2 font-medium max-w-[220px]">
+                              <div className="truncate" title={String(row.name ?? "")}>{String(row.name ?? "—")}</div>
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{String(row.sku ?? "—")}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{row.quantity != null ? String(row.quantity) : "—"}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{String(row.unit ?? "—")}</td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium">
+                              {unitPrice > 0 ? formatCurrency(unitPrice, currency) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                              {discount > 0 ? (
+                                <span title={listPrice > 0 ? `List: ${formatCurrency(listPrice, currency)}` : undefined}>
+                                  {discount}%
+                                </span>
+                              ) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground text-xs">{String(row.category ?? "—")}</td>
+                            <td className="px-3 py-2 text-muted-foreground text-xs">
+                              {[npk, rabatt ? `R:${rabatt}` : null].filter(Boolean).join(" · ") || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* CSV/Excel mode: original two-panel layout */
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
+                <div className="border-b border-border px-4 py-3">
+                  <div className="font-medium text-sm">Original document</div>
+                  <div className="text-xs text-muted-foreground">Only the document is shown here for comparison.</div>
+                </div>
+                {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
+                  <embed
+                    title="Uploaded PDF preview"
+                    src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                    type="application/pdf"
+                    className="h-[520px] w-full bg-white"
+                  />
+                ) : previewRows.length > 0 ? (
+                  <div className="max-h-[520px] overflow-auto p-4">
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                          <tr>
+                            {Object.keys(previewRows[0] ?? {}).map((key) => (
+                              <th key={key} className="px-3 py-2 font-normal">{key}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewRows.slice(0, 8).map((row, index) => (
+                            <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
+                              {Object.keys(previewRows[0] ?? {}).map((key) => (
+                                <td key={key} className="px-3 py-2 text-muted-foreground">{renderPreviewValue(row[key])}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 text-sm text-muted-foreground">No document preview is available yet.</div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
+                <div className="border-b border-border px-4 py-3">
+                  <div className="font-medium text-sm">Extracted fields</div>
+                  <div className="text-xs text-muted-foreground">Approve one by one or use the auto approve button above.</div>
+                </div>
+                <div className="max-h-[520px] overflow-auto p-4 space-y-3">
+                  {previewWarnings.length > 0 ? (
+                    <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-muted-foreground">
+                      {previewWarnings.slice(0, 3).join(" · ")}
+                    </div>
+                  ) : null}
+
+                  {reviewEntries.length > 0 ? reviewEntries.map((entry) => (
+                    <div key={entry.source_column} className="rounded-md border border-border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Detected document column</div>
+                          <div className="font-medium">{entry.source_column}</div>
+                        </div>
+                        <span className={["rounded-full px-2 py-1 text-[10px] uppercase tracking-wider", entry.approved ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/20 text-warning-foreground"].join(" ")}>
+                          {entry.approved ? "Approved" : "Needs review"}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">Sample content to save</div>
+                      <div className="mt-1 rounded-md bg-secondary/40 px-3 py-2 text-sm">{entry.sampleValue}</div>
+                      <select
+                        value={entry.targetField}
+                        onChange={(event) => {
+                          setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }));
+                          setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: false }));
+                        }}
+                        className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Choose target field</option>
+                        {(previewMutation.data?.canonical_fields ?? []).map((field) => (
+                          <option key={field} value={field}>{field}</option>
+                        ))}
+                      </select>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <div className="text-xs text-muted-foreground">Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}</div>
+                        <button
+                          type="button"
+                          disabled={!entry.targetField}
+                          onClick={() => setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: !entry.approved }))}
+                          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+                        >
+                          {entry.approved ? "Undo" : "Approve"}
+                        </button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="text-sm text-muted-foreground">No extracted fields are ready yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

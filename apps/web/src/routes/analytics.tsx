@@ -17,12 +17,16 @@ export const Route = createFileRoute("/analytics")({
 
 const colors = ["oklch(0.92 0.18 100)", "oklch(0.22 0.012 250)", "oklch(0.55 0.012 250)", "oklch(0.78 0.005 95)", "oklch(0.62 0.14 155)"];
 
-function weekKey(value: string) {
+function dayKey(value: string) {
   const date = new Date(value);
-  const firstDay = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const day = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
-  const week = Math.ceil((day + firstDay.getUTCDay() + 1) / 7);
-  return `W${week}`;
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function dayLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
 function Analytics() {
@@ -39,15 +43,28 @@ function Analytics() {
   const projectSpend = new Map<string, number>();
   const supplierSpend = new Map<string, number>();
   const groupSpend = new Map<string, number>();
-  const spendTrend = new Map<string, number>();
+
+  const recentDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (6 - index));
+    return date.toISOString().slice(0, 10);
+  });
+  const spendTrend = new Map<string, number>(recentDays.map((day) => [day, 0]));
 
   orders.forEach((order) => {
     const total = Number(order.total_amount ?? 0);
     const projectName = projectMap.get(order.project_id ?? "") ?? shortId(order.project_id);
     const supplierName = order.supplier_name ?? order.items?.[0]?.product_snapshot?.supplier_name ?? "Unknown supplier";
+    const createdDay = dayKey(order.created_at);
+
     projectSpend.set(projectName, (projectSpend.get(projectName) ?? 0) + total);
     supplierSpend.set(supplierName, (supplierSpend.get(supplierName) ?? 0) + total);
-    spendTrend.set(weekKey(order.created_at), (spendTrend.get(weekKey(order.created_at)) ?? 0) + total);
+
+    if (spendTrend.has(createdDay)) {
+      spendTrend.set(createdDay, (spendTrend.get(createdDay) ?? 0) + total);
+    }
+
     order.items?.forEach((item) => {
       const group = item.product_snapshot?.category ?? "Uncategorised";
       groupSpend.set(group, (groupSpend.get(group) ?? 0) + Number(item.line_total ?? 0));
@@ -57,7 +74,8 @@ function Analytics() {
   const projectRows = [...projectSpend.entries()].map(([project, spend]) => ({ project, spend })).sort((a, b) => b.spend - a.spend);
   const supplierRows = [...supplierSpend.entries()].map(([name, spend]) => ({ name, spend })).sort((a, b) => b.spend - a.spend).slice(0, 6);
   const groupRows = [...groupSpend.entries()].map(([group, value]) => ({ group, value })).sort((a, b) => b.value - a.value).slice(0, 8);
-  const trendRows = [...spendTrend.entries()].map(([week, spend]) => ({ week, spend })).sort((a, b) => a.week.localeCompare(b.week)).slice(-8);
+  const trendRows = recentDays.map((day) => ({ week: dayLabel(day), spend: spendTrend.get(day) ?? 0 }));
+  const projectChartHeight = Math.max(280, projectRows.length * 44);
 
   return (
     <DashboardLayout title="Analytics" subtitle="Live tail-spend visibility across projects, suppliers and groups">
@@ -73,14 +91,14 @@ function Analytics() {
           <div className="rounded-lg border border-border bg-card p-5">
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Spend by project</div>
             <h3 className="text-display text-lg font-semibold mb-4">Live order totals</h3>
-            <div className="h-72">
+            <div style={{ height: `${projectChartHeight}px` }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={projectRows} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" vertical={false} />
-                  <XAxis dataKey="project" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <YAxis stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                <BarChart data={projectRows} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" horizontal={false} />
+                  <XAxis type="number" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                  <YAxis type="category" dataKey="project" width={170} interval={0} stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
-                  <Bar dataKey="spend" fill="oklch(0.92 0.18 100)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="spend" fill="oklch(0.92 0.18 100)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
 import '../translations.dart';
@@ -203,7 +204,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                       (l) => l['product_id'] == id,
                       orElse: () => <String, dynamic>{},
                     );
-                    final qty = (cartLine['quantity'] as num?)?.toInt() ?? 0;
+                    final qty = parseFlexibleInt(cartLine['quantity'], fallback: 0);
                     final isExpanded = _expandedId == id;
                     final price = _asDouble(p['unit_price']).toStringAsFixed(2);
                     final category = (p['category'] as String? ?? '').toLowerCase();

@@ -32,7 +32,7 @@ app = FastAPI(title="comstruct order-service", version="0.2.0", lifespan=lifespa
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["order-service", "localhost", "api-gateway", "127.0.0.1"],
+    allowed_hosts=["order-service", "localhost", "api-gateway", "127.0.0.1", "testserver"],
 )
 
 

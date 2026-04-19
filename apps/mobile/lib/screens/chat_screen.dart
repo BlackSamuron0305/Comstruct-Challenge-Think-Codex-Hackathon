@@ -22,6 +22,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final _messages = <_Msg>[];
   bool _busy = false;
+
+  Future<void> _sendClarificationReply(String baseQuery, String option) async {
+    _ctrl.text = baseQuery.toLowerCase().contains(option.toLowerCase())
+        ? baseQuery
+        : '$baseQuery $option';
+    await _send();
+  }
   bool _initDone = false;
 
   @override
@@ -95,9 +102,27 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? localSummary!
                   : foundProductsLabel.replaceAll('{n}', '${items.length}')))
           : nothingFoundLabel;
+      final deferred = buildDeferredSelectionState(text, items);
+      final preparedItems = List<Map<String, dynamic>>.from(
+        (deferred['items'] as List?) ?? const [],
+      );
+      final question = (deferred['clarificationQuestion'] as String?)?.trim();
+      final options = List<String>.from(
+        (deferred['clarificationOptions'] as List?) ?? const [],
+      );
+      final deferredNote = (deferred['statusNote'] as String?)?.trim();
+      final assistantText = [question ?? summary, if (question == null) deferredNote]
+          .where((value) => value != null && value.trim().isNotEmpty)
+          .join('\n\n');
 
       setState(() {
-        _messages.add(_Msg(role: 'assistant', text: summary, items: items));
+        _messages.add(_Msg(
+          role: 'assistant',
+          text: assistantText,
+          items: options.isEmpty ? preparedItems : const [],
+          options: options,
+          baseQuery: text,
+        ));
       });
     } catch (e) {
       final detailedError = '${describeApiError(e, baseUrl: AppScope.api.baseUrl)} ${AppConfig.backendConnectionHelp}';
@@ -108,15 +133,27 @@ class _ChatScreenState extends State<ChatScreen> {
 
         if (!mounted) return;
 
+        final deferred = buildDeferredSelectionState(text, localItems);
+        final preparedItems = List<Map<String, dynamic>>.from(
+          (deferred['items'] as List?) ?? const [],
+        );
+        final question = deferred['clarificationQuestion'] as String?;
+        final options = List<String>.from(
+          (deferred['clarificationOptions'] as List?) ?? const [],
+        );
         setState(() {
           _messages.add(_Msg(
             role: 'assistant',
-            text: localItems.isNotEmpty
-                ? (localSummary?.isNotEmpty == true
-                    ? '${localSummary!}\n\n$detailedError'
-                    : foundProductsLabel.replaceAll('{n}', '${localItems.length}'))
-                : '$connectionErrorLabel\n\n$detailedError',
-            items: localItems,
+            text: options.isNotEmpty
+                ? question ?? connectionErrorLabel
+                : localItems.isNotEmpty
+                    ? (localSummary?.isNotEmpty == true
+                        ? '${localSummary!}\n\n$detailedError'
+                        : foundProductsLabel.replaceAll('{n}', '${preparedItems.length}'))
+                    : '$connectionErrorLabel\n\n$detailedError',
+            items: options.isEmpty ? preparedItems : const [],
+            options: options,
+            baseQuery: text,
           ));
         });
       } catch (_) {
@@ -150,7 +187,10 @@ class _ChatScreenState extends State<ChatScreen> {
             itemCount: _messages.length + (_busy ? 1 : 0),
             itemBuilder: (_, i) {
               if (i == _messages.length) return _TypingBubble(label: t(context, 'chatThinking'));
-              return _MessageBubble(msg: _messages[i]);
+              return _MessageBubble(
+                msg: _messages[i],
+                onOptionSelected: _sendClarificationReply,
+              );
             },
           ),
         ),
@@ -210,14 +250,23 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _Msg {
-  const _Msg({required this.role, required this.text, this.items = const []});
+  const _Msg({
+    required this.role,
+    required this.text,
+    this.items = const [],
+    this.options = const [],
+    this.baseQuery,
+  });
   final String role, text;
   final List<Map<String, dynamic>> items;
+  final List<String> options;
+  final String? baseQuery;
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.msg});
+  const _MessageBubble({required this.msg, this.onOptionSelected});
   final _Msg msg;
+  final Future<void> Function(String baseQuery, String option)? onOptionSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -248,6 +297,20 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
           ),
+          if (msg.options.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: msg.options.map((option) => ActionChip(
+                  label: Text(option),
+                  onPressed: msg.baseQuery == null || onOptionSelected == null
+                      ? null
+                      : () => onOptionSelected!(msg.baseQuery!, option),
+                )).toList(),
+              ),
+            ),
           if (msg.items.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -270,9 +333,13 @@ class _ProductChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final price = (item['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
+    final unitPrice = parseFlexibleNumber(item['unit_price']);
+    final price = unitPrice?.toStringAsFixed(2) ?? '?';
     final currency = normalizeCurrencyCode(item['currency'] as String?);
-    final qty = (item['suggested_qty'] as num?) ?? 1;
+    final qty = parseFlexibleNumber(item['suggested_qty']) ?? 1;
+    final productId = item['product_id']?.toString();
+    final offerCount = parseFlexibleInt(item['catalog_offer_count'], fallback: 1);
+    final title = (item['display_name'] as String?) ?? (item['name'] as String?) ?? '—';
 
     return Container(
       decoration: BoxDecoration(
@@ -282,9 +349,12 @@ class _ProductChip extends StatelessWidget {
       ),
       child: ListTile(
         dense: true,
-        title: Text((item['name'] as String?) ?? '—',
+        title: Text(title,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        subtitle: Text('$price $currency / ${item['unit'] ?? 'Stk'}',
+        subtitle: Text(
+            offerCount > 1
+                ? '$offerCount similar offers • final choice later'
+                : '$price $currency / ${item['unit'] ?? 'Stk'}',
             style: const TextStyle(color: CColors.teal, fontSize: 12, fontWeight: FontWeight.w500)),
         trailing: SizedBox(
           width: 56,
@@ -296,13 +366,15 @@ class _ProductChip extends StatelessWidget {
               minimumSize: const Size(56, 36),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: () async {
-              await context.read<CartCubit>().add(item['product_id'] as String, qty);
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(t(context, 'added'))),
-              );
-            },
+            onPressed: productId == null
+                ? null
+                : () async {
+                    await context.read<CartCubit>().add(productId, qty);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(t(context, 'added'))),
+                    );
+                  },
             child: const Icon(Icons.add, size: 18),
           ),
         ),

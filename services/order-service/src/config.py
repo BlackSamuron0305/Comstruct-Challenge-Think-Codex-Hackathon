@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     SYNC_DATABASE_URL: str = "postgresql://comstruct_app:dev@postgres:5432/comstruct"
     REDIS_URL: str = "redis://:dev_password@redis:6379/0"
 
-    INTERNAL_SHARED_SECRET: str = "dev-secret"
+    INTERNAL_SHARED_SECRET: str = "dev-internal-secret"
     CATALOG_SERVICE_URL: str = "http://catalog-service:8003"
     NOTIFICATION_SERVICE_URL: str = "http://notification-service:8004"
 

@@ -145,6 +145,76 @@ PRODUCTS = [
     {"supplier": "ProSite Safety Outlet", "sku": "PSO705", "name": "Drywall metal anchors", "unit": "box", "price": "19.20", "category": "Drywall", "description": "metal anchors for drywall"},
 ]
 
+STARTER_PACK_TEMPLATES = [
+    {"sku_suffix": "901", "name": "Starter site screws 4x40", "unit": "pcs", "price": "0.09", "category": "Fasteners", "description": "starter torx screws for first catalog coverage"},
+    {"sku_suffix": "902", "name": "Starter anchor bolts M12", "unit": "box", "price": "38.90", "category": "Anchors", "description": "starter anchor bolts for structural fixing"},
+    {"sku_suffix": "903", "name": "Starter work gloves size 9", "unit": "pair", "price": "2.80", "category": "PPE", "description": "starter site glove assortment"},
+    {"sku_suffix": "904", "name": "Starter cable ties 200mm", "unit": "pack", "price": "4.60", "category": "Electrical", "description": "starter electrical fastening pack"},
+    {"sku_suffix": "905", "name": "Starter silicone white 310ml", "unit": "tube", "price": "5.80", "category": "Sanitary", "description": "starter sealant assortment for site works"},
+    {"sku_suffix": "906", "name": "Starter LED site lamp", "unit": "pcs", "price": "28.40", "category": "Tools", "description": "starter lighting line for immediate use"},
+]
+
+
+def starter_products_for_supplier(supplier_name: str) -> list[dict[str, str]]:
+    prefix = "".join(char for char in supplier_name.upper() if char.isalnum())[:3] or "SUP"
+    return [
+        {
+            "supplier": supplier_name,
+            "sku": f"{prefix}{template['sku_suffix']}",
+            "name": template["name"],
+            "unit": template["unit"],
+            "price": template["price"],
+            "category": template["category"],
+            "description": f"{template['description']} · seeded automatically for {supplier_name.lower()}",
+            "source": "auto-topup",
+        }
+        for template in STARTER_PACK_TEMPLATES
+    ]
+
+
+async def upsert_product(db, supplier_id: UUID, product: dict) -> None:
+    existing_p = await db.execute(
+        select(Product).where(Product.supplier_id == supplier_id, Product.sku == product["sku"])
+    )
+    row = existing_p.scalar_one_or_none()
+    if row is None:
+        row = Product(
+            supplier_id=supplier_id,
+            sku=product["sku"],
+            internal_sku=f"INT-{product['sku']}",
+            material_class="C",
+            packaging_qty=Decimal("1"),
+            currency="CHF",
+            is_active=True,
+        )
+        db.add(row)
+
+    taxonomy = infer_taxonomy_fields(product)
+    row.name = product["name"]
+    row.description = product["description"]
+    row.category = product["category"]
+    row.manufacturer = product.get("manufacturer") or product["supplier"]
+    row.manufacturer_sku = product.get("manufacturer_sku") or product["sku"]
+    row.ean = product.get("ean") or f"761{abs(hash(product['sku'])) % 1000000000:09d}"
+    row.image_url = product.get("image_url")
+    row.special_info = {
+        "source": product.get("source", "seeded-demo"),
+        "finish": "zinc-coated" if any(token in product["name"].lower() for token in ["zinc", "verzinkt", "galvanized"]) else "standard",
+        "project_fit": product["category"],
+    }
+    row.taxonomy_code = taxonomy["taxonomy_code"]
+    row.taxonomy_label = taxonomy["taxonomy_label"]
+    row.unit = product["unit"]
+    row.unit_price = Decimal(product["price"])
+    row.currency = "CHF"
+    row.source_delivery_days = Decimal(str(product.get("source_delivery_days") or (1.0 if "Safety" in product["supplier"] else 2.0 if "Swiss Fix" in product["supplier"] else 3.0)))
+    row.must_order = bool(product.get("must_order") or product["category"] == "PPE")
+    row.base_discount_pct = Decimal(str(product.get("base_discount_pct") or (2.5 if row.must_order else 0)))
+    row.bulk_discount_pct = Decimal(str(product.get("bulk_discount_pct") or (6 if product["unit"] in {"pcs", "pack"} else 4)))
+    row.bulk_discount_threshold = Decimal(str(product.get("bulk_discount_threshold") or (50 if product["unit"] in {"pcs", "pack"} else 10)))
+    row.is_active = True
+    print(f"  + product {product['sku']}  {product['name']} · {product['supplier']}")
+
 
 async def seed():
     async with SessionLocal() as db:
@@ -167,48 +237,24 @@ async def seed():
             supplier_ids[spec["name"]] = supplier.id
 
         for product in PRODUCTS:
-            supplier_id = supplier_ids[product["supplier"]]
-            existing_p = await db.execute(
-                select(Product).where(Product.supplier_id == supplier_id, Product.sku == product["sku"])
-            )
-            row = existing_p.scalar_one_or_none()
-            if row is None:
-                row = Product(
-                    supplier_id=supplier_id,
-                    sku=product["sku"],
-                    internal_sku=f"INT-{product['sku']}",
-                    material_class="C",
-                    packaging_qty=Decimal("1"),
-                    currency="CHF",
-                    is_active=True,
-                )
-                db.add(row)
+            await upsert_product(db, supplier_ids[product["supplier"]], product)
 
-            taxonomy = infer_taxonomy_fields(product)
-            row.name = product["name"]
-            row.description = product["description"]
-            row.category = product["category"]
-            row.manufacturer = product.get("manufacturer") or product["supplier"]
-            row.manufacturer_sku = product.get("manufacturer_sku") or product["sku"]
-            row.ean = product.get("ean") or f"761{abs(hash(product['sku'])) % 1000000000:09d}"
-            row.image_url = product.get("image_url")
-            row.special_info = {
-                "source": product.get("source", "seeded-demo"),
-                "finish": "zinc-coated" if any(token in product["name"].lower() for token in ["zinc", "verzinkt", "galvanized"]) else "standard",
-                "project_fit": product["category"],
-            }
-            row.taxonomy_code = taxonomy["taxonomy_code"]
-            row.taxonomy_label = taxonomy["taxonomy_label"]
-            row.unit = product["unit"]
-            row.unit_price = Decimal(product["price"])
-            row.currency = "CHF"
-            row.source_delivery_days = Decimal(str(product.get("source_delivery_days") or (1.0 if "Safety" in product["supplier"] else 2.0 if "Swiss Fix" in product["supplier"] else 3.0)))
-            row.must_order = bool(product.get("must_order") or product["category"] == "PPE")
-            row.base_discount_pct = Decimal(str(product.get("base_discount_pct") or (2.5 if row.must_order else 0)))
-            row.bulk_discount_pct = Decimal(str(product.get("bulk_discount_pct") or (6 if product["unit"] in {"pcs", "pack"} else 4)))
-            row.bulk_discount_threshold = Decimal(str(product.get("bulk_discount_threshold") or (50 if product["unit"] in {"pcs", "pack"} else 10)))
-            row.is_active = True
-            print(f"  + product {product['sku']}  {product['name']} · {product['supplier']}")
+        active_suppliers = (
+            await db.execute(select(Supplier).where(Supplier.is_active.is_(True)).order_by(Supplier.name))
+        ).scalars().all()
+        for supplier in active_suppliers:
+            product_count = (
+                await db.execute(
+                    select(func.count(Product.id)).where(
+                        Product.supplier_id == supplier.id,
+                        Product.is_active.is_(True),
+                    )
+                )
+            ).scalar_one()
+            if product_count == 0:
+                print(f"  · top-up starter catalog for {supplier.name}")
+                for product in starter_products_for_supplier(supplier.name):
+                    await upsert_product(db, supplier.id, product)
 
         await db.commit()
     print("catalog seed complete.")

@@ -31,13 +31,23 @@ def _detect_currency(columns: list[dict]) -> str:
 def _fallback_mapping(columns: list[dict]) -> dict:
     """Local schema matcher used when no model-backed mapping is available."""
     keymap = {
-        "name": ["name", "bezeichnung", "designation", "descrizione", "item", "material"],
-        "sku": ["sku", "art", "artikel", "code", "product id"],
-        "unit": ["unit", "einheit", "uom", "measure"],
-        "unit_price": ["price", "preis", "prix", "cost", "unit cost"],
+        "name": ["name", "product name", "produktname", "bezeichnung", "designation", "descrizione", "item", "material"],
+        "sku": ["sku", "artikelnummer", "article no", "item no", "product id", "product code", "art", "artikel", "code"],
+        "unit": ["unit", "einheit", "uom", "measure", "unit of measure"],
+        "packaging_qty": ["vpe", "pack size", "packaging", "package qty", "qty/pack", "per pack", "carton qty", "pack of"],
+        "unit_price": ["unit price", "price", "preis", "prix", "cost", "unit cost", "net price", "rate"],
         "currency": ["currency", "währ", "ccy", "devise", "valuta"],
-        "category": ["category", "kategorie", "gruppe", "trade", "type"],
-        "manufacturer": ["manufact", "hersteller", "marke", "brand", "vendor"],
+        "category": ["category", "kategorie", "gruppe", "trade", "type", "segment"],
+        "manufacturer": ["manufact", "manufacturer", "hersteller", "marke", "brand", "vendor", "oem"],
+        "manufacturer_sku": ["manufacturer sku", "mfr sku", "oem sku", "brand code", "part no"],
+        "ean": ["ean", "gtin", "barcode"],
+        "image_url": ["image", "img", "photo", "picture", "url"],
+        "special_info": ["note", "notes", "remark", "details", "spec", "specification", "finish", "color", "size", "attribute"],
+        "source_delivery_days": ["lead time", "delivery", "lieferzeit", "delivery days", "tage"],
+        "must_order": ["mandatory", "must order", "required", "pallet only", "order requirement"],
+        "base_discount_pct": ["discount", "rabatt", "rebate"],
+        "bulk_discount_pct": ["bulk discount", "volume discount", "staffelrabatt"],
+        "bulk_discount_threshold": ["qty break", "quantity break", "ab menge", "from qty", "bulk threshold"],
     }
 
     mappings = []

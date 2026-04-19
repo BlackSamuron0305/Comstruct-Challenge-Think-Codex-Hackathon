@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
+import 'api_client.dart';
 import 'app_scope.dart';
 
 const _boxName = 'offline_queue';
@@ -51,7 +52,7 @@ class QueueItem {
           orElse: () => QueueItemStatus.pending,
         ),
         errorMessage: json['errorMessage'] as String?,
-        retries: (json['retries'] as int?) ?? 0,
+        retries: parseFlexibleInt(json['retries'], fallback: 0),
       );
 }
 
@@ -167,20 +168,29 @@ class OfflineQueue {
         case 'add_to_cart':
           await api.addToCart(
             item.payload['product_id'] as String,
-            item.payload['quantity'] as num,
+            parseFlexibleNumber(item.payload['quantity']) ?? 1,
           );
           break;
         case 'voice_order':
         case 'image_order':
-          // These create a chat/recommend request + add items to cart
+          // These create a recommend request and only continue if the request is specific enough.
           final task = item.payload['task'] as String;
           final projectName = item.payload['project_name'] as String?;
           final result = await api.recommend(task, projectName: projectName);
-          final items = (result['items'] as List?) ?? [];
+          final rawItems = ((result['items'] as List?) ?? [])
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList();
+          final deferred = buildDeferredSelectionState(task, rawItems);
+          if (deferred['needsClarification'] == true) {
+            throw StateError('Clarification is still needed before syncing this order.');
+          }
+          final items = (deferred['items'] as List?) ?? const [];
           for (final it in items) {
-            final productId = it['product_id'] as String?;
+            final map = Map<String, dynamic>.from(it as Map);
+            final productId = map['product_id'] as String?;
             if (productId != null) {
-              await api.addToCart(productId, (it['suggested_qty'] as num?) ?? 1);
+              await api.addToCart(productId, parseFlexibleNumber(map['suggested_qty']) ?? 1);
             }
           }
           break;

@@ -40,6 +40,7 @@ class ApprovalEngine:
         # Statistical request sanity-check against historical quantities and AI-like product tags.
         risk = await self._request_risk(order)
         if risk["requires_review"]:
+            order.risk_signals = risk.get("signals") or []
             lead_signal = (risk.get("signals") or [{}])[0]
             context = lead_signal.get("name") or lead_signal.get("tag") or "one or more items"
             expected = lead_signal.get("expected_quantity")

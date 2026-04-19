@@ -184,7 +184,8 @@ class _ProductTileState extends State<_ProductTile> {
   @override
   Widget build(BuildContext context) {
     final p = widget.p;
-    final price = (p['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
+    final parsedPrice = parseFlexibleNumber(p['unit_price']);
+    final price = parsedPrice?.toStringAsFixed(2) ?? '?';
     final currency = normalizeCurrencyCode(p['currency'] as String?);
     return Card(
       child: ListTile(

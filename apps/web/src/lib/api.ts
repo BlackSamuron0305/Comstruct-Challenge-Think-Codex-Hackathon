@@ -66,6 +66,19 @@ export type OrderSummary = {
   updated_at?: string;
   requires_approval?: boolean;
   notes?: string | null;
+  risk_signals?: Array<{
+    product_id?: string;
+    name?: string | null;
+    tag?: string | null;
+    requested_quantity?: number;
+    expected_quantity?: number;
+    historical_mean?: number;
+    historical_stddev?: number;
+    upper_bound?: number;
+    z_score?: number;
+    risk_score?: number;
+    history_points?: number;
+  }> | null;
   items?: Array<{
     id: string;
     quantity?: number | string;
