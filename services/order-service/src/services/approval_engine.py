@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..models import ApprovalRule, Order, OrderStatus
+from .request_risk import compute_order_request_risk
 
 
 class ApprovalEngine:
@@ -18,6 +19,9 @@ class ApprovalEngine:
             select(ApprovalRule).where(ApprovalRule.company_id == company_id)
         )
         return rows.scalar_one_or_none()
+
+    async def _request_risk(self, order: Order) -> dict:
+        return await compute_order_request_risk(self.db, order=order)
 
     async def evaluate(self, order: Order) -> tuple[bool, str | None]:
         """Returns (requires_approval, reason)."""
@@ -52,6 +56,16 @@ class ApprovalEngine:
         restricted = order_categories & set(rule.restricted_categories or [])
         if restricted:
             return True, f"Contains restricted categories: {', '.join(sorted(restricted))}"
+
+        # Statistical request sanity-check against historical quantities.
+        risk = await self._request_risk(order)
+        if risk["requires_review"]:
+            product_names = [s.get("name") for s in risk["signals"][:3] if s.get("name")]
+            context = ", ".join(product_names) if product_names else "one or more items"
+            return True, (
+                f"Quantity anomaly detected for {context} "
+                f"(risk {risk['risk_score']}, std-dev guard tripped)"
+            )
 
         return False, None
 

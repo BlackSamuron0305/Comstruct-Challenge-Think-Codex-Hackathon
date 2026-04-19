@@ -15,9 +15,15 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.ollama_client import call_ollama_json
+from ..llm.anthropic_client import call_claude_json
 from ..services.delta_detection import detect_deltas
-from ..services.parsing import parse_image_to_table, parse_pdf_to_table, parse_tabular
+from ..services.parsing import (
+    extract_catalog_from_markdown,
+    parse_image_to_table,
+    parse_pdf_to_markdown,
+    parse_pdf_to_table,
+    parse_tabular,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,7 @@ async def extract_pdf(
 ):
     """Extract structured data from a PDF document using AI."""
     content = await file.read()
+    markdown = parse_pdf_to_markdown(content)
     df = parse_pdf_to_table(content)
 
     if df.empty:
@@ -72,26 +79,36 @@ async def extract_pdf(
 
     sample = df.head(20).to_dict(orient="records")
     columns = list(df.columns)
+    direct_items = extract_catalog_from_markdown(markdown)
 
-    result = await call_ollama_json(
-        system=f"""You are a document extraction AI for construction materials procurement.
-Extract structured data from this {document_type} PDF content.
-The table has columns: {columns}
+    if direct_items:
+        items = direct_items
+        metadata = {
+            "document_type": document_type,
+            "strategy": "markdown_direct",
+            "markdown_chars": len(markdown),
+        }
+    else:
+        result = await call_claude_json(
+            system=f"""You are a document extraction AI for construction materials procurement.
+Extract structured data from this {document_type} PDF content converted to markdown.
+Prefer deterministic extraction from markdown tables before inference.
+The tabular parse columns are: {columns}
 
 Return JSON: {{
-  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "CHF", "category": "..."}}],
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "CHF", "category": "...", "confidence": 0.0-1.0}}],
   "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "CHF"}}
 }}""",
-        messages=[{"role": "user", "content": f"Document rows:\n{sample}"}],
-        max_tokens=2048,
-        temperature=0.0,
-        stub={
-            "items": [{"name": row.get(columns[0], ""), "raw": row} for row in sample[:5]] if sample else [],
-            "metadata": {"document_type": document_type, "note": "Ollama extraction pending"},
-        },
-    )
-
-    items = result.get("items", [])
+            messages=[{"role": "user", "content": f"Markdown:\n{markdown[:12000]}\n\nTabular rows:\n{sample}"}],
+            max_tokens=2048,
+            temperature=0.0,
+            stub={
+                "items": [{"name": row.get(columns[0], ""), "raw": row, "confidence": 0.5} for row in sample[:5]] if sample else [],
+                "metadata": {"document_type": document_type, "note": "LLM extraction fallback used"},
+            },
+        )
+        items = result.get("items", [])
+        metadata = result.get("metadata", {})
     deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
 
     return ExtractionResult(
@@ -99,7 +116,7 @@ Return JSON: {{
         items=items,
         deltas=deltas,
         delta_summary=delta_summary,
-        metadata=result.get("metadata", {}),
+        metadata=metadata,
         raw_row_count=len(df),
     )
 
@@ -123,7 +140,7 @@ async def extract_excel(
     sample = df.head(20).to_dict(orient="records")
     columns = list(df.columns)
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=f"""You are a data extraction AI for construction material price lists.
 Map the columns to standard fields and extract product data.
 Source columns: {columns}
@@ -181,7 +198,7 @@ async def extract_image(
 
     sample = df.head(30).to_dict(orient="records")
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=f"""You are a document extraction AI for construction materials procurement.
 Extract structured product data from this OCR text captured from a {document_type} image.
 The text may have OCR artifacts — be tolerant of typos and misaligned columns.
@@ -220,7 +237,7 @@ class TextExtractionRequest(BaseModel):
 @router.post("/extract-text", dependencies=[Depends(require_internal_secret)])
 async def extract_text(body: TextExtractionRequest):
     """Extract structured procurement data from freeform text (WhatsApp, email, voice transcripts)."""
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=f"""You are a text extraction AI for construction procurement.
 Extract structured data from this {body.extraction_type} text.
 Look for: material names, quantities, units, prices, dates, supplier names, addresses.

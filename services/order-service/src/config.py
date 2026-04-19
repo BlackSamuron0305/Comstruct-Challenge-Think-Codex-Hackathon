@@ -20,6 +20,9 @@ class Settings(BaseSettings):
 
     DEFAULT_APPROVAL_THRESHOLD: Decimal = Decimal("200.00")
     DEFAULT_CURRENCY: str = "CHF"
+    ORDER_STDDEV_MULTIPLIER: float = 2.0
+    ORDER_MIN_HISTORY_POINTS: int = 4
+    ORDER_LOGISTIC_RISK_THRESHOLD: float = 0.82
 
     JWT_PUBLIC_KEY_PATH: str = "/run/secrets/jwt_public.pem"
     JWT_ALGORITHM: str = "RS256"

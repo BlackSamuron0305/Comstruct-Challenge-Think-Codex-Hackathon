@@ -1,8 +1,8 @@
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, Workflow } from "lucide-react";
 
 export function Topbar({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <header className="h-16 border-b border-border bg-background/80 backdrop-blur sticky top-0 z-30">
+    <header className="h-20 border-b border-border bg-background/80 backdrop-blur sticky top-0 z-30">
       <div className="h-full px-4 lg:px-8 flex items-center gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -14,6 +14,12 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="hidden xl:flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
+            <Workflow className="h-3.5 w-3.5 text-primary" />
+            <div className="text-[11px]">
+              <span className="text-muted-foreground">AI flow:</span> markdown → extract → review
+            </div>
+          </div>
           <div className="hidden md:flex items-center gap-2 px-3 h-9 w-72 rounded-md border border-border bg-card">
             <Search className="h-4 w-4 text-muted-foreground" />
             <input

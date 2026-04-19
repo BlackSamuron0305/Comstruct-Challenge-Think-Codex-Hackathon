@@ -5,11 +5,11 @@ All callers import call_claude_json from here — no changes needed when switchi
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
 from ..config import settings
+from .langchain_client import call_langchain_openai_json
 
 log = logging.getLogger(__name__)
 
@@ -39,40 +39,15 @@ async def _call_openai(
     stub: dict | None = None,
 ) -> dict[str, Any]:
     """Call OpenAI ChatGPT API. Requires OPENAI_API_KEY to be set."""
-    import httpx
-
     if not settings.OPENAI_API_KEY:
         log.warning("OPENAI_API_KEY not set, using stub")
         if stub is not None:
             return stub
         raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-
-    oai_messages = [{"role": "system", "content": system + "\n\nRespond with valid JSON only."}]
-    for m in messages:
-        oai_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
-
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.OPENAI_MODEL,
-                    "messages": oai_messages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "response_format": {"type": "json_object"},
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            return json.loads(content)
-    except Exception as e:
-        log.warning("OpenAI call failed (%s), using stub", e)
-        if stub is not None:
-            return stub
-        raise
+    return await call_langchain_openai_json(
+        system=system,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stub=stub,
+    )

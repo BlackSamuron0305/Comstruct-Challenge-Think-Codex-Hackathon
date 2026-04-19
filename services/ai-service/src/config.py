@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # ── LLM Provider Selection ─────────────────────────────────────
     # "ollama" = local dev (Ollama running on host machine)
     # "openai" = production (ChatGPT)
-    LLM_PROVIDER: str = "ollama"
+    LLM_PROVIDER: str = "openai"
 
     # ── Ollama (local LLM — runs on host, not in Docker) ──────────
     OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.ollama_client import call_ollama_json
+from ..llm.anthropic_client import call_claude_json
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ async def auto_approve(body: ApprovalRequest):
         )
 
     # Use AI for complex decisions
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system="""You are a procurement approval AI for Swiss construction companies.
 Evaluate the order and decide: auto_approved, requires_review, or rejected.
 Consider: total amount, supplier reliability, item types, company policies.
@@ -116,7 +116,7 @@ class PriceAnalysisRequest(BaseModel):
 @router.post("/workflow/price-analysis", dependencies=[Depends(require_internal_secret)])
 async def price_analysis(body: PriceAnalysisRequest):
     """Analyze price fairness using historical data and AI."""
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system="""You are a construction materials pricing analyst.
 Analyze the current price against historical data and market knowledge.
 Consider Swiss construction material market conditions.
@@ -150,7 +150,7 @@ class ReorderCheckRequest(BaseModel):
 @router.post("/workflow/reorder-check", dependencies=[Depends(require_internal_secret)])
 async def reorder_check(body: ReorderCheckRequest):
     """Predict material depletion and suggest reorders."""
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system="""You are a construction project logistics AI.
 Given current stock levels and usage rates, identify materials that need reordering.
 Account for typical delivery times in Switzerland (2-5 business days for standard materials).
@@ -193,7 +193,7 @@ async def compliance_check(body: ComplianceCheckRequest):
         if order_total > remaining:
             issues.append(f"Order ({body.currency} {order_total:.2f}) exceeds remaining budget ({body.currency} {remaining:.2f})")
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system="""You are a procurement compliance checker for Swiss construction.
 Check the order against budget constraints and construction regulations.
 

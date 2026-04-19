@@ -4,7 +4,7 @@ import { DashboardLayout } from "@/components/dashboard/Layout";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { useProject, ALL_PROJECTS } from "@/components/dashboard/ProjectContext";
 import { approvals as rawApprovals, type Approval } from "@/lib/mock-data";
-import { Check, X, Filter, Package, Building2, User, AlertTriangle, ShieldAlert } from "lucide-react";
+import { Check, X, Filter, Package, Building2, User, AlertTriangle, ShieldAlert, Sigma } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/approvals")({
@@ -58,6 +58,14 @@ const lineItemsMap: Record<string, { sku: string; name: string; qty: number; uni
   ],
 };
 
+const quantityHistory: Record<string, number[]> = {
+  "WUR-0042-45": [120, 180, 220, 260, 300, 340],
+  "WUR-0091-30": [80, 120, 150, 170, 190, 220],
+  "PUA-FOAM-1": [4, 6, 8, 10, 12, 12],
+  "HG-PPE-G09": [12, 24, 24, 36, 48, 60],
+  "DEB-DR-6": [10, 20, 20, 25, 30, 35],
+};
+
 const thresholdExplanation: Record<string, string> = {
   pm: "This order exceeds CHF 200 and requires PM sign-off before the purchase is placed with the supplier. Verify the quantities are correct and the supplier is on the approved framework.",
   central: "This order exceeds CHF 500 and must be reviewed by Central Procurement to ensure compliance with the annual budget and framework contract conditions.",
@@ -106,6 +114,15 @@ function Approvals() {
       });
     }
   };
+
+  const selectedStats = (lineItemsMap[selected?.id || ""] ?? []).map((li) => {
+    const hist = quantityHistory[li.sku] ?? [10, 20, 30, 40];
+    const mean = hist.reduce((a, b) => a + b, 0) / hist.length;
+    const variance = hist.reduce((acc, v) => acc + (v - mean) ** 2, 0) / hist.length;
+    const std = Math.sqrt(variance) || 1;
+    const z = (li.qty - mean) / std;
+    return { ...li, mean, std, z, flagged: li.qty > mean + 2 * std };
+  });
 
   return (
     <>
@@ -315,6 +332,25 @@ function Approvals() {
                   <Package className="h-4 w-4 text-muted-foreground" />
                   <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                     Line items · {selected.items} positions
+                  </div>
+                </div>
+                <div className="rounded-md border border-border p-3 mt-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sigma className="h-4 w-4 text-primary" />
+                    <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Quantity anomaly check (Standardabweichung)
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {selectedStats.map((s) => (
+                      <div key={s.sku} className={["rounded-md border px-3 py-2 text-xs", s.flagged ? "border-warning/40 bg-warning/20" : "border-success/30 bg-success/10"].join(" ")}>
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-muted-foreground">
+                          qty {s.qty} · avg {s.mean.toFixed(1)} · std {s.std.toFixed(1)} · z {s.z.toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                    {selectedStats.length === 0 && <div className="text-xs text-muted-foreground">No line-item history signals.</div>}
                   </div>
                 </div>
                 <div className="rounded-md border border-border overflow-hidden">

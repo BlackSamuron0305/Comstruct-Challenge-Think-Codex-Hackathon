@@ -1,4 +1,4 @@
-"""AI Chat router — construction assistant powered by local Ollama.
+"""AI Chat router — construction assistant powered by provider-dispatched LLMs.
 
 Provides:
 - POST /ai/chat — single-turn construction materials Q&A
@@ -18,7 +18,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.ollama_client import call_ollama_json, call_ollama_stream, call_ollama_vision
+from ..llm.anthropic_client import call_claude_json
+from ..llm.ollama_client import call_ollama_stream, call_ollama_vision
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ async def chat_endpoint(body: ChatRequest):
     system = CONSTRUCTION_SYSTEM + context_str
     messages = [{"role": "user", "content": body.message}]
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=system + "\n\nRespond with JSON: {\"reply\": \"...\", \"suggestions\": [\"...\"], \"materials_mentioned\": [{\"name\": \"...\", \"category\": \"...\"}]}",
         messages=messages,
         max_tokens=1024,
@@ -107,7 +108,7 @@ Given a description of a construction site photo, identify:
 
 Respond with JSON: {"materials": [{"name": "...", "category": "...", "quantity_estimate": "...", "urgency": "low|medium|high"}], "observations": "...", "recommendations": ["..."]}"""
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=system,
         messages=[{"role": "user", "content": f"Photo description: {body.description}"}],
         max_tokens=1024,
@@ -269,7 +270,7 @@ async def transcribe_audio(
             context_str = f"\n\nContext: {context}"
 
         system = CONSTRUCTION_SYSTEM + context_str
-        chat_result = await call_ollama_json(
+        chat_result = await call_claude_json(
             system=system + "\n\nThe user sent a voice message. Respond helpfully. "
             "JSON: {\"reply\": \"...\", \"suggestions\": [\"...\"]}",
             messages=[{"role": "user", "content": transcript}],
