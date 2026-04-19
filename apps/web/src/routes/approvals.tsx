@@ -206,18 +206,13 @@ function Approvals() {
 
   return (
     <>
-      <DashboardLayout title="Approvals" subtitle={`${project === ALL_PROJECTS ? "All projects" : project} · live order review and sign-off`}>
+      <DashboardLayout title="Approvals" subtitle={`${project === ALL_PROJECTS ? "All projects" : project} · order review and sign-off`}>
         {decisionMessage && (
           <div className={["mb-4 rounded-lg border p-4 text-sm", decisionMessage.tone === "success" ? "border-success/30 bg-success/10" : "border-warning/30 bg-warning/10"].join(" ")}>
             <div className="font-medium">{decisionMessage.title}</div>
             <div className="mt-1 text-muted-foreground">{decisionMessage.detail}</div>
           </div>
         )}
-
-        <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
-          <div className="font-medium">Review model</div>
-          <div className="mt-1 text-muted-foreground">Only statistically unusual C-material requests and hard guardrails appear in this queue.</div>
-        </div>
 
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           {FILTERS.map((filter) => (
@@ -233,7 +228,7 @@ function Approvals() {
             </button>
           ))}
           <button className="ml-auto text-sm inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent">
-            <Filter className="h-4 w-4" /> Live filters
+            <Filter className="h-4 w-4" /> Filters
           </button>
         </div>
 
@@ -326,48 +321,30 @@ function Approvals() {
                 </div>
               </div>
 
-              <div className="rounded-md border border-border p-4 text-sm space-y-3">
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Why this needs review</div>
-                {(() => {
-                  const signals = selected.risk_signals ?? [];
-                  const lead = signals[0];
-                  if (lead?.expected_quantity != null && lead?.requested_quantity != null) {
-                    return (
-                      <>
-                        <div>
-                          <span className="text-xs text-muted-foreground">Usually ordered: </span>
-                          <span className="font-medium">{Math.round(lead.expected_quantity)} {selected.items?.[0]?.product_snapshot?.unit ?? "pcs"}</span>
-                          <span className="text-xs text-muted-foreground ml-1">(based on {lead.history_points ?? "—"} past orders)</span>
-                        </div>
-                        <div>
-                          <span className="text-xs text-muted-foreground">Here was ordered: </span>
-                          <span className="font-semibold text-warning-foreground">{Math.round(lead.requested_quantity)} {selected.items?.[0]?.product_snapshot?.unit ?? "pcs"}</span>
-                        </div>
-                        {signals.length > 1 && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            +{signals.length - 1} more flagged {signals.length - 1 === 1 ? "item" : "items"}
-                          </div>
-                        )}
-                      </>
-                    );
-                  }
-                  return (
-                    <>
-                      <div>
-                        <span className="text-xs text-muted-foreground">Reason: </span>
-                        <span className="font-medium">{approvalReason(selected).replace(/^Statistical /i, "").replace(/ detected$/i, "").toLowerCase()}.</span>
-                      </div>
-                    </>
-                  );
-                })()}
-                <div className="border-t border-border pt-3 mt-3">
-                  <div className="text-xs font-medium mb-1.5">Please check:</div>
-                  <ul className="space-y-1 text-xs text-muted-foreground">
-                    {reviewChecklist(selected).map((c) => (
-                      <li key={c}>• {c}</li>
-                    ))}
-                  </ul>
+              <div className="rounded-md border border-border p-4">
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Review signal</div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Primary trigger</div>
+                    <div className="font-medium">{approvalReason(selected)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Fallback guardrail</div>
+                    <div className="font-medium">{restrictedCategories.length ? `${restrictedCategories.length} groups` : "None configured"}</div>
+                  </div>
                 </div>
+                <div className="mt-3 text-xs text-muted-foreground">
+                  Statistically normal C-item requests auto-pass; only anomalies or hard guardrails remain in this queue.
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border p-4 text-sm">
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Suggested checks</div>
+                <ul className="mt-3 space-y-2 text-muted-foreground">
+                  {reviewChecklist(selected).map((item) => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-sm">

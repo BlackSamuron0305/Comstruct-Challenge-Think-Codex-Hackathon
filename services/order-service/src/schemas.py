@@ -65,7 +65,6 @@ class OrderOut(BaseModel):
     supplier_order_ref: str | None
     requested_delivery: datetime | None
     notes: str | None
-    risk_signals: list | None = None
     items: list[OrderItemOut] = []
     created_at: datetime
     updated_at: datetime

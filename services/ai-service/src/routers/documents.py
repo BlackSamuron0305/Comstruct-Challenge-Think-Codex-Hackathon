@@ -246,76 +246,20 @@ async def _extract_pdf_chunk_with_retry(
     for attempt in range(1, max_attempts + 1):
         try:
             result = await call_ollama_json(
-                system=f"""You are a precision document extraction AI for Swiss construction materials procurement.
+                system=f"""You are a document extraction AI for construction materials procurement.
 You will receive markdown converted from PDF pages {page_range} of a {document_type}.
+Extract only what is explicitly present in the chunk. Do not invent missing values.
+If a line item begins on one page and ends on the next, use the overlapping context to merge it correctly.
+Use null for missing numeric or date values instead of guessing.
+Do not invent supplier names, SKUs, quantities, units, or prices that are not explicitly shown.
 
-EXTRACTION RULES:
-1. Extract EVERY line item (Pos), including items marked as "Alternative Position" — set is_alternative=true for those.
-2. unit_price must be the NET price per unit after all adjustments — use the unit price value shown directly in the document (labelled "Einheitspreis netto" or the net unit price column); do NOT derive it by dividing the line total by quantity, as that introduces rounding errors.
-3. For "Rabatt" (discount) items: set base_discount_pct to the discount percentage (e.g. 52.0 for 52%).
-4. For "TZ Zuschlag" (surcharge) items: set surcharge_pct to the surcharge percentage (e.g. 3.0 for 3%) — this is a positive addition to the list price.
-5. list_price is the gross price before Rabatt/TZ, if shown.
-6. Capture special_info as a JSON object with any extra attributes present on the item:
-   - npk_code: the NPK position code (e.g. "151.412.211")
-   - rabattgruppe: the discount group code (e.g. "45001")
-   - manufacturer_ref: any manufacturer or cross-reference code (e.g. "Swisscom 1337435")
-   - dimensions: any size/dimension info not captured in the name (e.g. "D 100 cm d1 60 cm H 100 cm W 12 cm")
-   - article_ref: any "Artikel XXXXXX CREA" or similar reference
-   - notes: any free-text notes on the position
-7. category should use English construction terms (e.g. "cable conduit", "cable protection fitting", "manhole ring", "manhole cover", "warning tape", "cable pulling rope", "concrete pipe", "cable shaft", "paving stone", "stone slab").
-8. Do NOT invent values. Use null for anything not explicitly shown.
-9. If a line item spans a page break, merge it using the overlapping context.
-
-Return JSON:
-{{
-  "items": [{{
-    "name": "...",
-    "sku": "...",
-    "quantity": <number>,
-    "unit": "...",
-    "unit_price": <net price per unit, number>,
-    "list_price": <gross price before discount/surcharge, number or null>,
-    "base_discount_pct": <discount % as number e.g. 52.0, or null>,
-    "surcharge_pct": <TZ surcharge % as number e.g. 3.0, or null>,
-    "currency": "{default_currency}",
-    "category": "...",
-    "is_alternative": <true if this is an Alternative Position, else false>,
-    "alternative_to_pos": <pos number this is an alternative to, or null>,
-    "procurement_constraint": "none",
-    "required_supplier_name": null,
-    "special_info": {{
-      "npk_code": "...",
-      "rabattgruppe": "...",
-      "manufacturer_ref": "...",
-      "dimensions": "...",
-      "article_ref": "...",
-      "notes": "..."
-    }}
-  }}],
-  "metadata": {{
-    "supplier_name": <null if not shown>,
-    "document_date": "YYYY-MM-DD",
-    "document_number": "...",
-    "valid_until": "YYYY-MM-DD or null",
-    "delivery_date": "YYYY-MM-DD or null",
-    "total_amount": <subtotal excl. VAT, number>,
-    "vat_rate": <VAT % as number e.g. 8.1, or null>,
-    "vat_amount": <VAT amount or null>,
-    "total_with_vat": <grand total incl. VAT or null>,
-    "weight_kg": <total weight in kg or null>,
-    "payment_terms": "...",
-    "currency": "{default_currency}",
-    "page_range": "{page_range}",
-    "source_locked": false,
-    "contract_binding": "none|preferred_supplier|mandatory_supplier",
-    "mandatory_supplier_name": null,
-    "mandatory_reason": null
-  }}
+Return JSON: {{
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "{default_currency}", "category": "...", "required_supplier_name": null, "procurement_constraint": "none|preferred_supplier|mandatory_supplier"}}],
+  "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "{default_currency}", "page_range": "{page_range}", "source_locked": false, "contract_binding": "none|preferred_supplier|mandatory_supplier", "mandatory_supplier_name": null, "mandatory_reason": null}}
 }}
-
-Also detect framework-contract language (mandatory-buy, exclusive supplier, preferred supplier, only-from-supplier clauses) and set contract_binding/mandatory_supplier_name accordingly.""",
+Also detect framework-contract language such as mandatory-buy, exclusive supplier, preferred supplier, or only-from-supplier clauses.""",
                 messages=[{"role": "user", "content": f"Markdown chunk from pages {page_range}:\n\n{markdown}"}],
-                max_tokens=4096,
+                max_tokens=2048,
                 temperature=0.0,
                 stub=stub,
             )

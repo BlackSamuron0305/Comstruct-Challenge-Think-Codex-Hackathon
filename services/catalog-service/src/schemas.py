@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SupplierCreate(BaseModel):
@@ -11,6 +11,24 @@ class SupplierCreate(BaseModel):
     phone: str | None = None
     contact_name: str | None = None
     avatar_url: str | None = None
+    supports_api: bool = False
+    supports_documents: bool = True
+
+    @model_validator(mode="after")
+    def validate_sources(self):
+        if not self.supports_api and not self.supports_documents:
+            raise ValueError("Supplier must support at least one source: document or API")
+        return self
+
+
+class SupplierUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: str | None = None
+    phone: str | None = None
+    contact_name: str | None = None
+    avatar_url: str | None = None
+    supports_api: bool | None = None
+    supports_documents: bool | None = None
 
 
 class SupplierOut(BaseModel):
@@ -21,6 +39,8 @@ class SupplierOut(BaseModel):
     phone: str | None
     contact_name: str | None
     avatar_url: str | None
+    supports_api: bool
+    supports_documents: bool
 
 
 class ProductOut(BaseModel):
@@ -59,6 +79,7 @@ class ProductOut(BaseModel):
 
 class ProductBulkUpsert(BaseModel):
     supplier_id: UUID
+    existing_product_id: UUID | None = None
     sku: str
     name: str
     description: str | None = None
@@ -92,6 +113,9 @@ class BulkUpsertRequest(BaseModel):
 class BulkUpsertResponse(BaseModel):
     upserted: int
     skipped_a_class: int
+    inserted: int = 0
+    updated: int = 0
+    unchanged: int = 0
     errors: list[str] = []
 
 

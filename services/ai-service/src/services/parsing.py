@@ -22,9 +22,35 @@ def parse_tabular(filename: str, content: bytes) -> pd.DataFrame:
     name = filename.lower()
     if name.endswith(".csv"):
         return pd.read_csv(io.BytesIO(content), sep=None, engine="python", dtype=str).fillna("")
+    if name.endswith(".tsv"):
+        return pd.read_csv(io.BytesIO(content), sep="\t", dtype=str).fillna("")
     if name.endswith((".xlsx", ".xls")):
         return pd.read_excel(io.BytesIO(content), dtype=str).fillna("")
+    if name.endswith(".ods"):
+        return pd.read_excel(io.BytesIO(content), engine="odf", dtype=str).fillna("")
+    if name.endswith((".docx", ".doc")):
+        return _parse_docx_to_df(content)
     raise ValueError(f"Unsupported file type for tabular ingest: {filename}")
+
+
+def _parse_docx_to_df(content: bytes) -> pd.DataFrame:
+    """Extract tables from a DOCX file; falls back to paragraph text if no tables."""
+    from docx import Document  # type: ignore[import-untyped]
+
+    doc = Document(io.BytesIO(content))
+    all_rows: list[list[str]] = []
+    for table in doc.tables:
+        for row in table.rows:
+            all_rows.append([cell.text.strip() for cell in row.cells])
+
+    if all_rows:
+        header = all_rows[0]
+        data = all_rows[1:] if len(all_rows) > 1 else []
+        return pd.DataFrame(data, columns=header).fillna("")
+
+    # Fallback: use paragraph lines as raw text
+    lines = [para.text.strip() for para in doc.paragraphs if para.text.strip()]
+    return pd.DataFrame({"text": lines})
 
 
 def parse_pdf_to_table(content: bytes) -> pd.DataFrame:

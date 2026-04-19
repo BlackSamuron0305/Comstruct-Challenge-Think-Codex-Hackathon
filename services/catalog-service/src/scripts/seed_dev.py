@@ -16,6 +16,8 @@ SUPPLIERS = [
         "email": "orders@acme-supplies.example",
         "phone": "+41 44 555 0100",
         "contact_name": "Hans Müller",
+        "supports_api": True,
+        "supports_documents": True,
     },
     {
         "id": UUID("22222222-2222-2222-2222-222222222222"),
@@ -23,6 +25,8 @@ SUPPLIERS = [
         "email": "sales@alpine-fasteners.example",
         "phone": "+41 61 555 0131",
         "contact_name": "Petra Schmid",
+        "supports_api": True,
+        "supports_documents": False,
     },
     {
         "id": UUID("33333333-3333-3333-3333-333333333333"),
@@ -30,6 +34,8 @@ SUPPLIERS = [
         "email": "procurement@helvetia-safety.example",
         "phone": "+41 43 555 0142",
         "contact_name": "Nina Graf",
+        "supports_api": False,
+        "supports_documents": True,
     },
     {
         "id": UUID("44444444-4444-4444-4444-444444444444"),
@@ -37,6 +43,8 @@ SUPPLIERS = [
         "email": "logistics@rhein-site.example",
         "phone": "+41 52 555 0160",
         "contact_name": "Marco Frei",
+        "supports_api": False,
+        "supports_documents": True,
     },
     {
         "id": UUID("55555555-5555-5555-5555-555555555555"),
@@ -44,6 +52,8 @@ SUPPLIERS = [
         "email": "offers@nordbau-trade.example",
         "phone": "+41 31 555 0170",
         "contact_name": "Sabine Keller",
+        "supports_api": False,
+        "supports_documents": True,
     },
     {
         "id": UUID("66666666-6666-6666-6666-666666666666"),
@@ -51,6 +61,8 @@ SUPPLIERS = [
         "email": "orders@swiss-fix.example",
         "phone": "+41 44 555 0181",
         "contact_name": "Eva Huber",
+        "supports_api": True,
+        "supports_documents": True,
     },
     {
         "id": UUID("77777777-7777-7777-7777-777777777777"),
@@ -58,6 +70,8 @@ SUPPLIERS = [
         "email": "sales@urban-build.example",
         "phone": "+41 61 555 0182",
         "contact_name": "Jonas Frei",
+        "supports_api": True,
+        "supports_documents": False,
     },
     {
         "id": UUID("88888888-8888-8888-8888-888888888888"),
@@ -65,6 +79,8 @@ SUPPLIERS = [
         "email": "service@prosite-outlet.example",
         "phone": "+41 31 555 0183",
         "contact_name": "Lea Baumann",
+        "supports_api": True,
+        "supports_documents": True,
     },
 ]
 
@@ -251,6 +267,8 @@ async def seed():
                 supplier.email = spec["email"]
                 supplier.phone = spec["phone"]
                 supplier.contact_name = spec["contact_name"]
+                supplier.supports_api = spec.get("supports_api", False)
+                supplier.supports_documents = spec.get("supports_documents", True)
             supplier_ids[spec["name"]] = supplier.id
 
         for product in PRODUCTS:

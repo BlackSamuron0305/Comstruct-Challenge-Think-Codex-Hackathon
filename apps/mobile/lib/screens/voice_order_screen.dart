@@ -11,6 +11,7 @@ import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../offline_queue.dart';
 import '../translations.dart';
+import '../widgets/clarification_options.dart';
 import 'c_home_screen.dart' show CColors;
 
 class VoiceOrderScreen extends StatefulWidget {
@@ -194,19 +195,26 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
     return normalized;
   }
 
-  Future<void> _chooseClarification(String option) async {
+  void _chooseClarification(String option) {
     final current = _transcriptCtrl.text.trim();
     final next = current.toLowerCase().contains(option.toLowerCase())
         ? current
         : '$current $option';
+    final resolved = applyClarificationSelection(
+      option: option,
+      items: _results,
+      currentNote: _statusNote,
+    );
     setState(() {
       _transcript = next;
       _transcriptCtrl.text = next;
-      _statusNote = 'Refining your request…';
+      _results = List<Map<String, dynamic>>.from(
+        (resolved['items'] as List?) ?? const [],
+      );
+      _statusNote = resolved['statusNote'] as String?;
       _clarificationQuestion = null;
       _clarificationOptions = const [];
     });
-    await _startProcessing();
   }
 
   Future<void> _startProcessing() async {
@@ -238,6 +246,7 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       final hasCatalogMatch = items.any((item) => (item['product_id'] as String?)?.isNotEmpty == true);
       if (!hasCatalogMatch) {
         try {
+          await AppScope.api.ensureReachableBaseUrl();
           final res = await AppScope.api.recommend(query, projectName: projectName, trade: trade);
           final remoteItems = List<Map<String, dynamic>>.from((res['items'] as List?) ?? [])
               .map(_normalizeResultItem)
@@ -664,38 +673,10 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
         Container(
           width: double.infinity,
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE1E7EE)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _clarificationQuestion!,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  color: CColors.tealDark,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _clarificationOptions
-                    .map(
-                      (option) => ActionChip(
-                        label: Text(option),
-                        onPressed: () => _chooseClarification(option),
-                        backgroundColor: CColors.tealLighter,
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
+          child: ClarificationOptionsCard(
+            question: _clarificationQuestion!,
+            options: _clarificationOptions,
+            onSelected: _chooseClarification,
           ),
         ),
       Expanded(

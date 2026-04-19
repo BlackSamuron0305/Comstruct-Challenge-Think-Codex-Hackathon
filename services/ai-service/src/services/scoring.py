@@ -60,15 +60,19 @@ SCORE_WEIGHTS = {
 }
 
 
+_scoring_pool = None
+
+
 async def _db_pool():
     """Get an asyncpg connection pool (lazy singleton)."""
+    global _scoring_pool
     import asyncpg
-    if not hasattr(_db_pool, "_pool"):
-        _db_pool._pool = await asyncpg.create_pool(
+    if _scoring_pool is None:
+        _scoring_pool = await asyncpg.create_pool(
             settings.DATABASE_URL.replace("+asyncpg", ""),
             min_size=2, max_size=5,
         )
-    return _db_pool._pool
+    return _scoring_pool
 
 
 async def compute_supplier_score(supplier_id: str) -> dict:
@@ -237,13 +241,20 @@ async def compare_suppliers(product_id: str, supplier_ids: list[str] | None = No
                 "price_date": row["recorded_at"].isoformat() if row["recorded_at"] else None,
             })
 
-        # Sort by composite: 60% score, 40% price (lower is better)
+        # Sort by composite: 60% score, 40% price (lower is better), with bounded normalization.
         if comparisons:
             prices = [float(c["unit_price"]) for c in comparisons]
-            min_price = min(prices) if prices else 1
+            min_price = min(prices) if prices else 0
+            max_price = max(prices) if prices else min_price
+            price_range = max(max_price - min_price, 0.01)
+
             for c in comparisons:
                 score = float(c["overall_score"] or 50)
-                price_norm = (1 - (float(c["unit_price"]) - min_price) / max(min_price, 1)) * 100
+                price = float(c["unit_price"])
+                if max_price == min_price:
+                    price_norm = 100.0
+                else:
+                    price_norm = max(0.0, min(100.0, (1 - ((price - min_price) / price_range)) * 100))
                 c["composite_rank"] = round(score * 0.6 + price_norm * 0.4, 2)
             comparisons.sort(key=lambda c: c["composite_rank"], reverse=True)
 

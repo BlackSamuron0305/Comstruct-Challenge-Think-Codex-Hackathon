@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from uuid import UUID
 
@@ -115,6 +116,58 @@ def _strategy_weights(strategy: str) -> dict[str, Decimal]:
     if normalized == "fastest":
         return {"price": Decimal("0.30"), "delivery": Decimal("0.70")}
     return {"price": Decimal("0.60"), "delivery": Decimal("0.40")}
+
+
+def _normalise_match_text(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _is_auto_generated_sku(value: str | None) -> bool:
+    return str(value or "").upper().startswith("AUTO-")
+
+
+async def _find_existing_product(db: AsyncSession, p) -> Product | None:
+    if getattr(p, "existing_product_id", None):
+        row = await db.get(Product, p.existing_product_id)
+        if row and row.supplier_id == p.supplier_id:
+            return row
+
+    if p.ean:
+        row = (await db.execute(select(Product).where(
+            Product.supplier_id == p.supplier_id,
+            Product.ean == p.ean,
+        ))).scalar_one_or_none()
+        if row:
+            return row
+
+    if p.manufacturer_sku:
+        row = (await db.execute(select(Product).where(
+            Product.supplier_id == p.supplier_id,
+            Product.manufacturer_sku == p.manufacturer_sku,
+        ))).scalar_one_or_none()
+        if row:
+            return row
+
+    if p.sku and not _is_auto_generated_sku(p.sku):
+        row = (await db.execute(select(Product).where(
+            Product.supplier_id == p.supplier_id,
+            Product.sku == p.sku,
+        ))).scalar_one_or_none()
+        if row:
+            return row
+
+    normalized_name = _normalise_match_text(p.name)
+    if normalized_name:
+        candidates = (await db.execute(select(Product).where(
+            Product.supplier_id == p.supplier_id,
+            Product.is_active.is_(True),
+            Product.unit == p.unit,
+        ))).scalars().all()
+        for row in candidates:
+            if _normalise_match_text(row.name) == normalized_name:
+                return row
+
+    return None
 
 
 @router.get("", response_model=list[ProductOut])
@@ -327,6 +380,9 @@ internal_router = APIRouter(prefix="/internal/products", tags=["internal"])
 async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_session)):
     upserted = 0
     skipped = 0
+    inserted = 0
+    updated = 0
+    unchanged = 0
     errors: list[str] = []
     for p in body.products:
         if p.material_class != "C":
@@ -334,13 +390,32 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
             continue
         try:
             taxonomy = infer_taxonomy_fields(p.model_dump())
-            existing = await db.execute(
-                select(Product).where(
-                    Product.supplier_id == p.supplier_id, Product.sku == p.sku
-                )
-            )
-            row = existing.scalar_one_or_none()
+            row = await _find_existing_product(db, p)
             if row:
+                before = {
+                    "sku": row.sku,
+                    "name": row.name,
+                    "description": row.description,
+                    "category": row.category,
+                    "unit": row.unit,
+                    "packaging_qty": row.packaging_qty,
+                    "unit_price": row.unit_price,
+                    "currency": row.currency,
+                    "manufacturer": row.manufacturer,
+                    "manufacturer_sku": row.manufacturer_sku,
+                    "ean": row.ean,
+                    "image_url": row.image_url,
+                    "special_info": row.special_info,
+                    "source_delivery_days": row.source_delivery_days,
+                    "must_order": row.must_order,
+                    "base_discount_pct": row.base_discount_pct,
+                    "bulk_discount_pct": row.bulk_discount_pct,
+                    "bulk_discount_threshold": row.bulk_discount_threshold,
+                    "is_active": row.is_active,
+                }
+                if p.sku and not _is_auto_generated_sku(p.sku):
+                    row.sku = p.sku
+                    row.internal_sku = f"INT-{p.sku}"
                 row.name = p.name
                 row.description = p.description
                 row.category = p.category or taxonomy["category"]
@@ -364,6 +439,32 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
                 row.is_active = p.is_active
                 if p.embedding is not None:
                     row.embedding = p.embedding
+
+                after = {
+                    "sku": row.sku,
+                    "name": row.name,
+                    "description": row.description,
+                    "category": row.category,
+                    "unit": row.unit,
+                    "packaging_qty": row.packaging_qty,
+                    "unit_price": row.unit_price,
+                    "currency": row.currency,
+                    "manufacturer": row.manufacturer,
+                    "manufacturer_sku": row.manufacturer_sku,
+                    "ean": row.ean,
+                    "image_url": row.image_url,
+                    "special_info": row.special_info,
+                    "source_delivery_days": row.source_delivery_days,
+                    "must_order": row.must_order,
+                    "base_discount_pct": row.base_discount_pct,
+                    "bulk_discount_pct": row.bulk_discount_pct,
+                    "bulk_discount_threshold": row.bulk_discount_threshold,
+                    "is_active": row.is_active,
+                }
+                if before == after:
+                    unchanged += 1
+                else:
+                    updated += 1
             else:
                 row = Product(
                     supplier_id=p.supplier_id,
@@ -394,11 +495,19 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
                     embedding=p.embedding,
                 )
                 db.add(row)
+                inserted += 1
             upserted += 1
         except Exception as e:  # noqa: BLE001
             errors.append(f"{p.sku}: {e}")
     await db.commit()
-    return BulkUpsertResponse(upserted=upserted, skipped_a_class=skipped, errors=errors)
+    return BulkUpsertResponse(
+        upserted=upserted,
+        skipped_a_class=skipped,
+        inserted=inserted,
+        updated=updated,
+        unchanged=unchanged,
+        errors=errors,
+    )
 
 
 @internal_router.post(

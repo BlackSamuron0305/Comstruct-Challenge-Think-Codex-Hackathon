@@ -11,10 +11,14 @@ SUPPORTED_DOCUMENT_TYPES = {
     "application/pdf",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "text/tab-separated-values",
     "application/octet-stream",
 }
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {".csv", ".xls", ".xlsx", ".pdf"}
+SUPPORTED_DOCUMENT_EXTENSIONS = {".csv", ".tsv", ".xls", ".xlsx", ".ods", ".pdf", ".docx", ".doc"}
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".webm", ".mp4", ".m4a", ".aac"}
 

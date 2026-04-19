@@ -66,19 +66,6 @@ export type OrderSummary = {
   updated_at?: string;
   requires_approval?: boolean;
   notes?: string | null;
-  risk_signals?: Array<{
-    product_id?: string;
-    name?: string | null;
-    tag?: string | null;
-    requested_quantity?: number;
-    expected_quantity?: number;
-    historical_mean?: number;
-    historical_stddev?: number;
-    upper_bound?: number;
-    z_score?: number;
-    risk_score?: number;
-    history_points?: number;
-  }> | null;
   items?: Array<{
     id: string;
     quantity?: number | string;
@@ -142,6 +129,8 @@ export type ProductRecord = {
   bulk_discount_pct?: number | null;
   bulk_discount_threshold?: number | null;
   is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type SupplierRecord = {
@@ -151,6 +140,8 @@ export type SupplierRecord = {
   phone?: string | null;
   contact_name?: string | null;
   avatar_url?: string | null;
+  supports_api?: boolean;
+  supports_documents?: boolean;
 };
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -464,6 +455,8 @@ export const api = {
     request<T>('POST', path, { ...options, body }),
   put: <T>(path: string, body?: BodyInit | FormData | Record<string, unknown> | null, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
     request<T>('PUT', path, { ...options, body }),
+  patch: <T>(path: string, body?: BodyInit | FormData | Record<string, unknown> | null, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
+    request<T>('PATCH', path, { ...options, body }),
 };
 
 export function normalizeCurrency(currency: string | null | undefined): string {

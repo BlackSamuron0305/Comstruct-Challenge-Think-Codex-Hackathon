@@ -6,6 +6,8 @@ from typing import Iterable, Mapping
 PRICE_WEIGHT = Decimal("0.60")
 DELIVERY_WEIGHT = Decimal("0.40")
 MUST_ORDER_BONUS = Decimal("5.00")
+DELIVERY_CONFIDENCE_FLOOR = Decimal("0.35")
+DELIVERY_CONFIDENCE_BOOST = Decimal("0.25")
 _TWO_PLACES = Decimal("0.01")
 
 
@@ -62,10 +64,13 @@ def build_product_recommendations(
     for candidate in candidates:
         effective_price = compute_effective_unit_price(candidate, quantity)
         expected_delivery = _to_decimal(candidate.get("expected_delivery_days"))
+        delivery_confidence = _to_decimal(candidate.get("delivery_confidence"), Decimal("0.50")) or Decimal("0.50")
+        delivery_confidence = max(DELIVERY_CONFIDENCE_FLOOR, min(Decimal("1.00"), delivery_confidence))
         rows.append({
             **dict(candidate),
             "effective_unit_price": effective_price,
             "expected_delivery_days": expected_delivery,
+            "delivery_confidence": delivery_confidence,
             "must_order": bool(candidate.get("must_order", False)),
         })
 
@@ -87,9 +92,15 @@ def build_product_recommendations(
     for row in rows:
         price_score = _score_from_range(row["effective_unit_price"], min_price, max_price, invert=True)
         if min_delivery is None or max_delivery is None or row.get("expected_delivery_days") is None:
-            delivery_score = Decimal("50.00")
+            eta_score = Decimal("50.00")
         else:
-            delivery_score = _score_from_range(row["expected_delivery_days"], min_delivery, max_delivery, invert=True)
+            eta_score = _score_from_range(row["expected_delivery_days"], min_delivery, max_delivery, invert=True)
+
+        confidence_score = (row.get("delivery_confidence") or Decimal("0.50")) * Decimal("100")
+        delivery_score = (
+            (eta_score * (Decimal("1.00") - DELIVERY_CONFIDENCE_BOOST))
+            + (confidence_score * DELIVERY_CONFIDENCE_BOOST)
+        ).quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
 
         overall = (price_score * price_weight_dec) + (delivery_score * delivery_weight_dec)
         if row.get("must_order"):

@@ -9,6 +9,7 @@ import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../local_llm.dart';
 import '../theme.dart';
+import '../widgets/clarification_options.dart';
 
 class SmartAddScreen extends StatefulWidget {
   const SmartAddScreen({super.key});
@@ -40,6 +41,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
 
       // Try the backend AI first (it uses OpenAI / Ollama on server side)
       try {
+        await AppScope.api.ensureReachableBaseUrl();
         final res =
             await AppScope.api.recommend(task, projectName: projectName);
         final items = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
@@ -49,10 +51,14 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
         setState(() {
           _result = {
             ...res,
-            'summary': [question ?? res['summary'] as String?, if (question == null) deferredNote]
+            'summary': [
+              question ?? res['summary'] as String?,
+              if (question != null) 'Tap one of the large options below. Matching request types stay visible for review.',
+              if (question == null) deferredNote,
+            ]
                 .where((value) => value != null && value.trim().isNotEmpty)
                 .join('\n\n'),
-            'items': question == null ? (deferred['items'] as List?) ?? const [] : const [],
+            'items': (deferred['items'] as List?) ?? const [],
           };
           _clarificationOptions = List<String>.from(
             (deferred['clarificationOptions'] as List?) ?? const [],
@@ -140,18 +146,29 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                 if (_clarificationOptions.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _clarificationOptions.map((option) => ActionChip(
-                        label: Text(option),
-                        onPressed: () {
+                    child: ClarificationOptionsCard(
+                      question: 'Which type do you want?',
+                      options: _clarificationOptions,
+                      onSelected: (option) {
+                        final resolved = applyClarificationSelection(
+                          option: option,
+                          items: List<Map<String, dynamic>>.from(
+                            (_result?['items'] as List?) ?? const [],
+                          ),
+                          currentNote: _result?['summary'] as String?,
+                        );
+                        setState(() {
                           _ctrl.text = _ctrl.text.toLowerCase().contains(option.toLowerCase())
                               ? _ctrl.text
                               : '${_ctrl.text} $option';
-                          _run();
-                        },
-                      )).toList(),
+                          _result = {
+                            ...?_result,
+                            'summary': resolved['statusNote'],
+                            'items': resolved['items'],
+                          };
+                          _clarificationOptions = const [];
+                        });
+                      },
                     ),
                   ),
                 if (_result!['summary'] != null)
@@ -200,22 +217,24 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                               ? '$offerCount similar offers found. Final supplier choice happens later during scoring.'
                               : ((it['rationale'] as String?) ?? ''),
                         ),
-                        trailing: ElevatedButton(
-                          onPressed: () async {
-                            final ok = await context.read<CartCubit>().add(
-                                  it['product_id'] as String,
-                                  parseFlexibleNumber(it['suggested_qty']) ?? 1,
-                                );
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text(
-                                      ok ? 'Added to review' : 'Could not add')),
-                            );
-                          },
-                          child: Text(
-                              (parseFlexibleInt(it['suggested_qty'], fallback: 1)).toString()),
-                        ),
+                        trailing: _clarificationOptions.isNotEmpty
+                            ? const Icon(Icons.rule_folder_outlined, color: Colors.black45)
+                            : ElevatedButton(
+                                onPressed: () async {
+                                  final ok = await context.read<CartCubit>().add(
+                                        it['product_id'] as String,
+                                        parseFlexibleNumber(it['suggested_qty']) ?? 1,
+                                      );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            ok ? 'Added to review' : 'Could not add')),
+                                  );
+                                },
+                                child: Text(
+                                    (parseFlexibleInt(it['suggested_qty'], fallback: 1)).toString()),
+                              ),
                       ),
                     );
                   },

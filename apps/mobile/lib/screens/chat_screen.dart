@@ -9,6 +9,7 @@ import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../translations.dart';
+import '../widgets/clarification_options.dart';
 import 'c_home_screen.dart' show CColors;
 
 class ChatScreen extends StatefulWidget {
@@ -24,10 +25,32 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _busy = false;
 
   Future<void> _sendClarificationReply(String baseQuery, String option) async {
-    _ctrl.text = baseQuery.toLowerCase().contains(option.toLowerCase())
-        ? baseQuery
-        : '$baseQuery $option';
-    await _send();
+    final sourceMessage = _messages.lastWhere(
+      (msg) => msg.baseQuery == baseQuery && msg.options.isNotEmpty,
+      orElse: () => _Msg(role: 'assistant', text: '', items: const []),
+    );
+    final resolved = applyClarificationSelection(
+      option: option,
+      items: sourceMessage.items,
+      currentNote: sourceMessage.text,
+    );
+
+    setState(() {
+      _messages.add(_Msg(role: 'user', text: option));
+      _messages.add(_Msg(
+        role: 'assistant',
+        text: (resolved['statusNote'] as String?) ??
+            'Using $option. The backend will choose the exact item later.',
+        items: List<Map<String, dynamic>>.from(
+          (resolved['items'] as List?) ?? const [],
+        ),
+        options: const [],
+        baseQuery: baseQuery.toLowerCase().contains(option.toLowerCase())
+            ? baseQuery
+            : '$baseQuery $option',
+      ));
+    });
+    _scrollToBottom();
   }
   bool _initDone = false;
 
@@ -78,6 +101,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final projectName = prefs.getString('comstruct.selectedProjectName');
       final trade = prefs.getString('comstruct.userPosition') ?? 'foreman';
 
+      await AppScope.api.ensureReachableBaseUrl();
       final res = await AppScope.api.recommend(
         text,
         projectName: projectName,
@@ -111,7 +135,11 @@ class _ChatScreenState extends State<ChatScreen> {
         (deferred['clarificationOptions'] as List?) ?? const [],
       );
       final deferredNote = (deferred['statusNote'] as String?)?.trim();
-      final assistantText = [question ?? summary, if (question == null) deferredNote]
+      final assistantText = [
+        question ?? summary,
+        if (question != null) 'Tap one of the large options below. Matching request types are still shown under the message.',
+        if (question == null) deferredNote,
+      ]
           .where((value) => value != null && value.trim().isNotEmpty)
           .join('\n\n');
 
@@ -119,7 +147,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages.add(_Msg(
           role: 'assistant',
           text: assistantText,
-          items: options.isEmpty ? preparedItems : const [],
+          items: preparedItems,
           options: options,
           baseQuery: text,
         ));
@@ -145,13 +173,13 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages.add(_Msg(
             role: 'assistant',
             text: options.isNotEmpty
-                ? question ?? connectionErrorLabel
+                ? '${question ?? connectionErrorLabel}\n\nTap one of the large options below.'
                 : localItems.isNotEmpty
                     ? (localSummary?.isNotEmpty == true
                         ? '${localSummary!}\n\n$detailedError'
                         : foundProductsLabel.replaceAll('{n}', '${preparedItems.length}'))
                     : '$connectionErrorLabel\n\n$detailedError',
-            items: options.isEmpty ? preparedItems : const [],
+            items: preparedItems,
             options: options,
             baseQuery: text,
           ));
@@ -300,15 +328,13 @@ class _MessageBubble extends StatelessWidget {
           if (msg.options.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: msg.options.map((option) => ActionChip(
-                  label: Text(option),
-                  onPressed: msg.baseQuery == null || onOptionSelected == null
-                      ? null
-                      : () => onOptionSelected!(msg.baseQuery!, option),
-                )).toList(),
+              child: ClarificationOptionsCard(
+                question: 'Choose the type you want',
+                options: msg.options,
+                onSelected: (option) {
+                  if (msg.baseQuery == null || onOptionSelected == null) return;
+                  onOptionSelected!(msg.baseQuery!, option);
+                },
               ),
             ),
           if (msg.items.isNotEmpty)
@@ -317,7 +343,10 @@ class _MessageBubble extends StatelessWidget {
               child: Column(
                 children: msg.items.map((item) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
-                  child: _ProductChip(item: item),
+                  child: _ProductChip(
+                    item: item,
+                    allowDirectAdd: msg.options.isEmpty,
+                  ),
                 )).toList(),
               ),
             ),
@@ -328,8 +357,9 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _ProductChip extends StatelessWidget {
-  const _ProductChip({required this.item});
+  const _ProductChip({required this.item, this.allowDirectAdd = true});
   final Map<String, dynamic> item;
+  final bool allowDirectAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -356,28 +386,44 @@ class _ProductChip extends StatelessWidget {
                 ? '$offerCount similar offers • final choice later'
                 : '$price $currency / ${item['unit'] ?? 'Stk'}',
             style: const TextStyle(color: CColors.teal, fontSize: 12, fontWeight: FontWeight.w500)),
-        trailing: SizedBox(
-          width: 56,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: CColors.green,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(56, 36),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: productId == null
-                ? null
-                : () async {
-                    await context.read<CartCubit>().add(productId, qty);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(t(context, 'added'))),
-                    );
-                  },
-            child: const Icon(Icons.add, size: 18),
-          ),
-        ),
+        trailing: allowDirectAdd
+            ? SizedBox(
+                width: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: CColors.green,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(56, 36),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: productId == null
+                      ? null
+                      : () async {
+                          await context.read<CartCubit>().add(productId, qty);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(t(context, 'added'))),
+                          );
+                        },
+                  child: const Icon(Icons.add, size: 18),
+                ),
+              )
+            : Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: CColors.tealLighter,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Type first',
+                  style: TextStyle(
+                    color: CColors.tealDark,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
       ),
     );
   }

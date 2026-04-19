@@ -53,3 +53,34 @@ def test_recommendations_label_best_cheapest_and_fastest():
     assert any(item["recommendation_bucket"] == "cheapest" for item in ranked)
     assert any(item["recommendation_bucket"] == "fastest" for item in ranked)
     assert ranked[0]["overall_score"] >= ranked[-1]["overall_score"]
+
+
+def test_recommendations_prefer_high_delivery_confidence_when_price_and_eta_tie():
+    ranked = build_product_recommendations(
+        [
+            {
+                "id": "low-confidence",
+                "sku": "HAM-LOW",
+                "name": "Budget hammer",
+                "supplier_name": "Budget Trade",
+                "unit_price": Decimal("19.00"),
+                "expected_delivery_days": Decimal("2.0"),
+                "delivery_confidence": Decimal("0.35"),
+                "must_order": False,
+            },
+            {
+                "id": "high-confidence",
+                "sku": "HAM-HIGH",
+                "name": "Reliable hammer",
+                "supplier_name": "Reliable Supply",
+                "unit_price": Decimal("19.00"),
+                "expected_delivery_days": Decimal("2.0"),
+                "delivery_confidence": Decimal("0.95"),
+                "must_order": False,
+            },
+        ],
+        requested_quantity=Decimal("2"),
+    )
+
+    assert ranked[0]["id"] == "high-confidence"
+    assert ranked[0]["overall_score"] > ranked[1]["overall_score"]

@@ -51,7 +51,7 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
       return {
         id: order.id,
         title: statusLabel,
-        detail: `${firstItem ?? order.supplier_name ?? "Live order"} · ${formatCurrency(Number(order.total_amount ?? 0), order.currency ?? "EUR")}`,
+        detail: `${firstItem ?? order.supplier_name ?? "Order"} · ${formatCurrency(Number(order.total_amount ?? 0), order.currency ?? "EUR")}`,
         time: relativeTimeLabel(order.updated_at ?? order.created_at),
         urgent: status === "pending" || status === "pending_approval" || status === "rejected",
       };
@@ -64,12 +64,6 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
     <header className="h-20 border-b border-border bg-background/80 backdrop-blur sticky top-0 z-30">
       <div className="h-full px-4 lg:px-8 flex items-center gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="h-1 w-1 rounded-full bg-hivis" />
-            <span className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Live
-            </span>
-          </div>
           <h1 className="text-display text-xl font-semibold leading-tight truncate">{title}</h1>
           {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
         </div>
@@ -95,7 +89,7 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div>
                     <div className="text-sm font-semibold">Notifications</div>
-                    <div className="text-[11px] text-muted-foreground">Live order and approval updates</div>
+                    <div className="text-[11px] text-muted-foreground">Order and approval updates</div>
                   </div>
                   <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {notifications.length}

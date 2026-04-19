@@ -96,6 +96,12 @@ const Set<String> _catalogAnchorWords = {
   'helmet', 'tool', 'tools', 'ladder', 'lamp', 'lamps', 'tie', 'ties',
 };
 
+const Set<String> _catalogGenericDescriptors = {
+  'pro', 'premium', 'industrial', 'classic', 'basic', 'standard', 'general',
+  'heavy', 'duty', 'site', 'work', 'material', 'materials', 'supplies',
+  'equipment', 'set', 'kit', 'plus', 'max', 'mini', 'super',
+};
+
 List<String> _catalogIntentTokens(String value) {
   return value
       .toLowerCase()
@@ -110,39 +116,125 @@ List<String> _catalogIntentTokens(String value) {
       .toList();
 }
 
-String _catalogDisplayLabel(Map<String, dynamic> item) {
-  final raw = (item['display_name'] ??
-          item['requested_label'] ??
+String _humanizeCatalogLabel(String value) {
+  final cleaned = value
+      .replaceAll(RegExp(r'[_\-]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (cleaned.isEmpty) return '';
+  return cleaned
+      .split(' ')
+      .where((part) => part.isNotEmpty)
+      .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
+      .join(' ');
+}
+
+String _singularizeCatalogWord(String value) {
+  final normalized = value.trim().toLowerCase();
+  if (normalized.endsWith('ies') && normalized.length > 3) {
+    return '${normalized.substring(0, normalized.length - 3)}y';
+  }
+  if (normalized.endsWith('s') && !normalized.endsWith('ss') && normalized.length > 3) {
+    return normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
+}
+
+bool _isGenericCatalogTypeLabel(String value, Map<String, dynamic> item) {
+  final cleaned = value.trim();
+  if (cleaned.isEmpty) return true;
+
+  final lower = _singularizeCatalogWord(cleaned);
+  final category = _singularizeCatalogWord((item['category'] ?? '').toString());
+  final family = _singularizeCatalogWord(
+    _humanizeCatalogLabel((item['product_family'] ?? '').toString()),
+  );
+
+  if (lower == 'general' || lower == 'material') return true;
+  if (lower == category || lower == family) return true;
+  if (_catalogAnchorWords.contains(lower) && cleaned.split(' ').length == 1) {
+    return true;
+  }
+
+  return false;
+}
+
+String? _deriveSubtypeLabelFromName(Map<String, dynamic> item) {
+  final raw = (item['requested_label'] ??
           item['matched_name'] ??
+          item['display_name'] ??
           item['name'] ??
           item['material'] ??
-          item['category'] ??
           '')
       .toString()
+      .replaceAll(RegExp(r'\b\d+([\.,x×/-]\d+)*\b'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 
-  if (raw.isEmpty) return 'Material';
+  if (raw.isEmpty) return null;
 
   final tokens = _catalogIntentTokens(raw);
   if (tokens.isEmpty) return raw;
 
+  final anchorIndex = tokens.lastIndexWhere(_catalogAnchorWords.contains);
+  if (anchorIndex != -1) {
+    final noun = tokens[anchorIndex];
+    for (var i = anchorIndex - 1; i >= 0; i--) {
+      final candidate = tokens[i];
+      if (_catalogGenericDescriptors.contains(candidate) || _catalogAnchorWords.contains(candidate)) {
+        continue;
+      }
+      return _humanizeCatalogLabel('$candidate $noun');
+    }
+    return _humanizeCatalogLabel(noun);
+  }
+
   final noun = tokens.reversed.firstWhere(
-    (token) => _catalogAnchorWords.contains(token),
-    orElse: () => tokens.length > 1 ? tokens[1] : tokens.last,
+    (token) => !_catalogGenericDescriptors.contains(token),
+    orElse: () => tokens.last,
   );
   final descriptor = tokens.first == noun ? noun : '${tokens.first} $noun';
-  return descriptor
-      .split(' ')
-      .where((part) => part.isNotEmpty)
-      .take(3)
-      .map((part) => part[0].toUpperCase() + part.substring(1))
-      .join(' ');
+  return _humanizeCatalogLabel(descriptor);
+}
+
+String _catalogDisplayLabel(Map<String, dynamic> item) {
+  final taxonomyLabel = (item['taxonomy_label'] ?? '').toString().trim();
+  if (taxonomyLabel.isNotEmpty) {
+    final segments = taxonomyLabel
+        .split('>')
+        .map((segment) => segment.trim())
+        .where((segment) => segment.isNotEmpty && segment.toLowerCase() != 'general')
+        .toList();
+    if (segments.isNotEmpty && !_isGenericCatalogTypeLabel(segments.last, item)) {
+      return segments.last;
+    }
+  }
+
+  final nameLabel = _deriveSubtypeLabelFromName(item);
+  if (nameLabel != null && !_isGenericCatalogTypeLabel(nameLabel, item)) {
+    return nameLabel;
+  }
+
+  final familyLabel = _humanizeCatalogLabel(
+    (item['product_family'] ?? item['subcategory'] ?? item['subtype'] ?? '')
+        .toString(),
+  );
+  if (familyLabel.isNotEmpty) return familyLabel;
+
+  return 'Material';
 }
 
 bool itemMatchesClarificationOption(Map<String, dynamic> item, String option) {
-  final labelTokens = _catalogIntentTokens(_catalogDisplayLabel(item));
   final optionTokens = _catalogIntentTokens(option);
   if (optionTokens.isEmpty) return false;
+
+  final labelTokens = {
+    ..._catalogIntentTokens(_catalogDisplayLabel(item)),
+    ..._catalogIntentTokens((item['taxonomy_label'] ?? '').toString()),
+    ..._catalogIntentTokens((item['product_family'] ?? '').toString()),
+    ..._catalogIntentTokens((item['name'] ?? '').toString()),
+  };
+
   return optionTokens.every(labelTokens.contains);
 }
 
@@ -218,9 +310,9 @@ Map<String, dynamic> buildDeferredSelectionState(
   final offerCount = items.length;
   final groupedCount = selectedItems.length;
   final statusNote = needsClarification
-      ? 'Tell me the type first. The final supplier and exact model will be selected later during backend scoring.'
+      ? 'Tell me the type first. The backend scoring model will choose the best supplier and exact item automatically after that.'
       : offerCount > groupedCount
-          ? 'I found $offerCount matching offers. The final supplier and exact model will be selected automatically later during scoring.'
+          ? 'I found $offerCount matching offers. The backend scoring model will choose the best supplier and exact item automatically later.'
           : null;
 
   return {
@@ -229,6 +321,33 @@ Map<String, dynamic> buildDeferredSelectionState(
     'clarificationQuestion': clarificationQuestion,
     'clarificationOptions': needsClarification ? labels.take(4).toList() : <String>[],
     'statusNote': statusNote,
+  };
+}
+
+Map<String, dynamic> applyClarificationSelection({
+  required String option,
+  required List<Map<String, dynamic>> items,
+  String? currentNote,
+}) {
+  final filtered = items
+      .where((item) => itemMatchesClarificationOption(item, option))
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+
+  final selectedItems = filtered.isNotEmpty
+      ? filtered
+      : items.map((item) => Map<String, dynamic>.from(item)).toList();
+
+  final note = [
+    currentNote,
+    'Using $option. The backend scoring model will choose the exact supplier and item automatically.',
+  ].where((value) => value != null && value.trim().isNotEmpty).join('\n\n');
+
+  return {
+    'items': selectedItems,
+    'clarificationQuestion': null,
+    'clarificationOptions': <String>[],
+    'statusNote': note,
   };
 }
 
@@ -368,6 +487,7 @@ class ApiClient {
   Future<void> ensureReachableBaseUrl() async {
     final resolved = await AppConfig.resolveReachableApiBaseUrl();
     dio.options.baseUrl = resolved;
+    await AppConfig.rememberReachableApiBaseUrl(resolved);
   }
 
   Future<Response<dynamic>?> _retryOnAlternateBaseUrl(DioException error) async {
@@ -389,6 +509,7 @@ class ApiClient {
 
         if (probe.statusCode == 200) {
           dio.options.baseUrl = candidate;
+          await AppConfig.rememberReachableApiBaseUrl(candidate);
           final retryRequest = error.requestOptions.copyWith(
             baseUrl: candidate,
             headers: {
@@ -594,6 +715,39 @@ class ApiClient {
   }
 
   // ── AI ─────────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> _catalogFallbackRecommendations(String task) async {
+    try {
+      final r = await dio.get('/api/products/recommendations', queryParameters: {
+        'query': task,
+        'requested_quantity': 1,
+        'strategy': 'balanced',
+      });
+      final data = Map<String, dynamic>.from(r.data as Map);
+      final topChoices = List<Map<String, dynamic>>.from((data['top_choices'] as List?) ?? const []);
+      final others = List<Map<String, dynamic>>.from((data['others'] as List?) ?? const []);
+      return [...topChoices, ...others]
+          .map((item) => {
+                'product_id': item['id']?.toString(),
+                'id': item['id']?.toString(),
+                'name': item['name'],
+                'display_name': item['name'],
+                'unit_price': item['unit_price'],
+                'currency': item['currency'],
+                'unit': item['unit'],
+                'category': item['category'] ?? item['taxonomy_label'],
+                'taxonomy_code': item['taxonomy_code'],
+                'taxonomy_label': item['taxonomy_label'],
+                'product_family': item['product_family'],
+                'supplier_name': item['supplier_name'],
+                'score': item['score'],
+                'suggested_qty': 1,
+              })
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<Map<String, dynamic>> recommend(String task, {String? projectName, String? trade}) async {
     final r = await dio.post('/api/ai/recommend', data: {
       'task': task,
@@ -601,7 +755,24 @@ class ApiClient {
       if (trade != null) 'trade': trade,
       'language': 'en',
     });
-    return Map<String, dynamic>.from(r.data as Map);
+    final result = Map<String, dynamic>.from(r.data as Map);
+    final items = List<Map<String, dynamic>>.from((result['items'] as List?) ?? const []);
+    if (items.isNotEmpty) {
+      return result;
+    }
+
+    final fallbackItems = await _catalogFallbackRecommendations(task);
+    if (fallbackItems.isEmpty) {
+      return result;
+    }
+
+    return {
+      ...result,
+      'summary': (result['summary'] as String?)?.trim().isNotEmpty == true
+          ? result['summary']
+          : 'I found ${fallbackItems.length} matching catalog offers. You can refine the type now, and the exact supplier choice will be scored later.',
+      'items': fallbackItems,
+    };
   }
 
   Future<Map<String, dynamic>> chat(String message, {Map<String, dynamic>? context, String language = 'en'}) async {

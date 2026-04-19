@@ -121,24 +121,6 @@ function Overview() {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-3 md:grid-cols-3">
-        <Link to="/approvals" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
-          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Act now</div>
-          <div className="mt-1 font-medium">Review {pending.length} approval{pending.length === 1 ? "" : "s"}</div>
-          <div className="mt-1 text-muted-foreground">Jump straight into statistically flagged requests.</div>
-        </Link>
-        <Link to="/orders" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
-          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Answer requesters</div>
-          <div className="mt-1 font-medium">Open the live order timeline</div>
-          <div className="mt-1 text-muted-foreground">See what is ordered, in transit, delivered, or rejected.</div>
-        </Link>
-        <Link to="/catalog" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
-          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Keep data fresh</div>
-          <div className="mt-1 font-medium">Import a new supplier file</div>
-          <div className="mt-1 text-muted-foreground">Upload PDFs, CSVs, or Excel sheets into the live catalog workspace.</div>
-        </Link>
-      </div>
-
       {isLoading ? (
         <QueryState kind="loading" title="Loading live metrics" description="Spend, approvals, and project signals are being refreshed now." />
       ) : isError ? (

@@ -26,6 +26,21 @@ class _CartScreenState extends State<CartScreen> {
 
   bool get _hasSelectedProject => _projectId != null && _projectId!.isNotEmpty;
 
+  String _displayLineTitle(Map<String, dynamic> line) {
+    final taxonomyLabel = (line['taxonomy_label'] ?? '').toString().trim();
+    if (taxonomyLabel.isNotEmpty) {
+      final segments = taxonomyLabel
+          .split('>')
+          .map((segment) => segment.trim())
+          .where((segment) => segment.isNotEmpty && segment.toLowerCase() != 'general')
+          .toList();
+      if (segments.isNotEmpty) {
+        return segments.last;
+      }
+    }
+    return (line['display_name'] ?? line['name'] ?? 'Material').toString();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -174,7 +189,7 @@ class _CartScreenState extends State<CartScreen> {
                             final productId = (l['product_id'] ?? '').toString();
                             final quantity = parseFlexibleInt(l['quantity'], fallback: 1);
                             final unitPrice = parseFlexibleNumber(l['unit_price']) ?? 0;
-                            final name = (l['name'] ?? 'Material').toString();
+                            final name = _displayLineTitle(l);
                             return Dismissible(
                               key: ValueKey(productId),
                               direction: controlsEnabled ? DismissDirection.endToStart : DismissDirection.none,
@@ -205,6 +220,18 @@ class _CartScreenState extends State<CartScreen> {
                                                   '${unitPrice.toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)} each',
                                                   style: const TextStyle(color: Colors.black54),
                                                 ),
+                                                if ((l['taxonomy_label'] ?? '').toString().trim().isNotEmpty)
+                                                  const Padding(
+                                                    padding: EdgeInsets.only(top: 4),
+                                                    child: Text(
+                                                      'Final exact supplier/item is chosen by backend scoring.',
+                                                      style: TextStyle(
+                                                        color: Colors.teal,
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
                                               ],
                                             ),
                                           ),

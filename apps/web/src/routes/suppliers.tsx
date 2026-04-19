@@ -1,7 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpFromLine, Clock3, Plus, RefreshCw, Settings, X } from "lucide-react";
+import {
+  ArrowUpFromLine,
+  Clock3,
+  FileText,
+  Globe,
+  Plus,
+  RefreshCw,
+  Settings,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { DashboardLayout } from "@/components/dashboard/Layout";
@@ -21,7 +30,8 @@ export const Route = createFileRoute("/suppliers")({
   component: Suppliers,
 });
 
-type SupplierChannel = "API/PunchOut" | "Excel/PDF upload";
+type SupplierChannel = "API supplier" | "Document supplier" | "API + Document supplier";
+type SupplierSourceMode = "document" | "api" | "both";
 
 const statusStyles = {
   good: "bg-success/15 text-[oklch(0.42_0.13_155)]",
@@ -29,12 +39,42 @@ const statusStyles = {
   neutral: "bg-secondary text-foreground",
 } as const;
 
+const sourceBadgeStyles = {
+  api: "border-success/30 bg-success/10 text-[oklch(0.42_0.13_155)]",
+  document: "border-warning/30 bg-warning/10 text-warning-foreground",
+  both: "border-primary/30 bg-primary/10 text-primary",
+} as const;
+
+function getSourceMode(supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">): SupplierSourceMode {
+  const supportsApi = Boolean(supplier.supports_api);
+  const supportsDocuments = supplier.supports_documents !== false;
+
+  if (supportsApi && supportsDocuments) return "both";
+  if (supportsApi) return "api";
+  return "document";
+}
+
+function getChannelLabel(mode: SupplierSourceMode): SupplierChannel {
+  if (mode === "both") return "API + Document supplier";
+  if (mode === "api") return "API supplier";
+  return "Document supplier";
+}
+
+function getSourcePayload(mode: SupplierSourceMode) {
+  return {
+    supports_api: mode === "api" || mode === "both",
+    supports_documents: mode === "document" || mode === "both",
+  };
+}
+
 type SupplierCard = SupplierRecord & {
   items: number;
   spend: number;
   owner: string;
   channel: SupplierChannel;
-  autoSync: boolean;
+  sourceMode: SupplierSourceMode;
+  supportsApi: boolean;
+  supportsDocuments: boolean;
   actionLabel: string;
   statusLabel: string;
   statusTone: keyof typeof statusStyles;
@@ -51,6 +91,8 @@ function Suppliers() {
   const [draftContact, setDraftContact] = useState("");
   const [draftEmail, setDraftEmail] = useState("");
   const [draftPhone, setDraftPhone] = useState("");
+  const [draftSourceMode, setDraftSourceMode] = useState<SupplierSourceMode>("document");
+  const [settingsSourceMode, setSettingsSourceMode] = useState<SupplierSourceMode>("document");
 
   const {
     data: suppliers = [],
@@ -72,6 +114,8 @@ function Suppliers() {
       contact_name?: string;
       email?: string;
       phone?: string;
+      supports_api: boolean;
+      supports_documents: boolean;
     }) => api.post<SupplierRecord>("/api/suppliers", payload),
     onSuccess: (created) => {
       toast.success(`${created.name} saved to the supplier database.`);
@@ -85,6 +129,24 @@ function Suppliers() {
     },
   });
 
+  const updateSupplierMutation = useMutation({
+    mutationFn: (payload: { supports_api: boolean; supports_documents: boolean }) => {
+      if (!settingsSupplier) {
+        throw new Error("No supplier selected.");
+      }
+      return api.patch<SupplierRecord>(`/api/suppliers/${settingsSupplier.id}`, payload);
+    },
+    onSuccess: (updated) => {
+      toast.success(`${updated.name} settings updated.`);
+      setSettingsSupplier(null);
+      void queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      void queryClient.invalidateQueries({ queryKey: ["catalog-suppliers"] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Supplier settings could not be updated.");
+    },
+  });
+
   const suppliersList = useMemo<SupplierCard[]>(() => {
     function toCard(supplier: SupplierRecord): SupplierCard {
       const linkedProducts = products.filter((product) => product.supplier_id === supplier.id);
@@ -93,8 +155,10 @@ function Suppliers() {
         0,
       );
       const items = linkedProducts.length;
-      const autoSync = items > 0;
-      const channel: SupplierChannel = autoSync ? "API/PunchOut" : "Excel/PDF upload";
+      const sourceMode = getSourceMode(supplier);
+      const supportsApi = sourceMode === "api" || sourceMode === "both";
+      const supportsDocuments = sourceMode === "document" || sourceMode === "both";
+      const channel = getChannelLabel(sourceMode);
 
       return {
         ...supplier,
@@ -102,31 +166,50 @@ function Suppliers() {
         spend,
         owner: supplier.email ?? "procurement@comstruct.local",
         channel,
-        autoSync,
-        actionLabel: autoSync ? "Refresh view" : "Upload catalog",
-        statusLabel: autoSync ? "Live catalog" : "Needs import",
-        statusTone: autoSync ? "good" : "warn",
-        integrationNotes: autoSync
-          ? "This supplier already has live catalog items in the database."
-          : "This supplier is stored in the database and is ready for its first catalog import.",
-        lastActivity: autoSync
-          ? "Live catalog data is available now"
-          : "Waiting for the first uploaded price list",
+        sourceMode,
+        supportsApi,
+        supportsDocuments,
+        actionLabel: supportsDocuments ? "Upload catalog" : "Refresh API",
+        statusLabel:
+          sourceMode === "both"
+            ? "API + document"
+            : sourceMode === "api"
+              ? "API only"
+              : "Document only",
+        statusTone: sourceMode === "document" ? "neutral" : "good",
+        integrationNotes:
+          sourceMode === "both"
+            ? "This supplier accepts both live API sync and uploaded PDF, CSV, or Excel files."
+            : sourceMode === "api"
+              ? "This supplier is API-based only and cannot be selected for manual file uploads."
+              : "This supplier is document-based and is updated from uploaded PDF, CSV, or Excel price lists.",
+        lastActivity:
+          items > 0
+            ? `${items.toLocaleString("de-CH")} catalog items currently loaded`
+            : sourceMode === "api"
+              ? "Waiting for the first API sync"
+              : "Waiting for the first supplier document upload",
       };
     }
 
     return [...suppliers].map(toCard).sort((left, right) => left.name.localeCompare(right.name));
   }, [products, suppliers]);
 
-  const liveCount = suppliersList.filter((supplier) => supplier.autoSync).length;
-  const readyForImportCount = suppliersList.filter((supplier) => !supplier.autoSync).length;
-  const totalCatalogValue = suppliersList.reduce((sum, supplier) => sum + supplier.spend, 0);
+  const apiSupplierCount = suppliersList.filter((supplier) => supplier.supportsApi).length;
+  const documentSupplierCount = suppliersList.filter((supplier) => supplier.supportsDocuments).length;
+  const bothSourceCount = suppliersList.filter((supplier) => supplier.sourceMode === "both").length;
 
   function resetDraft() {
     setDraftName("");
     setDraftContact("");
     setDraftEmail("");
     setDraftPhone("");
+    setDraftSourceMode("document");
+  }
+
+  function openSupplierSettings(supplier: SupplierCard) {
+    setSettingsSupplier(supplier);
+    setSettingsSourceMode(getSourceMode(supplier));
   }
 
   function handleCreateSupplier() {
@@ -140,31 +223,31 @@ function Suppliers() {
       contact_name: draftContact.trim() || undefined,
       email: draftEmail.trim() || undefined,
       phone: draftPhone.trim() || undefined,
+      ...getSourcePayload(draftSourceMode),
     });
   }
 
   function handleSupplierAction(supplier: SupplierCard) {
-    if (supplier.autoSync) {
-      toast.success(`${supplier.name} sync requested`, {
-        description:
-          "API suppliers can be refreshed on demand and also auto-sync in the background.",
-      });
+    if (supplier.supportsDocuments) {
+      toast.success(`Open the catalog import to upload the newest PDF/Excel for ${supplier.name}.`);
+      void navigate({ to: "/catalog" });
       return;
     }
 
-    toast.success(`Open the catalog import to upload the newest PDF/Excel for ${supplier.name}.`);
-    void navigate({ to: "/catalog" });
+    toast.success(`${supplier.name} API sync requested`, {
+      description: "This supplier is API-only, so document upload is disabled for it.",
+    });
   }
 
   return (
     <>
       <DashboardLayout
         title="Suppliers"
-        subtitle="Supplier directory, sync model, and latest commercial source data"
+        subtitle="Supplier directory with clear API vs document-based source labels"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            Every supplier shown here now comes from the live database.
+            Each supplier card now stores its source mode in the database: document, API, or both.
           </p>
           <button
             onClick={() => setShowAdd(true)}
@@ -175,32 +258,51 @@ function Suppliers() {
         </div>
 
         <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Live catalogs</div>
-            <div className="mt-1 text-2xl font-semibold">{liveCount}</div>
+          <div className="rounded-lg border border-success/20 bg-success/5 p-4">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Globe className="h-3.5 w-3.5" /> API enabled
+            </div>
+            <div className="mt-1 text-2xl font-semibold">{apiSupplierCount}</div>
           </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Ready for first import</div>
-            <div className="mt-1 text-2xl font-semibold">{readyForImportCount}</div>
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <FileText className="h-3.5 w-3.5" /> Document enabled
+            </div>
+            <div className="mt-1 text-2xl font-semibold">{documentSupplierCount}</div>
           </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs text-muted-foreground">Current catalog value</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {formatCurrency(totalCatalogValue, "EUR")}
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <div className="text-xs text-muted-foreground">Supports both</div>
+            <div className="mt-1 text-2xl font-semibold">{bothSourceCount}</div>
+          </div>
+        </div>
+
+        <div className="mb-4 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border border-success/20 bg-success/5 p-4 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <Globe className="h-4 w-4" /> API supplier
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              Prices and catalog items are already connected through a live sync source.
+            </div>
+          </div>
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <FileText className="h-4 w-4" /> Document supplier
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              Prices are maintained by importing PDF, CSV, or Excel supplier documents.
             </div>
           </div>
         </div>
 
-        {readyForImportCount > 0 && (
-          <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
-            <div className="font-medium text-warning-foreground">
-              Some suppliers are stored but still need a first file import.
-            </div>
-            <div className="mt-1 text-muted-foreground">
-              Open the catalog workspace to upload their first PDF, CSV, or Excel price list.
-            </div>
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
+          <div className="font-medium text-warning-foreground">
+            File uploads only accept document-enabled suppliers.
           </div>
-        )}
+          <div className="mt-1 text-muted-foreground">
+            API-only suppliers can sync through integrations, while document-enabled or dual-mode suppliers can receive uploaded files.
+          </div>
+        </div>
 
         {isLoading ? (
           <QueryState
@@ -230,21 +332,42 @@ function Suppliers() {
                 key={supplier.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => setSettingsSupplier(supplier)}
+                onClick={() => openSupplierSettings(supplier)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setSettingsSupplier(supplier);
+                    openSupplierSettings(supplier);
                   }
                 }}
                 className="rounded-lg border border-border bg-card p-5 text-left hover:bg-accent/30 transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <div
+                      className={[
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-mono text-[10px] uppercase tracking-widest",
+                        supplier.sourceMode === "both"
+                          ? sourceBadgeStyles.both
+                          : supplier.supportsApi
+                            ? sourceBadgeStyles.api
+                            : sourceBadgeStyles.document,
+                      ].join(" ")}
+                    >
+                      {supplier.sourceMode === "both" || supplier.supportsApi ? (
+                        <Globe className="h-3 w-3" />
+                      ) : (
+                        <FileText className="h-3 w-3" />
+                      )}
                       {supplier.channel}
                     </div>
-                    <h3 className="text-display text-lg font-semibold mt-1">{supplier.name}</h3>
+                    <h3 className="text-display text-lg font-semibold mt-2">{supplier.name}</h3>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {supplier.sourceMode === "both"
+                        ? "Supports both live API sync and uploaded documents"
+                        : supplier.supportsApi
+                          ? "Managed only through API / PunchOut sync"
+                          : "Managed only through uploaded documents"}
+                    </div>
                   </div>
                   <span
                     className={[
@@ -312,7 +435,7 @@ function Suppliers() {
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setSettingsSupplier(supplier);
+                      openSupplierSettings(supplier);
                     }}
                     className="text-sm px-3 py-2 rounded-md border border-border hover:bg-accent flex items-center gap-1.5"
                   >
@@ -347,7 +470,7 @@ function Suppliers() {
             </div>
             <div className="px-6 py-5 space-y-3 text-sm">
               <div>
-                <span className="font-medium">Channel:</span> {settingsSupplier.channel}
+                <span className="font-medium">Source type:</span> {settingsSupplier.channel}
               </div>
               <div>
                 <span className="font-medium">Owner:</span> {settingsSupplier.owner}
@@ -361,12 +484,35 @@ function Suppliers() {
                 {settingsSupplier.email ?? "Not provided"}
               </div>
               <div>
-                <span className="font-medium">Current mode:</span>{" "}
-                {settingsSupplier.autoSync
-                  ? "API auto-sync with optional manual refresh"
-                  : "Manual PDF/Excel refresh when a new file arrives"}
+                <div className="font-medium mb-1">Source mode</div>
+                <select
+                  value={settingsSourceMode}
+                  onChange={(event) => setSettingsSourceMode(event.target.value as SupplierSourceMode)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2"
+                >
+                  <option value="document">Document only</option>
+                  <option value="api">API only</option>
+                  <option value="both">API + Document</option>
+                </select>
               </div>
               <div className="text-muted-foreground">{settingsSupplier.lastActivity}</div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSettingsSupplier(null)}
+                  className="rounded-md border border-border px-3 py-2 hover:bg-accent"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSupplierMutation.mutate(getSourcePayload(settingsSourceMode))}
+                  disabled={updateSupplierMutation.isPending}
+                  className="rounded-md bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {updateSupplierMutation.isPending ? "Saving…" : "Save settings"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -404,6 +550,15 @@ function Suppliers() {
                 placeholder="Phone"
                 className="w-full rounded-md border border-border bg-background px-3 py-2"
               />
+              <select
+                value={draftSourceMode}
+                onChange={(event) => setDraftSourceMode(event.target.value as SupplierSourceMode)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              >
+                <option value="document">Document only</option>
+                <option value="api">API only</option>
+                <option value="both">API + Document</option>
+              </select>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setShowAdd(false)}

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Environment-based configuration.
 /// Pass values via --dart-define at build time, for example:
@@ -9,6 +10,7 @@ class AppConfig {
     'API_BASE_URL',
     defaultValue: '',
   );
+  static const _lastKnownApiBaseUrlKey = 'comstruct.lastReachableApiBaseUrl';
 
   static String _normalizeLocalUrl(String value) {
     var normalized = value.trim();
@@ -32,11 +34,7 @@ class AppConfig {
     return normalized;
   }
 
-  static List<String> get candidateApiBaseUrls {
-    if (_envApiBaseUrl.isNotEmpty) {
-      return [_normalizeLocalUrl(_envApiBaseUrl)];
-    }
-
+  static List<String> _defaultCandidateApiBaseUrls() {
     if (kIsWeb) {
       return ['http://127.0.0.1:8001'];
     }
@@ -55,10 +53,36 @@ class AppConfig {
     }
   }
 
+  static List<String> get candidateApiBaseUrls {
+    final candidates = <String>[
+      if (_envApiBaseUrl.isNotEmpty) _normalizeLocalUrl(_envApiBaseUrl),
+      ..._defaultCandidateApiBaseUrls(),
+    ];
+    final seen = <String>{};
+    return candidates.where((url) => url.isNotEmpty && seen.add(url)).toList();
+  }
+
   static String get apiBaseUrl => candidateApiBaseUrls.first;
 
+  static Future<void> rememberReachableApiBaseUrl(String value) async {
+    final normalized = _normalizeLocalUrl(value);
+    if (normalized.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastKnownApiBaseUrlKey, normalized);
+  }
+
   static Future<String> resolveReachableApiBaseUrl() async {
-    for (final candidate in candidateApiBaseUrls) {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = _normalizeLocalUrl(
+      prefs.getString(_lastKnownApiBaseUrlKey) ?? '',
+    );
+    final candidates = <String>[
+      if (stored.isNotEmpty) stored,
+      ...candidateApiBaseUrls,
+    ];
+    final seen = <String>{};
+
+    for (final candidate in candidates.where((url) => seen.add(url))) {
       try {
         final response = await Dio(
           BaseOptions(
@@ -68,19 +92,20 @@ class AppConfig {
           ),
         ).get('/health');
         if (response.statusCode == 200) {
+          await rememberReachableApiBaseUrl(candidate);
           return candidate;
         }
       } catch (_) {
         continue;
       }
     }
-    return apiBaseUrl;
+    return candidates.isNotEmpty ? candidates.first : apiBaseUrl;
   }
 
   static String get backendConnectionHelp {
     if (kIsWeb) return 'Verify the gateway is running on http://127.0.0.1:8001.';
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'Use http://127.0.0.1:8001 or the laptop LAN URL, not https, and keep the port as :8001. The app now also tries a LAN fallback automatically.';
+      return 'On a physical Android phone, http://127.0.0.1:8001 only works when USB adb reverse is active. Otherwise use the laptop LAN URL on the same Wi-Fi and keep port :8001.';
     }
     return 'Verify the gateway is reachable on http://127.0.0.1:8001.';
   }

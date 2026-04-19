@@ -15,6 +15,7 @@ import '../config.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../offline_queue.dart';
+import '../widgets/clarification_options.dart';
 import 'c_home_screen.dart' show CColors;
 import 'projects_screen.dart' show kSelectedProjectKey;
 
@@ -84,17 +85,21 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
   }
 
   void _chooseClarificationOption(String option) {
-    final filtered = _materials
-        .where((material) => itemMatchesClarificationOption(material, option))
-        .toList();
-    if (filtered.isEmpty) return;
+    final resolved = applyClarificationSelection(
+      option: option,
+      items: _materials,
+      currentNote: _observation,
+    );
 
     setState(() {
-      _materials = _withStableKeys(filtered);
+      _materials = _withStableKeys(
+        List<Map<String, dynamic>>.from(
+          (resolved['items'] as List?) ?? const [],
+        ),
+      );
       _clarificationQuestion = null;
       _clarificationOptions = const [];
-      _observation =
-          'Using $option. The exact supplier and model will be selected later during scoring.';
+      _observation = resolved['statusNote'] as String?;
     });
   }
 
@@ -204,20 +209,15 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
 
       if (mounted) {
         final resolvedLocal = _resolveMaterialsForReview(
-          (local['raw_text'] as String?) ?? localSummary ?? '',
+          localItems.map((item) => (item['name'] ?? item['material'] ?? '').toString()).join(' '),
           localItems,
           observation: localSummary,
         );
         setState(() {
-          _materials = List<Map<String, dynamic>>.from(
-            (resolvedLocal['materials'] as List?) ?? const [],
-          );
+          _materials = List<Map<String, dynamic>>.from((resolvedLocal['materials'] as List?) ?? const []);
+          _clarificationQuestion = resolvedLocal['clarificationQuestion'] as String?;
+          _clarificationOptions = List<String>.from((resolvedLocal['clarificationOptions'] as List?) ?? const []);
           _observation = resolvedLocal['observation'] as String?;
-          _clarificationQuestion =
-              resolvedLocal['clarificationQuestion'] as String?;
-          _clarificationOptions = List<String>.from(
-            (resolvedLocal['clarificationOptions'] as List?) ?? const [],
-          );
         });
       }
 
@@ -234,20 +234,15 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
         );
         if (mounted && ocrItems.isNotEmpty) {
           final resolvedOcr = _resolveMaterialsForReview(
-            (ocrRes['raw_text'] as String?) ?? 'catalog image request',
+            ocrItems.map((item) => (item['name'] ?? item['material'] ?? '').toString()).join(' '),
             ocrItems,
             observation: 'AI OCR detected ${ocrItems.length} likely item(s).',
           );
           setState(() {
-            _materials = List<Map<String, dynamic>>.from(
-              (resolvedOcr['materials'] as List?) ?? const [],
-            );
+            _materials = List<Map<String, dynamic>>.from((resolvedOcr['materials'] as List?) ?? const []);
+            _clarificationQuestion = resolvedOcr['clarificationQuestion'] as String?;
+            _clarificationOptions = List<String>.from((resolvedOcr['clarificationOptions'] as List?) ?? const []);
             _observation = resolvedOcr['observation'] as String?;
-            _clarificationQuestion =
-                resolvedOcr['clarificationQuestion'] as String?;
-            _clarificationOptions = List<String>.from(
-              (resolvedOcr['clarificationOptions'] as List?) ?? const [],
-            );
           });
         }
       } catch (_) {}
@@ -289,7 +284,7 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
           final isConstructionRelated = !looksNonMaterial;
 
           final resolvedMaterials = _resolveMaterialsForReview(
-            observationText ?? recommendations.join(' '),
+            detectedItems.map((item) => (item['name'] ?? item['material'] ?? '').toString()).join(' '),
             isConstructionRelated ? groundedItems : <Map<String, dynamic>>[],
             observation: observationText ??
                 (isConstructionRelated
@@ -297,15 +292,10 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
                     : 'This looks like something other than a construction material. Please photograph the actual item, packaging, pallet label, or delivery note.'),
           );
           setState(() {
-            _materials = List<Map<String, dynamic>>.from(
-              (resolvedMaterials['materials'] as List?) ?? const [],
-            );
+            _materials = List<Map<String, dynamic>>.from((resolvedMaterials['materials'] as List?) ?? const []);
+            _clarificationQuestion = resolvedMaterials['clarificationQuestion'] as String?;
+            _clarificationOptions = List<String>.from((resolvedMaterials['clarificationOptions'] as List?) ?? const []);
             _observation = resolvedMaterials['observation'] as String?;
-            _clarificationQuestion =
-                resolvedMaterials['clarificationQuestion'] as String?;
-            _clarificationOptions = List<String>.from(
-              (resolvedMaterials['clarificationOptions'] as List?) ?? const [],
-            );
             _nonMaterialDetected = looksNonMaterial;
             _isConstructionRelated = isConstructionRelated;
             _recommendations = recommendations;
@@ -381,16 +371,19 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
         );
         return;
       }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '$added request item${added == 1 ? '' : 's'} added for review. Final supplier selection will happen automatically during scoring.',
-          ),
-          backgroundColor: CColors.green,
-        ),
+      // Checkout immediately
+      final order = await AppScope.api.checkout(
+        projectId: projectId,
+        idempotencyKey: const Uuid().v4(),
+        notes: 'Photo order – ${_materials.length} items detected by AI',
       );
-      context.go('/cart');
+      if (!mounted) return;
+      final orderId = order['id'] as String?;
+      if (orderId != null && orderId.isNotEmpty) {
+        context.go('/c-order/$orderId', extra: order);
+      } else {
+        context.go('/c-orders');
+      }
     } catch (e) {
       try {
         final task = List.generate(_materials.length, (i) {
@@ -658,36 +651,11 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
           Container(
             width: double.infinity,
             margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE1E7EE)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _clarificationQuestion!,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: CColors.tealDark,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _clarificationOptions
-                      .map((option) => ActionChip(
-                            label: Text(option),
-                            onPressed: () => _chooseClarificationOption(option),
-                            backgroundColor: CColors.tealLighter,
-                          ))
-                      .toList(),
-                ),
-              ],
+            child: ClarificationOptionsCard(
+              question: _clarificationQuestion!,
+              options: _clarificationOptions,
+              onSelected: _chooseClarificationOption,
+              helperText: 'Tap the kind you need. The backend will choose the exact supplier/item later.',
             ),
           ),
         // Materials list with glove-friendly quantity controls
@@ -787,10 +755,10 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
                             color: Colors.white, strokeWidth: 3))
                     : const Icon(Icons.send_rounded, size: 28),
                 label: Text(_ordering
-                    ? 'Preparing…'
+                    ? 'Ordering…'
                     : _clarificationOptions.isNotEmpty
                         ? 'Choose a type above first'
-                        : 'Review $orderableCount Request${orderableCount == 1 ? '' : 's'}'),
+                        : 'Order $orderableCount Items'),
               ),
             ),
           ),
@@ -815,8 +783,7 @@ class _MaterialCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (material['display_name'] as String?) ??
-        (material['name'] as String?) ??
+    final name = (material['name'] as String?) ??
         (material['material'] as String?) ??
         '—';
     final matchedName = material['matched_name'] as String?;
@@ -824,7 +791,6 @@ class _MaterialCard extends StatelessWidget {
     final urgency = (material['urgency'] as String?) ?? '';
     final hasProduct = (material['product_id'] as String?)?.isNotEmpty == true;
     final price = material['unit_price'];
-    final offerCount = parseFlexibleInt(material['catalog_offer_count'], fallback: 1);
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 180),
@@ -870,14 +836,7 @@ class _MaterialCard extends StatelessWidget {
                   Text(cat,
                       style:
                           const TextStyle(color: Colors.black45, fontSize: 12)),
-                if (offerCount > 1)
-                  Text(
-                      '$offerCount similar offers • final choice later',
-                      style: const TextStyle(
-                          color: CColors.teal,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600))
-                else if (price != null)
+                if (price != null)
                   Text(
                       '${(price is num ? price.toStringAsFixed(2) : price)} / Stk',
                       style: const TextStyle(

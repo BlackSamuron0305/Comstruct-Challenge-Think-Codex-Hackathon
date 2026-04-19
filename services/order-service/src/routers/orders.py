@@ -46,6 +46,13 @@ def _as_decimal(value: object | None, default: Decimal = Decimal("0")) -> Decima
         return default
 
 
+async def _prepare_order_response(db: AsyncSession, order: Order) -> Order:
+    await db.refresh(order)
+    await db.refresh(order, attribute_names=["items"])
+    await _attach_foreman_names(db, order)
+    return order
+
+
 async def _attach_supplier_recommendations(lines: list[dict]) -> list[dict]:
     enriched: list[dict] = []
     for line in lines:
@@ -188,7 +195,7 @@ async def checkout(
         ))
     order.total_amount = total
     await db.flush()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    await db.refresh(order, attribute_names=["items"])
 
     # Approval evaluation
     engine = ApprovalEngine(db)
@@ -252,11 +259,10 @@ async def checkout(
             )
 
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    order = await _prepare_order_response(db, order)
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await cart_clear(user.id)
-    await _attach_foreman_names(db, order)
     return order
 
 
@@ -289,14 +295,13 @@ async def approve_order(
         payload={"approver_id": str(user.id)},
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    order = await _prepare_order_response(db, order)
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_approved", {
         "order_id": str(order.id),
         "foreman_id": str(order.foreman_id),
     })
-    await _attach_foreman_names(db, order)
     return order
 
 
@@ -326,7 +331,7 @@ async def reject_order(
         payload={"reason": body.reason},
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    order = await _prepare_order_response(db, order)
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_rejected", {
@@ -334,7 +339,6 @@ async def reject_order(
         "foreman_id": str(order.foreman_id),
         "reason": body.reason,
     })
-    await _attach_foreman_names(db, order)
     return order
 
 
@@ -353,7 +357,7 @@ async def select_supplier_option(
     if order.status not in {OrderStatus.DRAFT.value, OrderStatus.PENDING_APPROVAL.value}:
         raise HTTPException(409, "Supplier options can only be changed for draft or pending approval orders")
 
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    await db.refresh(order, attribute_names=["items"])
     item = next((entry for entry in order.items if entry.id == body.order_item_id), None)
     if item is None:
         raise HTTPException(404, "Order item not found")
@@ -399,8 +403,7 @@ async def select_supplier_option(
         },
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
-    await _attach_foreman_names(db, order)
+    order = await _prepare_order_response(db, order)
     return order
 
 
@@ -426,10 +429,9 @@ async def mark_in_transit(
         action="order.in_transit", entity_type="order", entity_id=order.id,
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    order = await _prepare_order_response(db, order)
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
-    await _attach_foreman_names(db, order)
     return order
 
 
@@ -454,7 +456,7 @@ async def mark_delivered(
         action="order.delivered", entity_type="order", entity_id=order.id,
     )
     await db.commit()
-    await db.refresh(order, attribute_names=["items", "updated_at"])
+    order = await _prepare_order_response(db, order)
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await notify_event("order_delivered", {

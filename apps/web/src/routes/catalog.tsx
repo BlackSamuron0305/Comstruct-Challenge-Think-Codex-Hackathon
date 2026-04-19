@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles, Upload } from "lucide-react";
+import { Globe, Loader2, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
@@ -18,27 +18,27 @@ export const Route = createFileRoute("/catalog")({
 });
 
 type PdfMeta = {
-  supplier_name?: string | null;
-  document_date?: string | null;
-  document_number?: string | null;
-  valid_until?: string | null;
-  delivery_date?: string | null;
-  total_amount?: number | null;
-  vat_rate?: number | null;
-  vat_amount?: number | null;
-  total_with_vat?: number | null;
-  weight_kg?: number | null;
-  payment_terms?: string | null;
-  currency?: string | null;
+  supplier_name: string | null;
+  document_date: string | null;
+  document_number: string | null;
+  valid_until: string | null;
+  delivery_date: string | null;
+  total_amount: number | null;
+  vat_rate: number | null;
+  vat_amount: number | null;
+  total_with_vat: number | null;
+  weight_kg: number | null;
+  payment_terms: string | null;
+  currency: string | null;
 };
 
 type PreviewPayload = {
   status: string;
   rows_in: number;
   preview_rows: Array<Record<string, unknown>>;
+  prepared_rows?: Array<Record<string, unknown>>;
   source_columns?: Array<Record<string, unknown>>;
   canonical_fields?: string[];
-  pdf_metadata?: PdfMeta | null;
   mapping?: {
     warnings?: string[];
     mappings?: Array<{
@@ -48,6 +48,13 @@ type PreviewPayload = {
       reason?: string;
     }>;
   };
+  delta_summary?: {
+    new_entries?: number;
+    price_changes?: number;
+    unchanged?: number;
+  };
+  /** null for CSV/Excel uploads, populated for PDF uploads */
+  pdf_metadata?: PdfMeta | null;
 };
 
 type ImportResult = {
@@ -55,6 +62,7 @@ type ImportResult = {
   supplier_id?: string;
   rows_in?: number;
   c_materials?: number;
+  embedding_status?: string;
   excluded?: number;
   excluded_count?: number;
   excluded_samples?: Array<{
@@ -78,22 +86,121 @@ type CatalogRow = {
   mustOrder: boolean;
   discountLabel: string;
   specialInfo: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   status: "mapped" | "needs-review";
   standard: boolean;
   tradeFit: string;
   variant: "Good" | "Better" | "Best";
 };
 
-type SupplierChannel = "API/PunchOut" | "Excel/PDF upload";
+type SupplierChannel = "API supplier" | "Document supplier" | "API + Document supplier";
+type SupplierSourceMode = "document" | "api" | "both";
+type PreviewRowStatus = "new" | "changed" | "existing" | "unknown";
+
+function getSourceModeFromSupplier(
+  supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">,
+): SupplierSourceMode {
+  const supportsApi = Boolean(supplier.supports_api);
+  const supportsDocuments = supplier.supports_documents !== false;
+
+  if (supportsApi && supportsDocuments) return "both";
+  if (supportsApi) return "api";
+  return "document";
+}
+
+function getChannelForSupplier(
+  supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">,
+): SupplierChannel {
+  const mode = getSourceModeFromSupplier(supplier);
+  if (mode === "both") return "API + Document supplier";
+  if (mode === "api") return "API supplier";
+  return "Document supplier";
+}
+
+function getSourcePayload(mode: SupplierSourceMode) {
+  return {
+    supports_api: mode === "api" || mode === "both",
+    supports_documents: mode === "document" || mode === "both",
+  };
+}
+
+function supplierSupportsMode(
+  supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">,
+  mode: "file" | "api",
+): boolean {
+  return mode === "api" ? Boolean(supplier.supports_api) : supplier.supports_documents !== false;
+}
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "The upload could not be processed.";
 }
 
+const SPECIAL_INFO_PRIORITY = [
+  "is_alternative",
+  "npk_code",
+  "dimensions",
+  "quantity",
+  "list_price",
+  "line_total",
+  "rabattgruppe",
+  "alternative_to_pos",
+  "notes",
+  "article_ref",
+  "manufacturer_ref",
+] as const;
+
+const SPECIAL_INFO_LABELS: Record<string, string> = {
+  npk_code: "NPK",
+  dimensions: "Size",
+  quantity: "Qty",
+  list_price: "List",
+  line_total: "Total",
+  rabattgruppe: "Discount group",
+  alternative_to_pos: "Alt. position",
+  article_ref: "Article",
+  manufacturer_ref: "Reference",
+  notes: "Notes",
+};
+
+function formatSpecialInfo(specialInfo?: Record<string, unknown> | null): string {
+  if (!specialInfo || typeof specialInfo !== "object") return "No extra info";
+
+  const entries = Object.entries(specialInfo)
+    .filter(([, value]) => {
+      if (value === null || value === undefined) return false;
+      const text = String(value).trim();
+      return text !== "" && text.toLowerCase() !== "null" && text.toLowerCase() !== "none";
+    })
+    .sort(([left], [right]) => {
+      const leftIndex = SPECIAL_INFO_PRIORITY.indexOf(left as typeof SPECIAL_INFO_PRIORITY[number]);
+      const rightIndex = SPECIAL_INFO_PRIORITY.indexOf(right as typeof SPECIAL_INFO_PRIORITY[number]);
+      return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+    })
+    .map(([key, value]) => {
+      const text = String(value).trim();
+      if (key === "is_alternative") return value ? "Alternative item" : null;
+      if (key === "npk_code") return `NPK ${text}`;
+      if (key === "dimensions") return `Size ${text}`;
+      if (key === "quantity") return `Qty ${text}`;
+      if (key === "list_price") return `List ${text}`;
+      if (key === "line_total") return `Total ${text}`;
+      const label = SPECIAL_INFO_LABELS[key] ?? key.replace(/_/g, " ");
+      return `${label}: ${text}`;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  if (entries.length === 0) return "No extra info";
+
+  const visible = entries.slice(0, 4);
+  return entries.length > 4 ? `${visible.join(" · ")} · +${entries.length - 4} more` : visible.join(" · ");
+}
+
 function renderPreviewValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object" && !Array.isArray(value)) return formatSpecialInfo(value as Record<string, unknown>);
+  if (Array.isArray(value)) return value.join(", ");
   return String(value);
 }
 
@@ -113,6 +220,14 @@ function formatFileSize(bytes?: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getPreviewRowStatus(row: Record<string, unknown>): PreviewRowStatus {
+  const raw = String(row.import_status ?? row.delta_type ?? "").toLowerCase();
+  if (raw.includes("new")) return "new";
+  if (raw.includes("price_change") || raw.includes("changed")) return "changed";
+  if (raw.includes("unchanged") || raw.includes("existing")) return "existing";
+  return "unknown";
 }
 
 function findSampleValue(
@@ -170,6 +285,7 @@ function Catalog() {
   const [selectedTrade, setSelectedTrade] = useState<string>("all");
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [sortMode, setSortMode] = useState<string>("latest");
   const [standardsOnly, setStandardsOnly] = useState<boolean>(false);
   const [lastImportResult, setLastImportResult] = useState<ImportResult | null>(null);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
@@ -177,6 +293,11 @@ function Catalog() {
   const [draftSupplierContact, setDraftSupplierContact] = useState("");
   const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
   const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
+  const [draftSupplierSourceMode, setDraftSupplierSourceMode] = useState<SupplierSourceMode>("document");
+  const [sourceMode, setSourceMode] = useState<"file" | "api">("file");
+  const [apiUrl, setApiUrl] = useState<string>("");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [apiKeyHeader, setApiKeyHeader] = useState<string>("Authorization");
 
   useEffect(() => {
     if (!selectedFile) {
@@ -192,6 +313,8 @@ function Catalog() {
   function resetImportDraft() {
     setSelectedFile(null);
     setFileName("");
+    setApiUrl("");
+    setApiKey("");
     setSelectedSupplierId("");
     setMappingOverrides({});
     setApprovedMappings({});
@@ -204,6 +327,7 @@ function Catalog() {
     setDraftSupplierContact("");
     setDraftSupplierEmail("");
     setDraftSupplierPhone("");
+    setDraftSupplierSourceMode(sourceMode === "api" ? "api" : "document");
   }
 
   function handleSupplierSelect(nextValue: string) {
@@ -225,6 +349,7 @@ function Catalog() {
       contact_name: draftSupplierContact.trim() || undefined,
       email: draftSupplierEmail.trim() || undefined,
       phone: draftSupplierPhone.trim() || undefined,
+      ...getSourcePayload(draftSupplierSourceMode),
     });
   }
 
@@ -239,8 +364,14 @@ function Catalog() {
   });
 
   const createSupplierMutation = useMutation({
-    mutationFn: (payload: { name: string; contact_name?: string; email?: string; phone?: string }) =>
-      api.post<SupplierRecord>("/api/suppliers", payload),
+    mutationFn: (payload: {
+      name: string;
+      contact_name?: string;
+      email?: string;
+      phone?: string;
+      supports_api: boolean;
+      supports_documents: boolean;
+    }) => api.post<SupplierRecord>("/api/suppliers", payload),
     onSuccess: (created) => {
       setSelectedSupplierId(created.id);
       setShowAddSupplier(false);
@@ -258,17 +389,44 @@ function Catalog() {
     return suppliers
       .map((supplier) => ({
         ...supplier,
-        channel: products.some((product) => product.supplier_id === supplier.id)
-          ? ("API/PunchOut" as SupplierChannel)
-          : ("Excel/PDF upload" as SupplierChannel),
+        channel: getChannelForSupplier(supplier),
+        supportsApi: Boolean(supplier.supports_api),
+        supportsDocuments: supplier.supports_documents !== false,
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
-  }, [products, suppliers]);
+  }, [suppliers]);
+
+  const availableSupplierOptions = useMemo(
+    () => supplierOptions.filter((supplier) => supplierSupportsMode(supplier, sourceMode)),
+    [sourceMode, supplierOptions],
+  );
+
+  useEffect(() => {
+    if (
+      selectedSupplierId
+      && !availableSupplierOptions.some((supplier) => supplier.id === selectedSupplierId)
+    ) {
+      setSelectedSupplierId("");
+    }
+  }, [availableSupplierOptions, selectedSupplierId]);
 
   const previewMutation = useMutation({
-    mutationFn: ({ file, overrides }: { file: File; overrides?: Record<string, string> }) => {
+    mutationFn: (params: { file?: File | null; overrides?: Record<string, string> } = {}) => {
+      if (sourceMode === "api") {
+        if (!apiUrl.trim()) throw new Error("Enter a supplier API URL first.");
+        return api.post<PreviewPayload>("/api/ingest/preview-url", {
+          url: apiUrl.trim(),
+          supplier_id: selectedSupplierId || null,
+          api_key: apiKey.trim() || null,
+          api_key_header: apiKeyHeader.trim() || "Authorization",
+        });
+      }
+      const { file, overrides } = params;
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", file as Blob);
+      if (selectedSupplierId) {
+        formData.append("supplier_id", selectedSupplierId);
+      }
       const overridePayload = toMappingOverridePayload(overrides ?? {});
       if (overridePayload.length > 0) {
         formData.append("mapping_overrides", JSON.stringify(overridePayload));
@@ -277,13 +435,7 @@ function Catalog() {
     },
     onSuccess: (data) => {
       if (Object.keys(mappingOverrides).length === 0 && data.mapping?.mappings?.length) {
-        const overrides = Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, entry.target_field ?? ""]));
-        setMappingOverrides(overrides);
-        // Auto-approve all for PDF LLM extraction (source_columns is empty — fields are already canonical)
-        const isPdf = (data.source_columns?.length ?? 0) === 0 && (data.preview_rows?.length ?? 0) > 0;
-        if (isPdf) {
-          setApprovedMappings(Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, true])));
-        }
+        setMappingOverrides(Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, entry.target_field ?? ""])));
       }
     },
     onError: (error) => toast.error(toErrorMessage(error)),
@@ -291,8 +443,17 @@ function Catalog() {
 
   const importMutation = useMutation({
     mutationFn: () => {
-      if (!selectedFile) throw new Error("Choose a file first");
       if (!selectedSupplierId) throw new Error("Choose a supplier first");
+      if (sourceMode === "api") {
+        const preparedRows = previewMutation.data?.prepared_rows ?? [];
+        if (!preparedRows.length) throw new Error("No rows available to import. Run extraction first.");
+        return api.post<ImportResult>("/api/ingest/rows", {
+          supplier_id: selectedSupplierId,
+          rows: preparedRows,
+          default_currency: "CHF",
+        });
+      }
+      if (!selectedFile) throw new Error("Choose a file first");
       const formData = new FormData();
       formData.append("supplier_id", selectedSupplierId);
       formData.append("file", selectedFile);
@@ -301,16 +462,25 @@ function Catalog() {
       if (overridePayload.length > 0) {
         formData.append("mapping_overrides", JSON.stringify(overridePayload));
       }
+      const preparedRows = previewMutation.data?.prepared_rows ?? [];
+      if (preparedRows.length > 0) {
+        formData.append("prepared_rows", JSON.stringify(preparedRows));
+      }
       return api.post<ImportResult>("/api/ingest/supplier-file", formData);
     },
     onSuccess: (data) => {
       setLastImportResult(data);
 
       if (data.status === "ok") {
-        toast.success(`Imported ${data.c_materials ?? 0} C-material records`);
+        toast.success(
+          `Imported ${data.c_materials ?? 0} C-material records${data.embedding_status === "scheduled" ? " · search enrichment continues in background" : ""}`,
+        );
+        setSortMode("latest");
         previewMutation.reset();
         setSelectedFile(null);
         setFileName("");
+        setApiUrl("");
+        setApiKey("");
         setMappingOverrides({});
         queryClient.invalidateQueries({ queryKey: ["products"] });
         return;
@@ -366,9 +536,9 @@ function Catalog() {
           ? `${Number(product.bulk_discount_pct ?? 0)}% bulk from ${Number(product.bulk_discount_threshold ?? 0) || "—"}`
           : null,
       ].filter(Boolean).join(" · ") || "No discount",
-      specialInfo: Object.entries(product.special_info ?? {})
-        .map(([key, value]) => `${key}: ${String(value)}`)
-        .join(" · ") || "No extra info",
+      specialInfo: formatSpecialInfo(product.special_info),
+      createdAt: product.created_at ?? null,
+      updatedAt: product.updated_at ?? null,
       status: product.is_active === false || !product.category ? "needs-review" as const : "mapped" as const,
     }));
   }, [products, supplierOptions]);
@@ -379,7 +549,7 @@ function Catalog() {
       return acc;
     }, {});
 
-    return baseRows.map((row) => {
+    const filtered = baseRows.map((row) => {
       const bucket = byGroup[row.group] ?? [row];
       const index = bucket.findIndex((candidate) => candidate.sku === row.sku);
       const tradeKey = selectedTrade === "all" ? "construction" : selectedTrade;
@@ -420,13 +590,25 @@ function Catalog() {
       const queryOk = !query || haystack.includes(query);
       return tradeOk && standardsOk && supplierOk && queryOk;
     });
-  }, [baseRows, selectedTrade, selectedSupplierFilter, standardsOnly, searchQuery]);
+
+    return filtered.sort((left, right) => {
+      if (sortMode === "latest") {
+        return (Date.parse(right.createdAt ?? "") || 0) - (Date.parse(left.createdAt ?? "") || 0);
+      }
+      if (sortMode === "price") {
+        return left.price - right.price;
+      }
+      if (sortMode === "eta") {
+        return (left.expectedDelivery ?? Number.POSITIVE_INFINITY) - (right.expectedDelivery ?? Number.POSITIVE_INFINITY);
+      }
+      return left.name.localeCompare(right.name);
+    });
+  }, [baseRows, selectedTrade, selectedSupplierFilter, standardsOnly, searchQuery, sortMode]);
 
   const previewRows = previewMutation.data?.preview_rows ?? [];
+  const preparedRows = previewMutation.data?.prepared_rows ?? [];
   const previewWarnings = previewMutation.data?.mapping?.warnings ?? [];
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
-  const pdfMeta = previewMutation.data?.pdf_metadata ?? null;
-  const isPdfMode = (previewMutation.data?.source_columns?.length ?? 0) === 0 && previewRows.length > 0;
   const reviewEntries = mappedColumns.map((entry) => {
     const targetField = mappingOverrides[entry.source_column] ?? entry.target_field ?? "";
     return {
@@ -436,11 +618,15 @@ function Catalog() {
       sampleValue: renderPreviewValue(findSampleValue(previewRows, entry.source_column, targetField)),
     };
   });
-  const approvedCount = reviewEntries.filter((entry) => entry.approved).length;
-  const previewIssues = reviewEntries.filter((entry) => !entry.targetField).length;
-  const pendingApprovalCount = reviewEntries.filter((entry) => entry.targetField && !entry.approved).length;
+  const preparedRowCount = preparedRows.length;
+  const deltaSummary = previewMutation.data?.delta_summary ?? {};
+  const autoApprovedImport = reviewEntries.length === 0 && preparedRowCount > 0;
+  const extractedFieldCount = reviewEntries.length > 0 ? reviewEntries.length : preparedRowCount;
+  const approvedCount = autoApprovedImport ? preparedRowCount : reviewEntries.filter((entry) => entry.approved).length;
+  const previewIssues = autoApprovedImport ? 0 : reviewEntries.filter((entry) => !entry.targetField).length;
+  const pendingApprovalCount = autoApprovedImport ? 0 : reviewEntries.filter((entry) => entry.targetField && !entry.approved).length;
   const needsReview = previewMutation.data
-    ? previewIssues + pendingApprovalCount
+    ? (autoApprovedImport ? 0 : previewIssues + pendingApprovalCount)
     : rows.filter((item) => item.status === "needs-review").length;
   const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
   const hasLiveWarning = productsError || suppliersError;
@@ -452,30 +638,45 @@ function Catalog() {
         ? "PDF commercial document"
         : "Catalog or price list";
   const selectedSupplierName = supplierOptions.find((supplier) => supplier.id === selectedSupplierId)?.name ?? "";
-  const hasActiveUpload = Boolean(selectedFile || previewMutation.isPending || previewMutation.data);
+  const noEligibleSupplier = availableSupplierOptions.length === 0;
+  const hasActiveUpload = Boolean(
+    (sourceMode === "file" ? selectedFile : apiUrl.trim()) || previewMutation.isPending || previewMutation.data,
+  );
   const showReviewWorkspace = Boolean(previewMutation.data);
-  const readyToExtract = Boolean(selectedFile && selectedSupplierId && !previewMutation.isPending);
-  const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
+  const readyToExtract = sourceMode === "api"
+    ? Boolean(apiUrl.trim() && selectedSupplierId && !previewMutation.isPending)
+    : Boolean(selectedFile && selectedSupplierId && !previewMutation.isPending);
+  const previewReady = sourceMode === "api"
+    ? Boolean(apiUrl.trim() && previewMutation.data && !previewMutation.isPending)
+    : Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
   const canImport = Boolean(
-    selectedFile
+    (sourceMode === "file" ? selectedFile : apiUrl.trim())
       && selectedSupplierId
       && previewReady
-      && reviewEntries.length > 0
-      && previewIssues === 0
-      && pendingApprovalCount === 0
+      && (autoApprovedImport || (reviewEntries.length > 0 && previewIssues === 0 && pendingApprovalCount === 0))
       && !importMutation.isPending,
   );
-  const importBlockedReason = !selectedFile
-    ? "Upload a supplier file to begin."
-    : !selectedSupplierId
-      ? "Choose the supplier that owns this document."
-      : !previewReady
+  const importBlockedReason = noEligibleSupplier
+    ? (sourceMode === "file"
+      ? "No document-enabled suppliers are available. Add one or change supplier settings."
+      : "No API-enabled suppliers are available. Add one or change supplier settings.")
+    : (sourceMode === "file" ? !selectedFile : !apiUrl.trim())
+      ? (sourceMode === "file" ? "Upload a supplier file to begin." : "Enter a supplier API URL to begin.")
+      : !selectedSupplierId
+        ? (sourceMode === "file"
+          ? "Choose a supplier that supports document uploads."
+          : "Choose a supplier that supports API sync.")
+        : !previewReady
         ? "Click Extract with AI to generate the review output."
-        : previewIssues > 0
-          ? "Choose a target field for each extracted value."
-          : pendingApprovalCount > 0
-            ? "Approve the extracted fields manually or use Auto approve all."
-            : null;
+        : autoApprovedImport
+          ? null
+          : reviewEntries.length === 0
+            ? "No extracted rows are ready yet."
+            : previewIssues > 0
+              ? "Choose a target field for each extracted value."
+              : pendingApprovalCount > 0
+                ? "Approve the extracted fields manually or use Auto approve all."
+                : null;
 
   if (productsLoading && suppliersLoading && products.length === 0 && suppliers.length === 0) {
     return (
@@ -509,28 +710,11 @@ function Catalog() {
         </div>
       )}
       <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
-        <div className="font-medium">Live catalog records</div>
-        <p className="mt-1 text-muted-foreground">
-          All products shown below are loaded from the backend catalog database and supplier imports.
-        </p>
-      </div>
-
-      <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
-        <div className="font-medium">Documents that work best</div>
-        <div className="mt-2 grid gap-2 md:grid-cols-2 text-muted-foreground">
-          <div>• supplier quotes and offers with article numbers</div>
-          <div>• Excel or CSV price lists</div>
-          <div>• framework contracts with quantity breaks</div>
-          <div>• PDFs that show clear tables or line items</div>
-        </div>
-      </div>
-
-      <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
         <div className="font-medium">Import checklist</div>
         <div className="mt-3 grid gap-2 md:grid-cols-4">
-          <div className={["rounded-md border px-3 py-2", selectedFile ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
+          <div className={["rounded-md border px-3 py-2", (sourceMode === "file" ? selectedFile : apiUrl.trim()) ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 1</div>
-            <div className="mt-1 font-medium">Upload the document</div>
+            <div className="mt-1 font-medium">{sourceMode === "api" ? "Enter API URL" : "Upload the document"}</div>
           </div>
           <div className={["rounded-md border px-3 py-2", selectedSupplierId ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
             <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 2</div>
@@ -548,23 +732,82 @@ function Catalog() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <label className="rounded-lg border border-dashed border-border bg-card p-5 cursor-pointer hover:bg-accent/40 transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Upload className="h-4 w-4" /></div>
-            <div>
-              <div className="font-medium text-sm">Upload document</div>
-              <div className="text-xs text-muted-foreground">{fileName || "Select PDF, CSV, or Excel to start review"}</div>
-            </div>
+        <div className="rounded-lg border border-border bg-card p-5">
+          {/* Source mode toggle */}
+          <div className="flex gap-1 rounded-lg bg-muted p-1 mb-4">
+            <button
+              type="button"
+              onClick={() => { setSourceMode("file"); previewMutation.reset(); }}
+              className={["flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors", sourceMode === "file" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"].join(" ")}
+            >
+              <Upload className="h-3.5 w-3.5" /> Upload file
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSourceMode("api"); previewMutation.reset(); }}
+              className={["flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors", sourceMode === "api" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"].join(" ")}
+            >
+              <Globe className="h-3.5 w-3.5" /> API / URL
+            </button>
           </div>
-          <div className="mt-3 text-xs text-muted-foreground">Supported: PDF, Excel, CSV • best with line items, supplier names, and prices.</div>
-          {selectedFile && (
-            <div className="mt-3 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
-              <div><span className="font-medium text-foreground">Current file:</span> {selectedFile.name}</div>
-              <div className="mt-1">{documentType} • {formatFileSize(selectedFile.size)}</div>
+
+          {sourceMode === "file" ? (
+            <label className="block cursor-pointer">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Upload className="h-4 w-4" /></div>
+                <div>
+                  <div className="font-medium text-sm">Upload document</div>
+                  <div className="text-xs text-muted-foreground">{fileName || "Select a file to start review"}</div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">Supported: PDF, DOCX, Excel (.xlsx/.xls/.ods), CSV, TSV</div>
+              {selectedFile && (
+                <div className="mt-3 rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                  <div><span className="font-medium text-foreground">Current file:</span> {selectedFile.name}</div>
+                  <div className="mt-1">{documentType} • {formatFileSize(selectedFile.size)}</div>
+                </div>
+              )}
+              <input type="file" accept=".csv,.tsv,.xlsx,.xls,.ods,.pdf,.docx,.doc" className="hidden" onChange={handleFileChange} />
+            </label>
+          ) : (
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Globe className="h-4 w-4" /></div>
+                <div>
+                  <div className="font-medium text-sm">Supplier API or catalog URL</div>
+                  <div className="text-xs text-muted-foreground">JSON, CSV, Excel, or PDF download link</div>
+                </div>
+              </div>
+              <input
+                type="url"
+                value={apiUrl}
+                onChange={(e) => { setApiUrl(e.target.value); previewMutation.reset(); }}
+                placeholder="https://api.supplier.com/catalog"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="API key (optional)"
+                className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground shrink-0">Key header:</span>
+                <input
+                  type="text"
+                  value={apiKeyHeader}
+                  onChange={(e) => setApiKeyHeader(e.target.value)}
+                  placeholder="Authorization"
+                  className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs"
+                />
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                The API key is sent as <code className="font-mono">{apiKeyHeader}: Bearer &lt;key&gt;</code> when the header is Authorization, otherwise as a raw value.
+              </div>
             </div>
           )}
-          <input type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
-        </label>
+        </div>
 
         <div className="rounded-lg border border-dashed border-border bg-card p-5">
           <div className="flex items-center gap-3">
@@ -578,28 +821,35 @@ function Catalog() {
               >
                 <option value="">Choose supplier</option>
                 <option value="__new__">＋ Add new supplier…</option>
-                {supplierOptions.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                {availableSupplierOptions.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name} · {supplier.channel}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
           <button
-            className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             type="button"
             disabled={!readyToExtract}
             onClick={() => {
-              if (selectedFile) {
+              if (sourceMode === "api") {
+                previewMutation.mutate({});
+              } else if (selectedFile) {
                 previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides });
               }
             }}
           >
+            {previewMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {previewMutation.isPending ? "Extracting…" : "Extract with AI"}
           </button>
           <div className="mt-2 text-xs text-muted-foreground">
             {selectedSupplierName
               ? `Assigned supplier: ${selectedSupplierName}`
-              : "Choose the supplier that owns this document, or add one first."}
+              : sourceMode === "file"
+                ? "Only document-enabled or dual-mode suppliers can be chosen here."
+                : "Only API-enabled or dual-mode suppliers can be chosen here."}
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
             {importBlockedReason ?? "Extraction is reviewed and ready for import."}
@@ -607,10 +857,35 @@ function Catalog() {
         </div>
       </div>
 
+      {(previewMutation.isPending || importMutation.isPending) && (
+        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-full bg-primary/10 p-2 text-primary">
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </div>
+            <div className="flex-1">
+              <div className="font-medium">
+                {previewMutation.isPending ? "Extracting the supplier document" : "Importing approved catalogue rows"}
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {previewMutation.isPending
+                  ? "Reading the file, detecting columns, and preparing the review workspace."
+                  : "Saving the approved items now. Search enrichment continues in the background so the import finishes faster."}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <span className="h-1.5 w-14 animate-pulse rounded-full bg-primary/70" />
+                <span className="h-1.5 w-10 animate-pulse rounded-full bg-primary/50 [animation-delay:150ms]" />
+                <span className="h-1.5 w-8 animate-pulse rounded-full bg-primary/30 [animation-delay:300ms]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!hasActiveUpload && (
         <div className="mb-6 rounded-lg border border-border bg-card p-5">
           <div className="font-medium text-sm">Browse live catalog</div>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
+          <div className="mt-3 grid gap-3 md:grid-cols-5">
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -624,269 +899,240 @@ function Catalog() {
               <option value="all">All suppliers</option>
               {supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
             </select>
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
+              <option value="latest">Latest added</option>
+              <option value="name">Name A–Z</option>
+              <option value="price">Lowest price</option>
+              <option value="eta">Fastest ETA</option>
+            </select>
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
             Project standard only
           </label>
-          <div className="mt-2 text-xs text-muted-foreground">Showing {rows.length} results across names, numbers, suppliers, and prices.</div>
+          <div className="mt-2 text-xs text-muted-foreground">Showing {rows.length} results across names, numbers, suppliers, and prices · sorted by {sortMode === "latest" ? "latest added" : sortMode === "price" ? "lowest price" : sortMode === "eta" ? "fastest ETA" : "name"}.</div>
         </div>
       )}
 
       {showReviewWorkspace && (
         <div className="mb-6 rounded-xl border-2 border-primary/15 bg-card p-5">
-          {/* Header */}
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">AI extracted output</div>
-              <h3 className="text-display text-lg font-semibold">
-                {isPdfMode ? `${previewRows.length} line items extracted from PDF` : "Review extracted fields against the original document"}
-              </h3>
+              <h3 className="text-display text-lg font-semibold">Review extracted fields against the current supplier catalog</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                {isPdfMode
-                  ? "All fields were mapped automatically. Review the items below and import when ready."
-                  : "Review each extracted field manually or use auto approve all when everything looks correct."}
+                Review each extracted field manually or use auto approve all when everything looks correct.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {selectedFile && (
+              {(selectedFile || sourceMode === "api") && (
                 <button
                   className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-                  onClick={() => previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides })}
+                  onClick={() => {
+                    if (sourceMode === "api") {
+                      previewMutation.mutate({});
+                    } else if (selectedFile) {
+                      previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides });
+                    }
+                  }}
                   type="button"
                 >
                   Re-run extraction
                 </button>
               )}
-              {!isPdfMode && (
-                <button
-                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-                  type="button"
-                  disabled={reviewEntries.length === 0}
-                  onClick={() => {
-                    setApprovedMappings(
-                      Object.fromEntries(
-                        reviewEntries
-                          .filter((entry) => entry.targetField)
-                          .map((entry) => [entry.source_column, true]),
-                      ),
-                    );
-                  }}
-                >
-                  Auto approve all
-                </button>
-              )}
               <button
-                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+                type="button"
+                disabled={reviewEntries.length === 0}
+                onClick={() => {
+                  setApprovedMappings(
+                    Object.fromEntries(
+                      reviewEntries
+                        .filter((entry) => entry.targetField)
+                        .map((entry) => [entry.source_column, true]),
+                    ),
+                  );
+                }}
+              >
+                Auto approve all
+              </button>
+              <button
+                className="flex items-center rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 onClick={() => importMutation.mutate()}
                 disabled={!canImport}
                 type="button"
               >
-                {importMutation.isPending ? "Importing…" : isPdfMode ? `Import ${previewRows.length} items` : "Import approved fields"}
+                {importMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {importMutation.isPending ? "Importing…" : autoApprovedImport ? `Import ${preparedRowCount} items` : "Import approved fields"}
               </button>
             </div>
           </div>
 
-          {/* Stats strip */}
           <div className="mt-4 grid gap-3 md:grid-cols-4">
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Document type</div>
               <div className="mt-1 text-sm font-medium">{documentType}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">{isPdfMode ? "Line items" : "Extracted fields"}</div>
-              <div className="mt-1 text-sm font-medium">{isPdfMode ? previewRows.length : reviewEntries.length}</div>
+              <div className="text-xs text-muted-foreground">Extracted fields</div>
+              <div className="mt-1 text-sm font-medium">{extractedFieldCount}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Approved</div>
-              <div className="mt-1 text-sm font-medium">{isPdfMode ? reviewEntries.length : approvedCount}</div>
+              <div className="mt-1 text-sm font-medium">{approvedCount}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Still to review</div>
-              <div className="mt-1 text-sm font-medium">{isPdfMode ? 0 : needsReview}</div>
+              <div className="mt-1 text-sm font-medium">{needsReview}</div>
             </div>
           </div>
 
-          {/* PDF mode: metadata banner */}
-          {isPdfMode && pdfMeta && (
-            <div className="mt-4 rounded-lg border border-border bg-secondary/20 p-4">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Document summary</div>
-              <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {pdfMeta.document_number && (
-                  <div>
-                    <span className="text-muted-foreground">Doc no. </span>
-                    <span className="font-medium">{pdfMeta.document_number}</span>
-                  </div>
-                )}
-                {pdfMeta.document_date && (
-                  <div>
-                    <span className="text-muted-foreground">Dated </span>
-                    <span className="font-medium">{pdfMeta.document_date}</span>
-                  </div>
-                )}
-                {pdfMeta.valid_until && (
-                  <div>
-                    <span className="text-muted-foreground">Valid until </span>
-                    <span className="font-medium">{pdfMeta.valid_until}</span>
-                  </div>
-                )}
-                {pdfMeta.delivery_date && (
-                  <div>
-                    <span className="text-muted-foreground">Delivery </span>
-                    <span className="font-medium">{pdfMeta.delivery_date}</span>
-                  </div>
-                )}
-                {pdfMeta.total_amount != null && (
-                  <div>
-                    <span className="text-muted-foreground">Total excl. VAT </span>
-                    <span className="font-medium">{formatCurrency(pdfMeta.total_amount, pdfMeta.currency ?? "CHF")}</span>
-                  </div>
-                )}
-                {pdfMeta.vat_rate != null && pdfMeta.vat_amount != null && (
-                  <div>
-                    <span className="text-muted-foreground">VAT {pdfMeta.vat_rate}% </span>
-                    <span className="font-medium">{formatCurrency(pdfMeta.vat_amount, pdfMeta.currency ?? "CHF")}</span>
-                  </div>
-                )}
-                {pdfMeta.total_with_vat != null && (
-                  <div>
-                    <span className="text-muted-foreground">Total incl. VAT </span>
-                    <span className="font-semibold text-foreground">{formatCurrency(pdfMeta.total_with_vat, pdfMeta.currency ?? "CHF")}</span>
-                  </div>
-                )}
-                {pdfMeta.weight_kg != null && (
-                  <div>
-                    <span className="text-muted-foreground">Weight </span>
-                    <span className="font-medium">{pdfMeta.weight_kg.toLocaleString()} kg</span>
-                  </div>
-                )}
-                {pdfMeta.payment_terms && (
-                  <div className="sm:col-span-2">
-                    <span className="text-muted-foreground">Payment </span>
-                    <span className="font-medium">{pdfMeta.payment_terms}</span>
-                  </div>
-                )}
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
+              <div className="border-b border-border px-4 py-3">
+                <div className="font-medium text-sm">Source document and change check</div>
+                <div className="text-xs text-muted-foreground">Green = new, yellow = changed, red = already exists.</div>
               </div>
-            </div>
-          )}
-
-          {/* PDF mode: line items table + PDF side-by-side */}
-          {isPdfMode ? (
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              {/* Left: PDF embed */}
-              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[560px]">
-                <div className="border-b border-border px-4 py-3">
-                  <div className="font-medium text-sm">Original document</div>
-                  <div className="text-xs text-muted-foreground">Compare extracted items against the source PDF.</div>
-                </div>
-                {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
-                  <embed
-                    title="Uploaded PDF preview"
-                    src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                    type="application/pdf"
-                    className="h-[560px] w-full bg-white"
-                  />
-                ) : (
-                  <div className="p-4 text-sm text-muted-foreground">No document preview available.</div>
-                )}
-              </div>
-
-              {/* Right: items table */}
-              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[560px]">
-                <div className="border-b border-border px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-sm">Extracted line items</div>
-                    <div className="text-xs text-muted-foreground">{previewRows.length} items ready for import · all fields auto-approved</div>
+              {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
+                <embed
+                  title="Uploaded PDF preview"
+                  src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+                  type="application/pdf"
+                  className="h-[520px] w-full bg-white"
+                />
+              ) : previewRows.length > 0 ? (
+                <div className="max-h-[520px] overflow-auto p-4">
+                  <div className="mb-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-emerald-700">New {deltaSummary.new_entries ?? 0}</span>
+                    <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-700">Changed {deltaSummary.price_changes ?? 0}</span>
+                    <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-red-700">Existing {deltaSummary.unchanged ?? 0}</span>
                   </div>
-                  <span className="rounded-full bg-success/15 px-2 py-1 text-[10px] uppercase tracking-wider text-[oklch(0.42_0.13_155)]">
-                    All approved
-                  </span>
-                </div>
-                <div className="overflow-auto" style={{ maxHeight: 520 }}>
-                  <table className="w-full text-sm border-collapse">
-                    <thead className="sticky top-0 bg-secondary z-10">
-                      <tr className="text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                        <th className="px-3 py-2 font-normal w-8">#</th>
-                        <th className="px-3 py-2 font-normal min-w-[180px]">Name</th>
-                        <th className="px-3 py-2 font-normal">SKU</th>
-                        <th className="px-3 py-2 font-normal text-right">Qty</th>
-                        <th className="px-3 py-2 font-normal">Unit</th>
-                        <th className="px-3 py-2 font-normal text-right">Unit price</th>
-                        <th className="px-3 py-2 font-normal text-right">Discount</th>
-                        <th className="px-3 py-2 font-normal">Category</th>
-                        <th className="px-3 py-2 font-normal">NPK / Rabatt</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((row, idx) => {
-                        const specialInfo = row.special_info as Record<string, unknown> | null | undefined;
-                        const npk = specialInfo?.npk_code as string | undefined;
-                        const rabatt = specialInfo?.rabattgruppe as string | undefined;
-                        const discount = Number(row.base_discount_pct ?? 0);
-                        const listPrice = Number(row.list_price ?? 0);
-                        const unitPrice = Number(row.unit_price ?? 0);
-                        const currency = String(row.currency ?? pdfMeta?.currency ?? "CHF");
-                        return (
-                          <tr key={idx} className={["border-t border-border", idx % 2 === 0 ? "" : "bg-secondary/20"].join(" ")}>
-                            <td className="px-3 py-2 text-muted-foreground tabular-nums">{idx + 1}</td>
-                            <td className="px-3 py-2 font-medium max-w-[220px]">
-                              <div className="truncate" title={String(row.name ?? "")}>{String(row.name ?? "—")}</div>
-                            </td>
-                            <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{String(row.sku ?? "—")}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{row.quantity != null ? String(row.quantity) : "—"}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{String(row.unit ?? "—")}</td>
-                            <td className="px-3 py-2 text-right tabular-nums font-medium">
-                              {unitPrice > 0 ? formatCurrency(unitPrice, currency) : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                              {discount > 0 ? (
-                                <span title={listPrice > 0 ? `List: ${formatCurrency(listPrice, currency)}` : undefined}>
-                                  {discount}%
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-normal">Status</th>
+                          {Object.keys(previewRows[0] ?? {}).filter((key) => !["import_status", "delta_type", "matched_product_id", "matched_name", "matched_sku"].includes(key)).map((key) => (
+                            <th key={key} className="px-3 py-2 font-normal">{key}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.slice(0, 8).map((row, index) => {
+                          const rowStatus = getPreviewRowStatus(row);
+                          const rowTone = rowStatus === "new"
+                            ? "bg-emerald-500/10"
+                            : rowStatus === "changed"
+                              ? "bg-amber-500/10"
+                              : rowStatus === "existing"
+                                ? "bg-red-500/10"
+                                : "";
+                          const rowLabel = rowStatus === "new"
+                            ? "New"
+                            : rowStatus === "changed"
+                              ? "Changed"
+                              : rowStatus === "existing"
+                                ? "Existing"
+                                : "Review";
+                          return (
+                            <tr key={`${index}-${JSON.stringify(row)}`} className={`border-t border-border ${rowTone}`}>
+                              <td className="px-3 py-2">
+                                <span className={[
+                                  "rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-wide",
+                                  rowStatus === "new"
+                                    ? "bg-emerald-500/15 text-emerald-700"
+                                    : rowStatus === "changed"
+                                      ? "bg-amber-500/15 text-amber-700"
+                                      : rowStatus === "existing"
+                                        ? "bg-red-500/15 text-red-700"
+                                        : "bg-secondary text-foreground",
+                                ].join(" ")}>
+                                  {rowLabel}
                                 </span>
-                              ) : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-muted-foreground text-xs">{String(row.category ?? "—")}</td>
-                            <td className="px-3 py-2 text-muted-foreground text-xs">
-                              {[npk, rabatt ? `R:${rabatt}` : null].filter(Boolean).join(" · ") || "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              </td>
+                              {Object.keys(previewRows[0] ?? {}).filter((key) => !["import_status", "delta_type", "matched_product_id", "matched_name", "matched_sku"].includes(key)).map((key) => (
+                                <td key={key} className="px-3 py-2 text-muted-foreground">{renderPreviewValue(row[key])}</td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 text-sm text-muted-foreground">No document preview is available yet.</div>
+              )}
             </div>
-          ) : (
-            /* CSV/Excel mode: original two-panel layout */
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
-                <div className="border-b border-border px-4 py-3">
-                  <div className="font-medium text-sm">Original document</div>
-                  <div className="text-xs text-muted-foreground">Only the document is shown here for comparison.</div>
-                </div>
-                {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
-                  <embed
-                    title="Uploaded PDF preview"
-                    src={`${documentPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                    type="application/pdf"
-                    className="h-[520px] w-full bg-white"
-                  />
-                ) : previewRows.length > 0 ? (
-                  <div className="max-h-[520px] overflow-auto p-4">
+
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
+              <div className="border-b border-border px-4 py-3">
+                <div className="font-medium text-sm">Extracted fields</div>
+                <div className="text-xs text-muted-foreground">Approve one by one or use the auto approve button above.</div>
+              </div>
+              <div className="max-h-[520px] overflow-auto p-4 space-y-3">
+                {previewWarnings.length > 0 ? (
+                  <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-muted-foreground">
+                    {previewWarnings.slice(0, 3).join(" · ")}
+                  </div>
+                ) : null}
+
+                {reviewEntries.length > 0 ? reviewEntries.map((entry) => (
+                  <div key={entry.source_column} className="rounded-md border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Detected document column</div>
+                        <div className="font-medium">{entry.source_column}</div>
+                      </div>
+                      <span className={["rounded-full px-2 py-1 text-[10px] uppercase tracking-wider", entry.approved ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/20 text-warning-foreground"].join(" ")}>
+                        {entry.approved ? "Approved" : "Needs review"}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">Sample content to save</div>
+                    <div className="mt-1 rounded-md bg-secondary/40 px-3 py-2 text-sm">{entry.sampleValue}</div>
+                    <select
+                      value={entry.targetField}
+                      onChange={(event) => {
+                        setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }));
+                        setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: false }));
+                      }}
+                      className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Choose target field</option>
+                      {(previewMutation.data?.canonical_fields ?? []).map((field) => (
+                        <option key={field} value={field}>{field}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <div className="text-xs text-muted-foreground">Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}</div>
+                      <button
+                        type="button"
+                        disabled={!entry.targetField}
+                        onClick={() => setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: !entry.approved }))}
+                        className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+                      >
+                        {entry.approved ? "Undo" : "Approve"}
+                      </button>
+                    </div>
+                  </div>
+                )) : autoApprovedImport ? (
+                  <div className="space-y-3">
+                    <div className="rounded-md border border-success/30 bg-success/10 p-3 text-sm text-muted-foreground">
+                      {preparedRowCount} extracted row{preparedRowCount === 1 ? " is" : "s are"} already prepared and can be imported directly.
+                    </div>
                     <div className="overflow-x-auto rounded-md border border-border">
                       <table className="w-full text-sm">
                         <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                           <tr>
-                            {Object.keys(previewRows[0] ?? {}).map((key) => (
+                            {Object.keys(preparedRows[0] ?? {}).map((key) => (
                               <th key={key} className="px-3 py-2 font-normal">{key}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {previewRows.slice(0, 8).map((row, index) => (
+                          {preparedRows.slice(0, 20).map((row, index) => (
                             <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
-                              {Object.keys(previewRows[0] ?? {}).map((key) => (
+                              {Object.keys(preparedRows[0] ?? {}).map((key) => (
                                 <td key={key} className="px-3 py-2 text-muted-foreground">{renderPreviewValue(row[key])}</td>
                               ))}
                             </tr>
@@ -894,69 +1140,16 @@ function Catalog() {
                         </tbody>
                       </table>
                     </div>
+                    {preparedRows.length > 20 ? (
+                      <div className="text-xs text-muted-foreground">Showing first 20 extracted rows.</div>
+                    ) : null}
                   </div>
                 ) : (
-                  <div className="p-4 text-sm text-muted-foreground">No document preview is available yet.</div>
+                  <div className="text-sm text-muted-foreground">No extracted fields are ready yet.</div>
                 )}
               </div>
-
-              <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[520px]">
-                <div className="border-b border-border px-4 py-3">
-                  <div className="font-medium text-sm">Extracted fields</div>
-                  <div className="text-xs text-muted-foreground">Approve one by one or use the auto approve button above.</div>
-                </div>
-                <div className="max-h-[520px] overflow-auto p-4 space-y-3">
-                  {previewWarnings.length > 0 ? (
-                    <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-muted-foreground">
-                      {previewWarnings.slice(0, 3).join(" · ")}
-                    </div>
-                  ) : null}
-
-                  {reviewEntries.length > 0 ? reviewEntries.map((entry) => (
-                    <div key={entry.source_column} className="rounded-md border border-border p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xs text-muted-foreground">Detected document column</div>
-                          <div className="font-medium">{entry.source_column}</div>
-                        </div>
-                        <span className={["rounded-full px-2 py-1 text-[10px] uppercase tracking-wider", entry.approved ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/20 text-warning-foreground"].join(" ")}>
-                          {entry.approved ? "Approved" : "Needs review"}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground">Sample content to save</div>
-                      <div className="mt-1 rounded-md bg-secondary/40 px-3 py-2 text-sm">{entry.sampleValue}</div>
-                      <select
-                        value={entry.targetField}
-                        onChange={(event) => {
-                          setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }));
-                          setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: false }));
-                        }}
-                        className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                      >
-                        <option value="">Choose target field</option>
-                        {(previewMutation.data?.canonical_fields ?? []).map((field) => (
-                          <option key={field} value={field}>{field}</option>
-                        ))}
-                      </select>
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <div className="text-xs text-muted-foreground">Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}</div>
-                        <button
-                          type="button"
-                          disabled={!entry.targetField}
-                          onClick={() => setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: !entry.approved }))}
-                          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
-                        >
-                          {entry.approved ? "Undo" : "Approve"}
-                        </button>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="text-sm text-muted-foreground">No extracted fields are ready yet.</div>
-                  )}
-                </div>
-              </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -1035,6 +1228,15 @@ function Catalog() {
                 placeholder="Phone"
                 className="w-full rounded-md border border-border bg-background px-3 py-2"
               />
+              <select
+                value={draftSupplierSourceMode}
+                onChange={(event) => setDraftSupplierSourceMode(event.target.value as SupplierSourceMode)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              >
+                <option value="document">Document only</option>
+                <option value="api">API only</option>
+                <option value="both">API + Document</option>
+              </select>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

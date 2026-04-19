@@ -9,6 +9,7 @@ checks each item against the catalog to determine:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -18,15 +19,18 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+_pool: asyncpg.Pool | None = None
+
 
 async def _db_pool() -> asyncpg.Pool:
-    if not hasattr(_db_pool, "_pool"):
-        _db_pool._pool = await asyncpg.create_pool(
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
             settings.DATABASE_URL.replace("+asyncpg", ""),
             min_size=2,
             max_size=5,
         )
-    return _db_pool._pool
+    return _pool
 
 
 def _parse_price(val) -> Decimal | None:
@@ -37,6 +41,10 @@ def _parse_price(val) -> Decimal | None:
         return Decimal(s).quantize(Decimal("0.01"))
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def _normalise_name(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
 async def detect_deltas(
@@ -64,9 +72,28 @@ async def detect_deltas(
                 results.append({**item, "delta_type": "skipped", "reason": "no name or sku"})
                 continue
 
-            # Try matching by SKU first (exact), then by name (fuzzy)
+            # Try matching by exact supplier+SKU first, then normalized name within the same supplier.
             match = None
-            if sku:
+            supplier_uuid = None
+            if supplier_id:
+                try:
+                    supplier_uuid = uuid.UUID(supplier_id)
+                except ValueError:
+                    supplier_uuid = None
+
+            if sku and supplier_uuid:
+                match = await conn.fetchrow(
+                    """
+                    SELECT id, sku, name, unit_price, currency
+                    FROM catalog.products
+                    WHERE supplier_id = $1 AND sku = $2 AND is_active = TRUE
+                    ORDER BY updated_at DESC LIMIT 1
+                    """,
+                    supplier_uuid,
+                    sku,
+                )
+
+            if not match and sku:
                 match = await conn.fetchrow(
                     """
                     SELECT id, sku, name, unit_price, currency
@@ -77,20 +104,21 @@ async def detect_deltas(
                     sku,
                 )
 
-            if not match and sku and supplier_id:
-                try:
-                    match = await conn.fetchrow(
-                        """
-                        SELECT id, sku, name, unit_price, currency
-                        FROM catalog.products
-                        WHERE sku = $1 AND supplier_id = $2 AND is_active = TRUE
-                        ORDER BY updated_at DESC LIMIT 1
-                        """,
-                        sku,
-                        uuid.UUID(supplier_id),
-                    )
-                except ValueError:
-                    pass
+            if not match and name and supplier_uuid:
+                normalized_name = _normalise_name(name)
+                match = await conn.fetchrow(
+                    """
+                    SELECT id, sku, name, unit_price, currency
+                    FROM catalog.products
+                    WHERE supplier_id = $1
+                      AND is_active = TRUE
+                      AND regexp_replace(lower(name), '[^a-z0-9]+', '', 'g') = $2
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                    """,
+                    supplier_uuid,
+                    normalized_name,
+                )
 
             if not match and name:
                 # Trigram similarity search (pg_trgm)
@@ -100,11 +128,13 @@ async def detect_deltas(
                            similarity(name, $1) AS sim
                     FROM catalog.products
                     WHERE is_active = TRUE
-                      AND similarity(name, $1) > 0.4
+                      AND ($2::uuid IS NULL OR supplier_id = $2::uuid)
+                      AND similarity(name, $1) > 0.55
                     ORDER BY sim DESC
                     LIMIT 1
                     """,
                     name,
+                    supplier_uuid,
                 )
 
             if match:
