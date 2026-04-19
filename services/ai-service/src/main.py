@@ -26,6 +26,14 @@ app = FastAPI(title="comstruct ai-service", version="0.3.0")
 app.add_middleware(SecurityHeadersMiddleware)
 
 
+@app.on_event("startup")
+async def validate_llm_configuration():
+    if settings.LLM_PROVIDER == "openai" and not settings.OPENAI_API_KEY:
+        logger.warning(
+            "LLM_PROVIDER is set to openai but OPENAI_API_KEY is missing; endpoints will use deterministic stubs."
+        )
+
+
 @app.middleware("http")
 async def audit_log_middleware(request: Request, call_next):
     start = time.monotonic()
@@ -55,11 +63,13 @@ app.include_router(workflows.router)
 
 @app.get("/health")
 async def health():
-    ollama = await check_ollama_health()
+    ollama = await check_ollama_health() if settings.LLM_PROVIDER == "ollama" else {"status": "disabled"}
     return {
         "status": "ok",
         "service": "ai-service",
-        "llm_backend": "ollama",
+        "llm_backend": settings.LLM_PROVIDER,
+        "openai_configured": bool(settings.OPENAI_API_KEY),
+        "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
         "ollama": ollama,
     }
 

@@ -29,6 +29,9 @@ def _engine_with_rule(rule):
     db = AsyncMock()
     engine = ApprovalEngine(db)
     engine._get_rule = AsyncMock(return_value=rule)
+    engine._request_risk = AsyncMock(
+        return_value={"requires_review": False, "risk_score": 0.0, "signals": []}
+    )
     return engine
 
 
@@ -91,3 +94,20 @@ async def test_a_material_defensive_branch():
     requires, reason = await engine.evaluate(order)
     assert requires is True
     assert "A-materials" in reason
+
+
+@pytest.mark.asyncio
+async def test_statistical_risk_branch():
+    rule = SimpleNamespace(
+        threshold_amount=Decimal("10000.00"),
+        restricted_categories=[],
+    )
+    engine = _engine_with_rule(rule)
+    engine._request_risk = AsyncMock(return_value={
+        "requires_review": True,
+        "risk_score": 0.93,
+        "signals": [{"name": "Work Gloves"}],
+    })
+    requires, reason = await engine.evaluate(_order("50.00", [_item(line_total="50.00")]))
+    assert requires is True
+    assert "Quantity anomaly detected" in reason

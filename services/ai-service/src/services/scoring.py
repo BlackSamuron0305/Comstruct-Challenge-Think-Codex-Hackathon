@@ -9,10 +9,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-import httpx
-
 from ..config import settings
-from ..llm.ollama_client import call_ollama_json
+from ..llm.anthropic_client import call_claude_json
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +236,7 @@ async def _compute_specs_fit_ai(supplier_id: str, web_cache_json: str) -> Decima
     if not snippets:
         snippets = str(cached)[:600]
 
-    result = await call_ollama_json(
+    result = await call_claude_json(
         system=(
             "You are a construction procurement analyst evaluating suppliers. "
             "Score how well a supplier matches Swiss construction material procurement needs. "

@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from typing import Any
 
 import pandas as pd
+from pypdf import PdfReader
 
 MAX_SAMPLE_VALUES = 5
+MARKDOWN_DIRECT_CONFIDENCE = 0.66
+_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 logger = logging.getLogger(__name__)
 
 
@@ -43,8 +47,6 @@ def parse_pdf_to_table(content: bytes) -> pd.DataFrame:
         logger.warning("pdfplumber extraction failed (%s), falling back to pypdf", e)
 
     # Fallback: plain text extraction via pypdf
-    from pypdf import PdfReader
-
     reader = PdfReader(io.BytesIO(content))
     rows: list[str] = []
     for page in reader.pages:
@@ -53,6 +55,66 @@ def parse_pdf_to_table(content: bytes) -> pd.DataFrame:
             if line:
                 rows.append(line)
     return pd.DataFrame({"text": rows})
+
+
+def parse_pdf_to_markdown(content: bytes) -> str:
+    """Convert PDF to markdown first, with graceful fallback."""
+    try:
+        import tempfile
+        import os
+        import pymupdf4llm
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            md = pymupdf4llm.to_markdown(tmp_path)
+            if md and md.strip():
+                return md.strip()
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        logger.warning("pymupdf4llm markdown extraction failed (%s), falling back to text", e)
+
+    reader = PdfReader(io.BytesIO(content))
+    chunks: list[str] = []
+    for idx, page in enumerate(reader.pages, start=1):
+        text = (page.extract_text() or "").strip()
+        if text:
+            chunks.append(f"## Page {idx}\n\n{text}")
+    return "\n\n".join(chunks).strip()
+
+
+def extract_catalog_from_markdown(markdown: str) -> list[dict]:
+    """Try deterministic extraction from markdown tables before LLM fallback."""
+    items: list[dict] = []
+    lines = [ln.strip() for ln in markdown.splitlines() if ln.strip()]
+    for line in lines:
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        joined = " ".join(cells).lower()
+        if "sku" in joined and "price" in joined:
+            continue
+        if set("".join(cells)) <= {"-", ":"}:
+            continue
+        sku = cells[0] if _ALNUM_RE.search(cells[0]) else ""
+        name = cells[1] if len(cells) > 1 else ""
+        if not name:
+            continue
+        price_match = re.search(r"(\d+[.,]?\d*)", " ".join(cells[2:])) if len(cells) > 2 else None
+        unit_price = float(price_match.group(1).replace(",", ".")) if price_match else None
+        items.append({
+            "sku": sku or None,
+            "name": name,
+            "unit_price": unit_price,
+            "currency": "CHF",
+            "confidence": MARKDOWN_DIRECT_CONFIDENCE,
+            "extraction_mode": "markdown_direct",
+        })
+    return items
 
 
 def parse_image_to_text(content: bytes) -> str:
