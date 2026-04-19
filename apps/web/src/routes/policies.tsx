@@ -254,6 +254,9 @@ function PoliciesPage() {
             <p className="text-sm text-muted-foreground mt-1">
               This page now derives its baselines from live catalog subcategories, supplier prices, and historical order line quantities stored in the database.
             </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              If you are not sure how to configure these numbers, it is perfectly fine to keep them as they are.
+            </p>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">σ multiplier</label>
