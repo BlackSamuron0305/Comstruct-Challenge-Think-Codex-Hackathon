@@ -4,6 +4,19 @@
 
 End-to-end ordering platform for **C-materials** — low-value, high-variety construction site consumables (screws, gloves, foam cans, cable ties). Built for [Comstruct](https://comstruct.com), the Swiss/German construction-tech company automating procure-to-pay.
 
+---
+
+## Live Demo
+
+| Surface | URL | Credentials |
+|---------|-----|-------------|
+| **Web Dashboard** (Procurement) | **http://35.222.179.150:8080/** | See demo accounts below |
+| **Mobile Web** (Foreman) | **http://35.222.179.150:8090/** | See demo accounts below |
+
+> Deployed on Google Compute Engine. Use any of the demo accounts after seeding.
+
+---
+
 ## Architecture
 
 ```
@@ -199,7 +212,19 @@ All services implement defense-in-depth security controls:
 - **Audit logging** — structured middleware on all mutating requests
 - **WebSocket auth** — message-based JWT with 10s timeout
 
-See [docs/compliance.md](docs/compliance.md) for full GDPR posture, OWASP Top 10 mapping, and AI governance.
+See [docs/security-and-compliance.md](docs/security-and-compliance.md) for full GDPR posture, OWASP Top 10 mapping, and AI governance.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/architecture.md](docs/architecture.md) | System architecture, service responsibilities, data flows, Mermaid diagrams |
+| [docs/api-reference.md](docs/api-reference.md) | Complete API endpoint reference for all services |
+| [docs/ai-workflows.md](docs/ai-workflows.md) | AI/LLM pipelines — classification, ingestion, chat, supplier scoring |
+| [docs/deployment.md](docs/deployment.md) | Docker Compose setup, GCE deployment, environment configuration |
+| [docs/security-and-compliance.md](docs/security-and-compliance.md) | GDPR, OWASP Top 10, security controls, AI governance |
+| [docs/mobile-app.md](docs/mobile-app.md) | Flutter mobile — offline-first, voice/OCR ordering, on-device LLM |
+| [docs/development-guide.md](docs/development-guide.md) | Local setup, testing, linting, monorepo tooling |
 
 ## Project Structure
 
@@ -220,7 +245,14 @@ infra/
   docker/init.sql         # PostgreSQL schema (5 namespaces, pgvector)
   keys/                   # RS256 JWT keypair (git-ignored)
 docs/
-  compliance.md           # GDPR, OWASP Top 10, AI governance
+  architecture.md         # System architecture & data flow diagrams
+  api-reference.md        # Full API endpoint documentation
+  ai-workflows.md         # AI/LLM pipeline documentation
+  deployment.md           # Docker & GCE deployment guide
+  security-and-compliance.md  # GDPR, OWASP, security controls
+  mobile-app.md           # Flutter mobile app documentation
+  development-guide.md    # Local dev setup & testing
+  execution-roadmap.md    # Sprint delivery tracker
 samples/
   acme_catalog.csv        # Demo supplier catalog
 scripts/
