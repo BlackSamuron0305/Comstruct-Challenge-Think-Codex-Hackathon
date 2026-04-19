@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import logo from "@/assets/comstruct-logo.svg";
 import { useAuth } from "./AuthContext";
 
-const LAST_EMAIL_KEY = "comstruct-last-email";
+const PROCUREMENT_DEMO_EMAIL = "procurement@comstruct.com";
+const DEMO_PASSWORD = "comstruct-demo";
 
 export function LoginScreen() {
   const { login } = useAuth();
@@ -12,19 +13,9 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    try {
-      const savedEmail = window.localStorage.getItem(LAST_EMAIL_KEY);
-      if (savedEmail) setEmail(savedEmail);
-    } catch {
-      // Ignore storage issues in locked-down environments.
-    }
+    setEmail(PROCUREMENT_DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
   }, []);
-
-  const fillDemoUser = (nextEmail: string) => {
-    setEmail(nextEmail);
-    setPassword("comstruct-demo");
-    setError("");
-  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -32,11 +23,6 @@ export function LoginScreen() {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      try {
-        window.localStorage.setItem(LAST_EMAIL_KEY, email.trim());
-      } catch {
-        // Ignore storage issues in locked-down environments.
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Check your work email and password.");
     } finally {
@@ -54,17 +40,8 @@ export function LoginScreen() {
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <h1 className="text-display text-xl font-semibold">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Use your work email to access the dashboard, or pick a demo role to review the flows instantly.
+            Sign in with the prefilled procurement demo account to review the dashboard instantly.
           </p>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" onClick={() => fillDemoUser("procurement@comstruct.com")} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-accent">
-              Procurement demo
-            </button>
-            <button type="button" onClick={() => fillDemoUser("foreman@brueckesg.ch")} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-accent">
-              Foreman demo
-            </button>
-          </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
@@ -111,7 +88,7 @@ export function LoginScreen() {
           </form>
 
           <div className="mt-4 rounded-md border border-border bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground text-center">
-            Shared demo password: comstruct-demo · your last email stays prefilled on this device.
+            Demo credentials are prefilled for the procurement account.
           </div>
         </div>
       </div>
