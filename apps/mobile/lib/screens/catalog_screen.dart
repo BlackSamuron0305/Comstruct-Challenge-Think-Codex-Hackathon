@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_queue.dart';
@@ -184,7 +185,7 @@ class _ProductTileState extends State<_ProductTile> {
   Widget build(BuildContext context) {
     final p = widget.p;
     final price = (p['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
-    final currency = p['currency'] as String? ?? 'CHF';
+    final currency = normalizeCurrencyCode(p['currency'] as String?);
     return Card(
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

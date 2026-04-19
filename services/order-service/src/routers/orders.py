@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..dependencies import CurrentUser, current_user, require_role
-from ..models import Order, OrderItem, OrderStatus, Project, UserRole
+from ..models import Order, OrderItem, OrderStatus, Project, User, UserRole
 from ..schemas import CheckoutRequest, OrderOut, RejectRequest
 from ..services import (
     ApprovalEngine,
@@ -22,6 +22,18 @@ from ..services import (
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+async def _attach_foreman_names(db: AsyncSession, orders: Order | list[Order]) -> None:
+    rows = orders if isinstance(orders, list) else [orders]
+    foreman_ids = {row.foreman_id for row in rows if getattr(row, "foreman_id", None)}
+    if not foreman_ids:
+        return
+
+    result = await db.execute(select(User.id, User.full_name).where(User.id.in_(foreman_ids)))
+    name_by_id = {user_id: full_name for user_id, full_name in result.all()}
+    for row in rows:
+        setattr(row, "foreman_name", name_by_id.get(row.foreman_id))
 
 
 # ── List / detail ─────────────────────────────────────────────────────
@@ -43,7 +55,9 @@ async def list_orders(
         stmt = stmt.where(Order.project_id == project_id)
     stmt = stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset)
     rows = await db.execute(stmt)
-    return list(rows.scalars().unique().all())
+    orders = list(rows.scalars().unique().all())
+    await _attach_foreman_names(db, orders)
+    return orders
 
 
 @router.get("/{order_id}", response_model=OrderOut)
@@ -57,6 +71,7 @@ async def get_order(
         raise HTTPException(404, "Order not found")
     if user.role == UserRole.CONSTRUCTION_WORKER.value and order.foreman_id != user.id:
         raise HTTPException(403, "Forbidden")
+    await _attach_foreman_names(db, order)
     return order
 
 
@@ -146,6 +161,7 @@ async def checkout(
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
     await cart_clear(user.id)
+    await _attach_foreman_names(db, order)
     return order
 
 
@@ -185,6 +201,7 @@ async def approve_order(
         "order_id": str(order.id),
         "foreman_id": str(order.foreman_id),
     })
+    await _attach_foreman_names(db, order)
     return order
 
 
@@ -222,6 +239,7 @@ async def reject_order(
         "foreman_id": str(order.foreman_id),
         "reason": body.reason,
     })
+    await _attach_foreman_names(db, order)
     return order
 
 
@@ -250,6 +268,7 @@ async def mark_in_transit(
     await db.refresh(order, attribute_names=["items"])
     await publish_order_status(order.id, order.status,
                                datetime.now(timezone.utc).isoformat())
+    await _attach_foreman_names(db, order)
     return order
 
 

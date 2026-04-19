@@ -42,7 +42,8 @@ void main() async {
   await tokens.load();
 
   // API client
-  final api = ApiClient(baseUrl: AppConfig.apiBaseUrl, tokens: tokens);
+  final resolvedBaseUrl = await AppConfig.resolveReachableApiBaseUrl();
+  final api = ApiClient(baseUrl: resolvedBaseUrl, tokens: tokens);
   AppScope.api = api;
 
   // On-device LLM client
@@ -99,12 +100,12 @@ GoRouter _buildRouter(BuildContext context) {
         routes: [
           GoRoute(path: '/c-orders', builder: (_, __) => const MyOrdersScreen()),
           GoRoute(path: '/c-home', builder: (_, __) => const CHomeScreen()),
-          GoRoute(path: '/c-profile', builder: (_, __) => const ProfileScreen()),
           GoRoute(path: '/c-favorites', builder: (_, __) => const FavoritesScreen()),
         ],
       ),
 
       // ── C-materials sub-screens (no bottom nav) ───────────────────
+      GoRoute(path: '/c-profile', builder: (_, __) => const ProfileScreen()),
       GoRoute(path: '/c-language', builder: (_, __) => const LanguageScreen()),
       GoRoute(path: '/c-voice',   builder: (_, __) => const VoiceOrderScreen()),
       GoRoute(path: '/c-chat',    builder: (_, __) => const ChatScreen()),

@@ -1,0 +1,18 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="16" fill="#083F4C"/>
+  <g transform="translate(18 18)">
+    <polygon points="30,0 0,18 42,15" fill="#F3F4F6"/>
+    <polygon points="33,0 54,15 75,18" fill="#F3F4F6"/>
+    <polygon points="0,22 42,18 30,57" fill="#F3F4F6"/>
+    <polygon points="54,19 75,18 75,57" fill="#F3F4F6"/>
+    <polygon points="30,57 0,22 13,56" fill="#F3F4F6"/>
+    <polygon points="34,57 75,53 50,16" fill="#F2C94C"/>
+    <polygon points="0,59 31,63 41,76" fill="#F3F4F6"/>
+    <polygon points="34,63 75,59 45,78" fill="#F3F4F6"/>
+    <polyline points="0,22 42,18 54,19 75,57 34,63 30,57 0,22" stroke="#083F4C" stroke-width="3" stroke-linejoin="round"/>
+    <line x1="42" y1="18" x2="30" y2="57" stroke="#083F4C" stroke-width="3"/>
+    <line x1="54" y1="19" x2="34" y2="63" stroke="#083F4C" stroke-width="3"/>
+    <line x1="30" y1="0" x2="54" y2="19" stroke="#083F4C" stroke-width="3"/>
+    <line x1="13" y1="56" x2="41" y2="76" stroke="#083F4C" stroke-width="3"/>
+  </g>
+</svg>

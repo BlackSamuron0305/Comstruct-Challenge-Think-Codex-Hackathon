@@ -47,7 +47,9 @@ Return strictly:
       "input_index":   <int>,
       "material_class": "A" | "B" | "C",
       "confidence":     <float 0..1>,
-      "category":       "<short canonical category, English>",
+      "category":       "<broad canonical category: Fasteners|Consumables|PPE|Tools|Electrical|Site Supplies|Piping & Conduit>",
+      "taxonomy_code":  "<specific code such as tools.hand.hammers.claw>",
+      "taxonomy_label": "<human label such as Hand Tools > Hammers > Claw Hammer>",
       "rationale":      "<one short sentence>"
     }}
   ]
@@ -56,6 +58,7 @@ Return strictly:
 Strict rules:
 - Default to A or B when uncertain — comstruct must NEVER carry an A-material.
 - Items with line price >100 CHF are almost always A or B.
+- Distinguish subtypes inside the same family when possible, for example claw hammer vs sledge hammer.
 - Output JSON only, no markdown, no prose."""
 
 

@@ -144,6 +144,17 @@ class TestClassificationStub:
             result = _stub_classify([{"name": kw, "unit_price": 10}])
             assert result["results"][0]["material_class"] == "A", f"Failed for keyword: {kw}"
 
+    def test_hammer_taxonomy_distinguishes_subtypes(self):
+        items = [
+            {"name": "Claw hammer 16oz", "unit_price": 18},
+            {"name": "Sledge hammer 5kg", "unit_price": 65},
+        ]
+        result = _stub_classify(items)
+
+        assert result["results"][0]["taxonomy_code"] == "tools.hand.hammers.claw"
+        assert result["results"][1]["taxonomy_code"] == "tools.hand.hammers.sledge"
+        assert result["results"][0]["taxonomy_code"] != result["results"][1]["taxonomy_code"]
+
 
 # ── Workflow Logic ────────────────────────────────────────────────
 

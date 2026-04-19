@@ -22,11 +22,22 @@ def _normalize_text(*values: object) -> str:
 
 def _derive_product_tag(snapshot: dict | None) -> str:
     snap = snapshot or {}
-    explicit = snap.get("ai_tag") or snap.get("canonical_tag") or snap.get("product_family")
+    explicit = (
+        snap.get("taxonomy_code")
+        or snap.get("ai_tag")
+        or snap.get("canonical_tag")
+        or snap.get("product_family")
+    )
     if explicit:
-        return _normalize_text(explicit).replace(" ", "-")
+        normalized = str(explicit).strip().lower()
+        return re.sub(r"[^a-z0-9.]+", "-", normalized).strip("-")
 
-    text = _normalize_text(snap.get("name"), snap.get("category"), snap.get("description"))
+    text = _normalize_text(
+        snap.get("name"),
+        snap.get("taxonomy_label"),
+        snap.get("category"),
+        snap.get("description"),
+    )
     tag_keywords: list[tuple[str, tuple[str, ...]]] = [
         ("brushes", ("brush", "pinsel", "roller", "borste")),
         ("hammers", ("hammer", "mallet", "faustel")),

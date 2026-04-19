@@ -1,5 +1,5 @@
-/// Comstruct i18n — ported from the HTML prototype.
-/// Usage:  `t(context, 'appTitle')`  or  `Tr.of(context)('appTitle')`
+// Comstruct i18n — ported from the HTML prototype.
+// Usage: t(context, 'appTitle')
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';

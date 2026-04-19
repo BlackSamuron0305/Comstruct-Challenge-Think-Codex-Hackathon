@@ -238,10 +238,14 @@ async def test_all_services_healthy():
 
 
 @pytest.mark.asyncio
-async def test_ai_service_has_ollama():
-    """AI service should be connected to Ollama."""
+async def test_ai_service_has_active_llm_provider():
+    """AI service should expose an active and healthy LLM provider."""
     async with httpx.AsyncClient(base_url=AI_SERVICE_URL, timeout=10) as client:
         r = await client.get("/health")
+        assert r.status_code == 200
         data = r.json()
-        assert data["llm_backend"] == "ollama"
-        assert data["ollama"]["status"] == "ok"
+        assert data["llm_backend"] in {"openai", "ollama"}
+        if data["llm_backend"] == "openai":
+            assert data["openai_configured"] is True
+        else:
+            assert data["ollama"]["status"] == "ok"

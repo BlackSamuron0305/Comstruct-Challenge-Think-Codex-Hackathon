@@ -103,7 +103,7 @@ class OfflineCaptureAssistant {
         'name': item['name'] ?? match['name'],
         'category': item['category'] ?? match['category'],
         'unit_price': item['unit_price'] ?? match['unit_price'],
-        'currency': item['currency'] ?? match['currency'] ?? 'CHF',
+        'currency': item['currency'] ?? match['currency'] ?? 'EUR',
         'unit': item['unit'] ?? match['unit'] ?? 'pc',
         'suggested_qty': qty,
       };
@@ -142,7 +142,7 @@ class OfflineCaptureAssistant {
         'name': product['name'],
         'category': product['category'] ?? 'Uncategorised',
         'unit_price': product['unit_price'],
-        'currency': product['currency'] ?? 'CHF',
+        'currency': product['currency'] ?? 'EUR',
         'unit': product['unit'] ?? 'pc',
         'suggested_qty': qty,
       };

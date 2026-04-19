@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_queue.dart';
@@ -111,7 +112,7 @@ class _CartScreenState extends State<CartScreen> {
                         child: Card(
                           child: ListTile(
                             title: Text(l['name'] as String),
-                            subtitle: Text('${l['quantity']} × ${(l['unit_price'] as num).toStringAsFixed(2)} ${l['currency']}'),
+                            subtitle: Text('${l['quantity']} × ${(l['unit_price'] as num).toStringAsFixed(2)} ${normalizeCurrencyCode(l['currency'] as String?)}'),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () => context.read<CartCubit>().remove(l['product_id'] as String),
@@ -132,7 +133,7 @@ class _CartScreenState extends State<CartScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      Text('${cart.total.toStringAsFixed(2)} ${cart.currency}',
+                      Text('${cart.total.toStringAsFixed(2)} ${normalizeCurrencyCode(cart.currency)}',
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                     ],
                   ),

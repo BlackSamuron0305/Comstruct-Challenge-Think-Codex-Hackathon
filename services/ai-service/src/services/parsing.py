@@ -11,6 +11,9 @@ from pypdf import PdfReader
 
 MAX_SAMPLE_VALUES = 5
 MARKDOWN_DIRECT_CONFIDENCE = 0.66
+DEFAULT_PAGES_PER_CHUNK = 20
+DEFAULT_PAGE_OVERLAP = 1
+MAX_MARKDOWN_CHARS_PER_CHUNK = 32_000
 _ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 logger = logging.getLogger(__name__)
 
@@ -57,32 +60,116 @@ def parse_pdf_to_table(content: bytes) -> pd.DataFrame:
     return pd.DataFrame({"text": rows})
 
 
-def parse_pdf_to_markdown(content: bytes) -> str:
-    """Convert PDF to markdown first, with graceful fallback."""
+def parse_pdf_to_markdown_pages(content: bytes) -> list[dict[str, Any]]:
+    """Convert a PDF into page-scoped markdown blocks."""
     try:
-        import tempfile
         import os
+        import tempfile
         import pymupdf4llm
 
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
         try:
-            md = pymupdf4llm.to_markdown(tmp_path)
-            if md and md.strip():
-                return md.strip()
+            md_chunks = pymupdf4llm.to_markdown(tmp_path, page_chunks=True)
+            pages: list[dict[str, Any]] = []
+            if isinstance(md_chunks, list):
+                for idx, chunk in enumerate(md_chunks, start=1):
+                    if isinstance(chunk, dict):
+                        page_no = int(chunk.get("page") or chunk.get("page_number") or chunk.get("number") or idx)
+                        text = str(chunk.get("text") or chunk.get("md") or chunk.get("content") or "").strip()
+                    else:
+                        page_no = idx
+                        text = str(chunk).strip()
+                    if text:
+                        if not text.lstrip().startswith("#"):
+                            text = f"## Page {page_no}\n\n{text}"
+                        pages.append({"page": page_no, "markdown": text})
+            if pages:
+                return pages
         finally:
             os.unlink(tmp_path)
     except Exception as e:
-        logger.warning("pymupdf4llm markdown extraction failed (%s), falling back to text", e)
+        logger.warning("pymupdf4llm page markdown extraction failed (%s), falling back to text", e)
 
     reader = PdfReader(io.BytesIO(content))
-    chunks: list[str] = []
+    pages: list[dict[str, Any]] = []
     for idx, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if text:
-            chunks.append(f"## Page {idx}\n\n{text}")
-    return "\n\n".join(chunks).strip()
+            pages.append({"page": idx, "markdown": f"## Page {idx}\n\n{text}"})
+    return pages
+
+
+def parse_pdf_to_markdown(content: bytes) -> str:
+    """Convert PDF to markdown first, with graceful fallback."""
+    return "\n\n".join(page["markdown"] for page in parse_pdf_to_markdown_pages(content)).strip()
+
+
+def build_markdown_chunks(
+    page_markdowns: list[dict[str, Any]],
+    *,
+    pages_per_chunk: int = DEFAULT_PAGES_PER_CHUNK,
+    overlap_pages: int = DEFAULT_PAGE_OVERLAP,
+    max_chars: int = MAX_MARKDOWN_CHARS_PER_CHUNK,
+) -> list[dict[str, Any]]:
+    """Build page-aware markdown chunks with overlap and token-aware sizing."""
+    if not page_markdowns:
+        return []
+
+    pages_per_chunk = max(1, int(pages_per_chunk))
+    overlap_pages = max(0, min(int(overlap_pages), pages_per_chunk - 1))
+    max_chars = max(2_000, int(max_chars))
+
+    chunks: list[dict[str, Any]] = []
+    index = 0
+    total_pages = len(page_markdowns)
+
+    while index < total_pages:
+        selected: list[dict[str, Any]] = []
+        char_count = 0
+        cursor = index
+
+        while cursor < total_pages and len(selected) < pages_per_chunk:
+            page_info = page_markdowns[cursor]
+            markdown = str(page_info.get("markdown") or "").strip()
+            if not markdown:
+                cursor += 1
+                continue
+            if selected and char_count + len(markdown) > max_chars:
+                break
+            selected.append({
+                "page": int(page_info.get("page") or cursor + 1),
+                "markdown": markdown,
+            })
+            char_count += len(markdown)
+            cursor += 1
+
+        if not selected:
+            page_info = page_markdowns[index]
+            selected = [{
+                "page": int(page_info.get("page") or index + 1),
+                "markdown": str(page_info.get("markdown") or "").strip(),
+            }]
+            cursor = index + 1
+
+        chunks.append({
+            "start_page": selected[0]["page"],
+            "end_page": selected[-1]["page"],
+            "page_numbers": [entry["page"] for entry in selected],
+            "markdown": "\n\n".join(entry["markdown"] for entry in selected if entry["markdown"]),
+            "char_count": char_count,
+        })
+
+        if cursor >= total_pages:
+            break
+
+        next_index = cursor - overlap_pages
+        if next_index <= index:
+            next_index = index + 1
+        index = next_index
+
+    return chunks
 
 
 def extract_catalog_from_markdown(markdown: str) -> list[dict]:

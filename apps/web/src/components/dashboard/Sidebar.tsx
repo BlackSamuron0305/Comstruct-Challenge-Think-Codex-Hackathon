@@ -1,4 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -11,12 +13,13 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthContext";
+import { api, type OrderSummary } from "@/lib/api";
 import logo from "@/assets/comstruct-logo.svg";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const nav = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/approvals", label: "Approvals", icon: CheckSquare, badge: 14 },
+  { to: "/approvals", label: "Approvals", icon: CheckSquare },
   { to: "/policies", label: "Statistics", icon: ShieldCheck },
   { to: "/orders", label: "Orders", icon: ShoppingCart },
   { to: "/catalog", label: "Catalog", icon: Boxes },
@@ -24,14 +27,36 @@ const nav = [
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 
+function normalizeStatus(status?: string | null) {
+  return (status ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+}
+
 export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, logout } = useAuth();
+  const { data: orders = [] } = useQuery({
+    queryKey: ["sidebar", "orders", "approvals"],
+    queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+
+  const { pendingApprovals, anomalousRequests } = useMemo(() => {
+    const pending = orders.filter((order) => {
+      const status = normalizeStatus(order.status);
+      return status === "pending" || status === "pending_approval";
+    });
+
+    return {
+      pendingApprovals: pending.length,
+      anomalousRequests: pending.filter((order) => order.requires_approval || (order.notes ?? "").includes("[approval]")).length,
+    };
+  }, [orders]);
 
   return (
     <aside className="hidden lg:flex w-72 shrink-0 flex-col border-r border-border bg-sidebar/95 backdrop-blur">
       <div className="px-5 py-4 border-b border-border">
-        <img src={logo} alt="comstruct" className="h-9 w-auto" />
+        <img src={logo} alt="comstruct" className="h-10 w-auto max-w-[170px]" />
         <div className="mt-2 text-mono text-[10px] uppercase text-muted-foreground tracking-widest">
           C-Materials workspace
         </div>
@@ -61,14 +86,14 @@ export function Sidebar() {
                 <Icon className="h-4 w-4" />
                 {item.label}
               </span>
-              {"badge" in item && item.badge ? (
+              {item.to === "/approvals" && pendingApprovals > 0 ? (
                 <span
                   className={[
                     "text-mono text-[10px] px-1.5 py-0.5 rounded",
                     active ? "bg-hivis text-hivis-foreground" : "bg-hivis/90 text-hivis-foreground",
                   ].join(" ")}
                 >
-                  {item.badge}
+                  {pendingApprovals}
                 </span>
               ) : null}
             </Link>
@@ -86,7 +111,7 @@ export function Sidebar() {
         </div>
         <div className="rounded-md bg-warning/20 border border-warning/30 px-2 py-1.5 flex items-center gap-2">
           <ShieldAlert className="h-3.5 w-3.5 text-warning-foreground" />
-          <span className="text-xs">3 anomalous requests pending</span>
+          <span className="text-xs">{anomalousRequests} anomalous request{anomalousRequests === 1 ? "" : "s"} pending</span>
         </div>
         <button
           onClick={logout}

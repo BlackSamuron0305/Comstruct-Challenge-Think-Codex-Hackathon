@@ -52,14 +52,28 @@ class ApprovalEngine:
             details.append(f"risk {risk['risk_score']}")
             return True, f"Quantity anomaly detected for {context} ({', '.join(details)})"
 
-        # Restricted categories still force a manual review as a safety override.
+        # Restricted groups still force a manual review as a safety override.
+        # A rule may name either a broad category ("Tools") or a fine taxonomy code
+        # ("tools.hand.hammers.sledge"). Both must work.
         if rule:
-            order_categories = {
-                (item.product_snapshot or {}).get("category") for item in order.items
-            } - {None}
-            restricted = order_categories & set(rule.restricted_categories or [])
+            restricted_lookup = {
+                str(value).strip().lower(): str(value).strip()
+                for value in (rule.restricted_categories or [])
+                if str(value).strip()
+            }
+            restricted_tokens = set(restricted_lookup)
+            order_groups: set[str] = set()
+            for item in order.items:
+                snap = item.product_snapshot or {}
+                for value in (snap.get("taxonomy_code"), snap.get("taxonomy_label"), snap.get("category")):
+                    normalized = str(value or "").strip().lower()
+                    if normalized:
+                        order_groups.add(normalized)
+
+            restricted = order_groups & restricted_tokens
             if restricted:
-                return True, f"Contains restricted categories: {', '.join(sorted(restricted))}"
+                labels = [restricted_lookup.get(value, value) for value in sorted(restricted)]
+                return True, f"Contains restricted categories/groups: {', '.join(labels)}"
 
         # Fixed monetary thresholds are now advisory only; statistically normal C-item
         # orders can pass automatically even when the CHF total is high.

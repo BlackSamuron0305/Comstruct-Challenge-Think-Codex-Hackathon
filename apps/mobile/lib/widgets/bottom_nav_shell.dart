@@ -13,11 +13,8 @@ class BottomNavShell extends StatelessWidget {
     if (loc.startsWith('/c-orders')) {
       return 0;
     }
-    if (loc.startsWith('/c-profile')) {
-      return 2;
-    }
     if (loc.startsWith('/c-favorites')) {
-      return 3;
+      return 2;
     }
     return 1;
   }
@@ -30,11 +27,11 @@ class BottomNavShell extends StatelessWidget {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(26),
             child: NavigationBar(
-              height: 88,
+              height: 92,
               backgroundColor: Colors.white,
               indicatorColor: CColors.tealLighter,
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -48,32 +45,24 @@ class BottomNavShell extends StatelessWidget {
                     context.go('/c-home');
                     break;
                   case 2:
-                    context.go('/c-profile');
-                    break;
-                  case 3:
                     context.go('/c-favorites');
                     break;
                 }
               },
               destinations: [
                 NavigationDestination(
-                  icon: const Icon(Icons.receipt_long_outlined, size: 28),
-                  selectedIcon: const Icon(Icons.receipt_long, size: 30),
+                  icon: const Icon(Icons.receipt_long_outlined, size: 30),
+                  selectedIcon: const Icon(Icons.receipt_long, size: 32),
                   label: t(context, 'navOrders'),
                 ),
                 NavigationDestination(
-                  icon: const Icon(Icons.add_circle_outline, size: 28),
-                  selectedIcon: const Icon(Icons.add_circle, size: 30),
+                  icon: const Icon(Icons.add_circle_outline, size: 30),
+                  selectedIcon: const Icon(Icons.add_circle, size: 32),
                   label: t(context, 'navNewOrder'),
                 ),
                 NavigationDestination(
-                  icon: const Icon(Icons.person_outline, size: 28),
-                  selectedIcon: const Icon(Icons.person, size: 30),
-                  label: t(context, 'navProfile'),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.favorite_border, size: 28),
-                  selectedIcon: const Icon(Icons.favorite, size: 30, color: Colors.redAccent),
+                  icon: const Icon(Icons.favorite_border, size: 30),
+                  selectedIcon: const Icon(Icons.favorite, size: 32, color: Colors.redAccent),
                   label: t(context, 'navFavorites'),
                 ),
               ],

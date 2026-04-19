@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
-import '../favorites_store.dart';
 import '../translations.dart';
 import 'c_home_screen.dart' show CColors;
 
@@ -55,40 +54,57 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
   late Future<List<Map<String, dynamic>>> _future;
   String? _expandedId;
   final Map<String, TextEditingController> _qtyCtrlMap = {};
-  final Set<String> _favoriteIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     _load();
-    _loadFavorites();
     context.read<CartCubit>().refresh();
-  }
-
-  Future<void> _loadFavorites() async {
-    final ids = await FavoritesStore.load();
-    if (!mounted) return;
-    setState(() {
-      _favoriteIds
-        ..clear()
-        ..addAll(ids);
-    });
-  }
-
-  Future<void> _toggleFavorite(String id) async {
-    final ids = await FavoritesStore.toggle(id);
-    if (!mounted) return;
-    setState(() {
-      _favoriteIds
-        ..clear()
-        ..addAll(ids);
-    });
   }
 
   void _load([String? q]) {
     setState(() {
-      _future = AppScope.api.products(q: q, category: widget.category);
+      _future = _loadProducts(q: q);
     });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadProducts({String? q}) async {
+    final query = q?.trim();
+
+    if (widget.category == null || widget.category!.isEmpty) {
+      return AppScope.api.products(q: query, category: null, pageSize: 200);
+    }
+
+    final all = await AppScope.api.products(pageSize: 200);
+    return all.where((product) {
+      if (!_matchesCategory(product, widget.category!)) return false;
+      if (query == null || query.isEmpty) return true;
+      final haystack = '${product['name'] ?? ''} ${product['sku'] ?? ''} ${product['category'] ?? ''}'.toLowerCase();
+      return haystack.contains(query.toLowerCase());
+    }).toList();
+  }
+
+  bool _matchesCategory(Map<String, dynamic> product, String categoryId) {
+    final category = (product['category'] ?? '').toString().toLowerCase();
+    final name = (product['name'] ?? '').toString().toLowerCase();
+    final text = '$category $name';
+
+    switch (categoryId) {
+      case 'fasteners':
+        return category.contains('fastener') || category.contains('anchor') || text.contains('screw') || text.contains('anchor') || text.contains('bolt');
+      case 'consumables':
+        return category.contains('consumable') || category.contains('drywall') || text.contains('foam') || text.contains('adhesive') || text.contains('seal');
+      case 'ppe':
+        return category.contains('ppe') || text.contains('glove') || text.contains('mask') || text.contains('goggle') || text.contains('helmet');
+      case 'tools':
+        return category.contains('tool') || text.contains('hammer') || text.contains('drill') || text.contains('blade') || text.contains('knife');
+      case 'tapes':
+        return text.contains('tape') || text.contains('seal') || text.contains('foam') || text.contains('silicone');
+      case 'supplies':
+        return category.contains('site supplies') || category.contains('electrical') || category.contains('sanitary') || text.contains('battery') || text.contains('bag') || text.contains('marker');
+      default:
+        return true;
+    }
   }
 
   TextEditingController _qtyCtrl(String id, int currentQty) {
@@ -100,10 +116,17 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
     return ctrl;
   }
 
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('${value ?? ''}') ?? 0;
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
-    for (final c in _qtyCtrlMap.values) c.dispose();
+    for (final c in _qtyCtrlMap.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -113,15 +136,13 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
       backgroundColor: CColors.bg,
       appBar: AppBar(
         backgroundColor: CColors.teal,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/c-home'),
+        ),
         title: Text(widget.category != null
             ? t(context, 'cat${_tKeyFor(widget.category!)}')
             : t(context, 'appTitle')),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.favorite_border),
-            onPressed: () => context.go('/c-favorites'),
-          ),
-        ],
       ),
       bottomNavigationBar: BlocBuilder<CartCubit, CartState>(
         builder: (_, cartState) {
@@ -184,7 +205,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                     );
                     final qty = (cartLine['quantity'] as num?)?.toInt() ?? 0;
                     final isExpanded = _expandedId == id;
-                    final price = (p['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
+                    final price = _asDouble(p['unit_price']).toStringAsFixed(2);
                     final category = (p['category'] as String? ?? '').toLowerCase();
 
                     return AnimatedContainer(
@@ -220,14 +241,6 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                                 Text('EUR $price',
                                     style: const TextStyle(color: CColors.teal, fontWeight: FontWeight.w700, fontSize: 16)),
                               ])),
-                              IconButton(
-                                onPressed: () => _toggleFavorite(id),
-                                icon: Icon(
-                                  _favoriteIds.contains(id) ? Icons.favorite : Icons.favorite_border,
-                                  color: _favoriteIds.contains(id) ? Colors.redAccent : Colors.black38,
-                                  size: 28,
-                                ),
-                              ),
                               Row(mainAxisSize: MainAxisSize.min, children: [
                                 if (qty > 0) ...[
                                   _CircleBtn(
@@ -313,7 +326,7 @@ class _CCatalogScreenState extends State<CCatalogScreen> {
                                 const SizedBox(width: 8),
                                 Text(p['unit'] as String? ?? '', style: const TextStyle(color: Colors.black45, fontSize: 13)),
                                 const Spacer(),
-                                Text('EUR ${((p['unit_price'] as num? ?? 0) * qty).toStringAsFixed(2)}',
+                                Text('EUR ${(_asDouble(p['unit_price']) * qty).toStringAsFixed(2)}',
                                     style: const TextStyle(fontWeight: FontWeight.w700, color: CColors.teal, fontSize: 14)),
                               ]),
                             ]),

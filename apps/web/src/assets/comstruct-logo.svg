@@ -1,13 +1,16 @@
-<svg width="920" height="220" viewBox="0 0 920 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(10,10)">
-    <polygon points="84,0 20,36 110,30" fill="#357287"/>
-    <polygon points="116,34 190,30 98,0" fill="#357287"/>
-    <polygon points="0,38 18,80 110,72" fill="#357287"/>
-    <polygon points="116,74 194,80 192,36" fill="#357287"/>
-    <polygon points="20,86 44,138 90,140" fill="#357287"/>
-    <polygon points="92,142 170,134 122,40" fill="#F1C84C"/>
-    <polygon points="46,144 80,182 0,154" fill="#357287"/>
-    <polygon points="94,148 184,154 98,188" fill="#357287"/>
+<svg width="420" height="120" viewBox="0 0 420 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(8 10)">
+    <polygon points="44,0 2,24 56,21" fill="#5A7E96"/>
+    <polygon points="48,0 83,21 93,34" fill="#5A7E96"/>
+    <polygon points="0,31 18,34 12,72" fill="#5A7E96"/>
+    <polygon points="20,37 59,31 47,81" fill="#E5E7EB"/>
+    <polygon points="61,31 95,34 95,72" fill="#5A7E96"/>
+    <polygon points="13,74 45,83 31,100" fill="#5A7E96"/>
+    <polygon points="48,37 79,79 34,82" fill="#F2C94C"/>
+    <polygon points="47,85 83,82 53,99" fill="#5A7E96"/>
+    <polyline points="0,31 59,25 61,31 95,34" stroke="#4C6F86" stroke-width="3" stroke-linejoin="round"/>
+    <polyline points="20,37 47,81 79,79 48,37" stroke="#4C6F86" stroke-width="3" stroke-linejoin="round"/>
+    <line x1="59" y1="25" x2="47" y2="81" stroke="#4C6F86" stroke-width="3"/>
   </g>
-  <text x="250" y="135" fill="#357287" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="600" letter-spacing="1">comstruct</text>
+  <text x="122" y="73" fill="#4F748B" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="700" letter-spacing="0.4">comstruct</text>
 </svg>

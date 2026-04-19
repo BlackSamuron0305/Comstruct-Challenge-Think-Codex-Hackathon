@@ -426,7 +426,9 @@ Given a description of a construction site photo, identify:
 2. Potential issues or missing materials
 3. Recommended items to order
 
-Use the retrieved catalog context to ground product names and categories. If the description is too vague, say so.
+Use the retrieved catalog context to ground product names and categories.
+Prefer only product names or categories from that catalog context when they clearly fit.
+If the description is too vague or nothing clearly matches the catalog, return no materials and explain what detail is missing.
 Retrieved catalog context:
 {catalog_context}
 
@@ -505,13 +507,27 @@ async def upload_image(
         "Image uploaded: %s (%.1f KB, %s)", file.filename, image_size_kb, file.content_type,
     )
 
-    vision_system = CONSTRUCTION_SYSTEM + """
+    fallback_candidates = await _retrieve_catalog_context(
+        " ".join(filter(None, [context, file.filename or "", project_id])),
+        limit=6,
+    )
+    catalog_context = json.dumps([_catalog_item_view(item) for item in fallback_candidates], ensure_ascii=False)
+    stub_response = _build_image_fallback(file.filename, context, fallback_candidates, image_size_kb)
+
+    vision_system = CONSTRUCTION_SYSTEM + f"""
 You are analyzing a user-uploaded image for procurement assistance.
 First decide whether the image is actually related to construction materials, tools, packaging, delivery notes, invoices, or a site workflow.
 If it is not clearly construction-related, do NOT guess and do NOT infer a construction site from a generic office, beverage, laptop, desk, or person photo.
 
 For non-construction images, return JSON exactly like:
-{"materials_detected": [], "observations": "This looks like a non-construction image (for example a laptop, drink, desk item, or office object), not a construction material or procurement document.", "recommendations": ["Upload a closer photo of the relevant material, package label, pallet tag, or delivery note."], "confidence": 0.1, "is_construction_related": false}
+{{"materials_detected": [], "observations": "This looks like a non-construction image (for example a laptop, drink, desk item, or office object), not a construction material or procurement document.", "recommendations": ["Upload a closer photo of the relevant material, package label, pallet tag, or delivery note."], "confidence": 0.1, "is_construction_related": false}}
+
+Treat the user-supplied context as an unverified hint, not ground truth. Visual evidence must win over text hints.
+If you identify a material, prefer names/categories from the retrieved catalog context below when there is a clear match.
+If no clear match exists, keep materials_detected empty instead of guessing.
+
+Retrieved catalog context:
+{catalog_context}
 
 Never reinterpret a laptop, bottle, cup, desk, keyboard, monitor, or phone as a building material just because it has flat surfaces or rectangular shapes.
 Only include materials_detected when visual evidence is strong and the suggestion is appropriate for procurement.
@@ -519,13 +535,7 @@ Respond with JSON: {"materials_detected": [{"name": "...", "category": "...", "q
 
     user_prompt = "Analyze this image for construction procurement relevance."
     if context:
-        user_prompt += f" Context: {context}"
-
-    fallback_candidates = await _retrieve_catalog_context(
-        " ".join(filter(None, [context, file.filename or "", project_id])),
-        limit=6,
-    )
-    stub_response = _build_image_fallback(file.filename, context, fallback_candidates, image_size_kb)
+        user_prompt += f"\n\nUser context (hint only, may be wrong):\n'''{context}'''"
 
     analysis = await call_ollama_vision(
         system=vision_system,

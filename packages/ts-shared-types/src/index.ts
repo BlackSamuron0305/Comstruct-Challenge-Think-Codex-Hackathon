@@ -61,6 +61,8 @@ export const Product = z.object({
   name: z.string(),
   description: z.string().nullable(),
   category: ProductCategory.nullable(),
+  taxonomy_code: z.string().nullable().optional(),
+  taxonomy_label: z.string().nullable().optional(),
   material_class: MaterialClass,
   unit: Unit,
   packaging_qty: z.number().positive(),

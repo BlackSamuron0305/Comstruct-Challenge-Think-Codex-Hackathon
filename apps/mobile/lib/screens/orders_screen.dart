@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../order_events.dart';
 import '../theme.dart';
@@ -110,7 +111,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 return Card(
                   child: ListTile(
                     title: Text('Order ${(o['id'] as String).substring(0, 8)}'),
-                    subtitle: Text('${o['total_amount']} ${o['currency']}'),
+                    subtitle: Text('${o['total_amount']} ${normalizeCurrencyCode(o['currency'] as String?)}'),
                     trailing: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(

@@ -48,9 +48,16 @@ def _extract_json(text: str) -> dict:
 
     text = _strip_fences(text)
 
+    def _normalise_json_payload(parsed: Any) -> dict[str, Any]:
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"results": parsed}
+        return {"value": parsed}
+
     # Try direct parse
     try:
-        return json.loads(text)
+        return _normalise_json_payload(json.loads(text))
     except json.JSONDecodeError:
         pass
     # Find first { ... } block
@@ -58,7 +65,7 @@ def _extract_json(text: str) -> dict:
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(text[start:end + 1])
+            return _normalise_json_payload(json.loads(text[start:end + 1]))
         except json.JSONDecodeError:
             pass
     # Find first [ ... ] block
@@ -66,7 +73,7 @@ def _extract_json(text: str) -> dict:
     end = text.rfind("]")
     if start != -1 and end != -1 and end > start:
         try:
-            return {"results": json.loads(text[start:end + 1])}
+            return _normalise_json_payload(json.loads(text[start:end + 1]))
         except json.JSONDecodeError:
             pass
     raise ValueError(f"Could not parse JSON from model output: {text[:200]}")

@@ -150,6 +150,8 @@ async def ingest_supplier_file(
         p["material_class"] = material_class
         p["classification_confidence"] = c.get("confidence")
         p["category"] = p["category"] or c.get("category")
+        p["taxonomy_code"] = c.get("taxonomy_code")
+        p["taxonomy_label"] = c.get("taxonomy_label")
         enriched.append(p)
 
     c_only = [p for p in enriched if p["material_class"] == "C"]
@@ -186,6 +188,8 @@ async def ingest_supplier_file(
             "name": p["name"],
             "description": p.get("description"),
             "category": p.get("category") or "Uncategorised",
+            "taxonomy_code": p.get("taxonomy_code"),
+            "taxonomy_label": p.get("taxonomy_label"),
             "unit": p.get("unit") or "pc",
             "unit_price": p.get("unit_price") or 0,
             "currency": p.get("currency") or default_currency,

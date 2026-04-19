@@ -34,6 +34,7 @@ export type OrderSummary = {
   id: string;
   project_id?: string | null;
   foreman_id: string;
+  foreman_name?: string | null;
   supplier_id?: string | null;
   supplier_name?: string | null;
   total_amount: number | string;
@@ -54,6 +55,8 @@ export type OrderSummary = {
       unit?: string | null;
       currency?: string | null;
       category?: string | null;
+      taxonomy_code?: string | null;
+      taxonomy_label?: string | null;
       material_class?: string | null;
       supplier_id?: string | null;
       supplier_name?: string | null;
@@ -75,6 +78,8 @@ export type ProductRecord = {
   sku?: string | null;
   name: string;
   category?: string | null;
+  taxonomy_code?: string | null;
+  taxonomy_label?: string | null;
   unit?: string | null;
   packaging_qty?: number | null;
   unit_price?: number | null;
@@ -406,11 +411,16 @@ export const api = {
     request<T>('PUT', path, { ...options, body }),
 };
 
+export function normalizeCurrency(currency: string | null | undefined): string {
+  const code = (currency ?? 'EUR').toUpperCase();
+  return code === 'CHF' ? 'EUR' : code;
+}
+
 export function formatCurrency(value: number | string | null | undefined, currency = 'EUR'): string {
   const amount = Number(value ?? 0);
   return new Intl.NumberFormat('de-DE', {
     style: 'currency',
-    currency,
+    currency: normalizeCurrency(currency),
     maximumFractionDigits: 0,
   }).format(Number.isFinite(amount) ? amount : 0);
 }

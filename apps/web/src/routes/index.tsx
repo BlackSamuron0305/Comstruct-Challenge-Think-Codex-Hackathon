@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Info, TriangleAlert } from "lucide-react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { DashboardLayout } from "@/components/dashboard/Layout";
+import { QueryState } from "@/components/dashboard/QueryState";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { useProject, ALL_PROJECTS } from "@/components/dashboard/ProjectContext";
 import { api, formatCurrency, shortId, type OrderSummary, type ProjectRecord, type SupplierRecord } from "@/lib/api";
@@ -71,11 +72,11 @@ function Overview() {
     id: order.id,
     orderRef: shortId(order.id).toUpperCase(),
     project: projectMap.get(order.project_id ?? "") ?? shortId(order.project_id),
-    foreman: shortId(order.foreman_id).toUpperCase(),
+    requester: order.foreman_name?.trim() || shortId(order.foreman_id).toUpperCase(),
     supplier: order.supplier_name ?? order.items?.[0]?.product_snapshot?.supplier_name ?? "—",
     items: order.items?.length ?? 0,
     total: Number(order.total_amount ?? 0),
-    currency: order.currency || "CHF",
+    currency: order.currency || "EUR",
     status: order.status,
   }));
 
@@ -108,31 +109,46 @@ function Overview() {
 
   return (
     <DashboardLayout title="Overview" subtitle={subtitle}>
-      <div className="mb-6 rounded-lg border border-border bg-card p-4 flex items-start gap-3">
+      <div className="mb-4 rounded-lg border border-border bg-card p-4 flex items-start gap-3">
         <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground shrink-0">
           <Info className="h-4 w-4" />
         </div>
         <div className="text-sm">
           <div className="font-medium">Live operational procurement view</div>
           <p className="text-muted-foreground">
-            This dashboard is now backed by the running gateway and service data rather than design-time fixtures.
+            This dashboard is backed by the running services. Start with blocked approvals, then open the order timeline or refresh supplier data.
           </p>
         </div>
       </div>
 
+      <div className="mb-6 grid gap-3 md:grid-cols-3">
+        <Link to="/approvals" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Act now</div>
+          <div className="mt-1 font-medium">Review {pending.length} approval{pending.length === 1 ? "" : "s"}</div>
+          <div className="mt-1 text-muted-foreground">Jump straight into statistically flagged requests.</div>
+        </Link>
+        <Link to="/orders" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Answer requesters</div>
+          <div className="mt-1 font-medium">Open the live order timeline</div>
+          <div className="mt-1 text-muted-foreground">See what is ordered, in transit, delivered, or rejected.</div>
+        </Link>
+        <Link to="/catalog" className="rounded-lg border border-border bg-card p-4 text-sm hover:bg-accent/40 transition-colors">
+          <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Keep data fresh</div>
+          <div className="mt-1 font-medium">Import a new supplier file</div>
+          <div className="mt-1 text-muted-foreground">Upload PDFs, CSVs, or Excel sheets into the live catalog workspace.</div>
+        </Link>
+      </div>
+
       {isLoading ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-sm text-muted-foreground">Loading live metrics…</div>
+        <QueryState kind="loading" title="Loading live metrics" description="Spend, approvals, and project signals are being refreshed now." />
       ) : isError ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-sm">
-          <div className="font-medium">Overview metrics could not be loaded.</div>
-          <button onClick={() => void refetch()} className="mt-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent">Retry</button>
-        </div>
+        <QueryState kind="error" title="Overview metrics could not be loaded" description="The control center is temporarily unavailable." onRetry={() => void refetch()} />
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Kpi accent label="Pending approvals" value={String(pending.length)} hint={`${formatCurrency(pendingValue, "CHF")} waiting`} />
-            <Kpi label="Spend MTD" value={formatCurrency(spendMtd, "CHF")} delta={spendDeltaPct} hint="vs. recent trend" />
-            <Kpi label="Orders / week" value={String(recentWeekOrders.length)} hint={`Avg ${formatCurrency(avgOrderValue, "CHF")} per order`} />
+            <Kpi accent label="Pending approvals" value={String(pending.length)} hint={`${formatCurrency(pendingValue, "EUR")} waiting`} />
+            <Kpi label="Spend MTD" value={formatCurrency(spendMtd, "EUR")} delta={spendDeltaPct} hint="vs. recent trend" />
+            <Kpi label="Orders / week" value={String(recentWeekOrders.length)} hint={`Avg ${formatCurrency(avgOrderValue, "EUR")} per order`} />
             <Kpi label="Top supplier" value={topSupplier} hint={project === ALL_PROJECTS ? "Highest current spend" : "Within current project view"} />
           </div>
 
@@ -157,7 +173,7 @@ function Overview() {
                     <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" vertical={false} />
                     <XAxis dataKey="week" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                     <YAxis stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                    <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                    <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                     <Area type="monotone" dataKey="spend" stroke="oklch(0.22 0.012 250)" strokeWidth={2} fill="url(#g1)" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -173,7 +189,7 @@ function Overview() {
                     <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" horizontal={false} />
                     <XAxis type="number" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                     <YAxis type="category" dataKey="group" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={100} />
-                    <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                    <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                     <Bar dataKey="value" fill="oklch(0.22 0.012 250)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -196,7 +212,7 @@ function Overview() {
                 <tr>
                   <th className="text-left font-normal px-5 py-3">Order</th>
                   <th className="text-left font-normal px-5 py-3">Project</th>
-                  <th className="text-left font-normal px-5 py-3">Foreman</th>
+                  <th className="text-left font-normal px-5 py-3">Requester</th>
                   <th className="text-left font-normal px-5 py-3">Supplier</th>
                   <th className="text-right font-normal px-5 py-3">Items</th>
                   <th className="text-right font-normal px-5 py-3">Total</th>
@@ -208,7 +224,7 @@ function Overview() {
                   <tr key={row.id} className="border-t border-border hover:bg-secondary/60">
                     <td className="px-5 py-3 text-mono text-xs">{row.orderRef}</td>
                     <td className="px-5 py-3">{row.project}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{row.foreman}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{row.requester}</td>
                     <td className="px-5 py-3">{row.supplier}</td>
                     <td className="px-5 py-3 text-right tabular">{row.items}</td>
                     <td className="px-5 py-3 text-right tabular font-medium">{formatCurrency(row.total, row.currency)}</td>
@@ -217,7 +233,7 @@ function Overview() {
                 ))}
                 {pendingRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-muted-foreground">No orders are currently waiting for approval.</td>
+                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-muted-foreground">No orders are currently waiting for review. <Link to="/orders" className="text-primary hover:underline">Open the live order timeline</Link> to monitor the next request.</td>
                   </tr>
                 )}
               </tbody>

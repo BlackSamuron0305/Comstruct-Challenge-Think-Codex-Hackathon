@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Sparkles, Upload } from "lucide-react";
@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { api, formatCurrency, shortId, type ProductRecord, type SupplierRecord } from "@/lib/api";
-import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
 import { createLocalSupplierDraft, loadLocalSuppliers, saveLocalSuppliers, type LocalSupplierDraft, type SupplierChannel } from "@/lib/local-suppliers";
 
 export const Route = createFileRoute("/catalog")({
@@ -77,6 +76,11 @@ function renderPreviewValue(value: unknown): string {
   return String(value);
 }
 
+function formatCatalogPrice(price: number, currency: string): string {
+  if (!Number.isFinite(price) || price <= 0) return "Awaiting price";
+  return formatCurrency(price, currency);
+}
+
 const tradeMatchers: Record<string, RegExp> = {
   drywall: /drywall|wall|board|fastener|screw/i,
   electrical: /electric|cable|tape|battery|light/i,
@@ -107,7 +111,9 @@ function Catalog() {
   const [fileName, setFileName] = useState<string>("");
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [documentPreviewUrl, setDocumentPreviewUrl] = useState<string>("");
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  const [approvedMappings, setApprovedMappings] = useState<Record<string, boolean>>({});
   const [selectedTrade, setSelectedTrade] = useState<string>("all");
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -120,19 +126,24 @@ function Catalog() {
   const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
   const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
   const [draftSupplierChannel, setDraftSupplierChannel] = useState<SupplierChannel>("Excel/PDF upload");
-  const [showAddSupplier, setShowAddSupplier] = useState(false);
-  const [localSuppliers, setLocalSuppliers] = useState<LocalSupplierDraft[]>(() => loadLocalSuppliers());
-  const [draftSupplierName, setDraftSupplierName] = useState("");
-  const [draftSupplierContact, setDraftSupplierContact] = useState("");
-  const [draftSupplierEmail, setDraftSupplierEmail] = useState("");
-  const [draftSupplierPhone, setDraftSupplierPhone] = useState("");
-  const [draftSupplierChannel, setDraftSupplierChannel] = useState<SupplierChannel>("Excel/PDF upload");
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setDocumentPreviewUrl("");
+      return;
+    }
+
+    const nextUrl = URL.createObjectURL(selectedFile);
+    setDocumentPreviewUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [selectedFile]);
 
   function resetImportDraft() {
     setSelectedFile(null);
     setFileName("");
     setSelectedSupplierId("");
     setMappingOverrides({});
+    setApprovedMappings({});
     setLastImportResult(null);
     previewMutation.reset();
   }
@@ -159,60 +170,13 @@ function Catalog() {
       return;
     }
 
-    const created = createLocalSupplierDraft({
-      name: draftSupplierName,
-      contact_name: draftSupplierContact,
-      email: draftSupplierEmail,
-      phone: draftSupplierPhone,
+    createSupplierMutation.mutate({
+      name: draftSupplierName.trim(),
+      contact_name: draftSupplierContact.trim() || undefined,
+      email: draftSupplierEmail.trim() || undefined,
+      phone: draftSupplierPhone.trim() || undefined,
       channel: draftSupplierChannel,
     });
-
-    const next = [created, ...localSuppliers];
-    setLocalSuppliers(next);
-    saveLocalSuppliers(next);
-    setSelectedSupplierId(created.id);
-    setShowAddSupplier(false);
-    resetSupplierDraft();
-    toast.success(`${created.name} added for this workspace.`);
-  }
-
-  function resetSupplierDraft() {
-    setDraftSupplierName("");
-    setDraftSupplierContact("");
-    setDraftSupplierEmail("");
-    setDraftSupplierPhone("");
-    setDraftSupplierChannel("Excel/PDF upload");
-  }
-
-  function handleSupplierSelect(nextValue: string) {
-    if (nextValue === "__new__") {
-      setShowAddSupplier(true);
-      return;
-    }
-    setSelectedSupplierId(nextValue);
-  }
-
-  function handleCreateSupplier() {
-    if (!draftSupplierName.trim()) {
-      toast.error("Please enter a supplier name.");
-      return;
-    }
-
-    const created = createLocalSupplierDraft({
-      name: draftSupplierName,
-      contact_name: draftSupplierContact,
-      email: draftSupplierEmail,
-      phone: draftSupplierPhone,
-      channel: draftSupplierChannel,
-    });
-
-    const next = [created, ...localSuppliers];
-    setLocalSuppliers(next);
-    saveLocalSuppliers(next);
-    setSelectedSupplierId(created.id);
-    setShowAddSupplier(false);
-    resetSupplierDraft();
-    toast.success(`${created.name} added for this workspace.`);
   }
 
   const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
@@ -225,17 +189,53 @@ function Catalog() {
     queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
   });
 
-  const supplierOptions = useMemo(() => {
-    const live = suppliers.map((supplier) => ({ ...supplier, channel: "API/PunchOut" as SupplierChannel }));
-    const manual = localSuppliers.map((supplier) => ({ ...supplier }));
-    return [...manual, ...live];
-  }, [localSuppliers, suppliers]);
+  const createSupplierMutation = useMutation({
+    mutationFn: async (payload: { name: string; contact_name?: string; email?: string; phone?: string; channel: SupplierChannel }) => {
+      const { channel: _channel, ...body } = payload;
+      return api.post<SupplierRecord>("/api/suppliers", body);
+    },
+    onSuccess: (created) => {
+      const dedupedLocal = localSuppliers.filter((supplier) => supplier.name.trim().toLowerCase() !== created.name.trim().toLowerCase());
+      setLocalSuppliers(dedupedLocal);
+      saveLocalSuppliers(dedupedLocal);
+      setSelectedSupplierId(created.id);
+      setShowAddSupplier(false);
+      resetSupplierDraft();
+      toast.success(`${created.name} saved to the supplier database.`);
+      void queryClient.invalidateQueries({ queryKey: ["catalog-suppliers"] });
+      void queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+    onError: (error, payload) => {
+      const localDraft = createLocalSupplierDraft(payload);
+      const next = [
+        localDraft,
+        ...localSuppliers.filter((supplier) => supplier.name.trim().toLowerCase() !== payload.name.trim().toLowerCase()),
+      ];
+      setLocalSuppliers(next);
+      saveLocalSuppliers(next);
+      setSelectedSupplierId(localDraft.id);
+      setShowAddSupplier(false);
+      resetSupplierDraft();
+      toast.success(`${payload.name} added locally for this workspace.`);
+      if (error instanceof Error && error.message.trim()) {
+        toast.message(error.message);
+      }
+    },
+  });
 
   const supplierOptions = useMemo(() => {
-    const live = suppliers.map((supplier) => ({ ...supplier, channel: "API/PunchOut" as SupplierChannel }));
-    const manual = localSuppliers.map((supplier) => ({ ...supplier }));
-    return [...manual, ...live];
-  }, [localSuppliers, suppliers]);
+    const live = suppliers.map((supplier) => ({
+      ...supplier,
+      channel: products.some((product) => product.supplier_id === supplier.id)
+        ? ("API/PunchOut" as SupplierChannel)
+        : ("Excel/PDF upload" as SupplierChannel),
+    }));
+
+    const seen = new Set(live.map((supplier) => supplier.name.trim().toLowerCase()));
+    const manual = localSuppliers.filter((supplier) => !seen.has(supplier.name.trim().toLowerCase()));
+
+    return [...manual, ...live].sort((left, right) => left.name.localeCompare(right.name));
+  }, [localSuppliers, products, suppliers]);
 
   const previewMutation = useMutation({
     mutationFn: ({ file, overrides }: { file: File; overrides?: Record<string, string> }) => {
@@ -308,6 +308,7 @@ function Catalog() {
     setSelectedFile(file);
     setFileName(file.name);
     setMappingOverrides({});
+    setApprovedMappings({});
     setLastImportResult(null);
     previewMutation.mutate({ file, overrides: {} });
   }
@@ -372,15 +373,27 @@ function Catalog() {
     });
   }, [baseRows, selectedTrade, selectedSupplierFilter, standardsOnly, searchQuery]);
 
+  const previewRows = previewMutation.data?.preview_rows ?? [];
+  const firstPreviewRow = previewRows[0] ?? null;
   const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
-  const previewIssues = mappedColumns.filter((entry) => !entry.target_field).length;
-  const mappedCount = mappedColumns.length - previewIssues;
-  const needsReview = previewMutation.data ? previewIssues : rows.filter((item) => item.status === "needs-review").length;
+  const reviewEntries = mappedColumns.map((entry) => {
+    const targetField = mappingOverrides[entry.source_column] ?? entry.target_field ?? "";
+    return {
+      ...entry,
+      targetField,
+      approved: approvedMappings[entry.source_column] ?? false,
+      sampleValue: firstPreviewRow ? renderPreviewValue(firstPreviewRow[entry.source_column]) : "—",
+    };
+  });
+  const previewIssues = reviewEntries.filter((entry) => !entry.targetField).length;
+  const pendingApprovalCount = reviewEntries.filter((entry) => entry.targetField && !entry.approved).length;
+  const mappedCount = reviewEntries.filter((entry) => entry.targetField).length;
+  const approvedCount = reviewEntries.filter((entry) => entry.approved).length;
+  const reviewProgress = reviewEntries.length ? Math.round((approvedCount / reviewEntries.length) * 100) : 0;
+  const needsReview = previewMutation.data ? previewIssues + pendingApprovalCount : rows.filter((item) => item.status === "needs-review").length;
   const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
   const previewReady = Boolean(selectedFile && previewMutation.data && !previewMutation.isPending);
   const hasLiveWarning = productsError || suppliersError;
-  const previewRows = previewMutation.data?.preview_rows ?? [];
-  const previewKeys = Object.keys(previewRows[0] ?? {});
   const documentType = fileName.toLowerCase().includes("offer")
     ? "Offer / quote"
     : fileName.toLowerCase().includes("contract")
@@ -388,39 +401,19 @@ function Catalog() {
       : fileName.toLowerCase().includes("pdf")
         ? "PDF commercial document"
         : "Catalog or price list";
-  const contractSignals = previewKeys.filter((key) => /discount|rebate|qty|quantity|valid|contract|payment|lead|term/i.test(key)).slice(0, 6);
-  const quantityBreakHints = previewRows.slice(0, 3).map((row) => {
-    const qtyKey = Object.keys(row).find((key) => /qty|quantity|min/i.test(key));
-    const priceKey = Object.keys(row).find((key) => /price|amount|discount|rebate/i.test(key));
-    if (!qtyKey && !priceKey) return null;
-    return `${qtyKey ? `${row[qtyKey]}` : "tier"}${priceKey ? ` → ${row[priceKey]}` : ""}`;
-  }).filter(Boolean) as string[];
-  const previewRows = previewMutation.data?.preview_rows ?? [];
-  const previewKeys = Object.keys(previewRows[0] ?? {});
-  const documentType = fileName.toLowerCase().includes("offer")
-    ? "Offer / quote"
-    : fileName.toLowerCase().includes("contract")
-      ? "Framework contract"
-      : fileName.toLowerCase().includes("pdf")
-        ? "PDF commercial document"
-        : "Catalog or price list";
-  const contractSignals = previewKeys.filter((key) => /discount|rebate|qty|quantity|valid|contract|payment|lead|term/i.test(key)).slice(0, 6);
-  const quantityBreakHints = previewRows.slice(0, 3).map((row) => {
-    const qtyKey = Object.keys(row).find((key) => /qty|quantity|min/i.test(key));
-    const priceKey = Object.keys(row).find((key) => /price|amount|discount|rebate/i.test(key));
-    if (!qtyKey && !priceKey) return null;
-    return `${qtyKey ? `${row[qtyKey]}` : "tier"}${priceKey ? ` → ${row[priceKey]}` : ""}`;
-  }).filter(Boolean) as string[];
-  const canImport = Boolean(selectedFile && selectedSupplierId && previewReady && previewIssues === 0 && !importMutation.isPending);
+  const isReviewMode = Boolean(selectedFile || previewMutation.data);
+  const canImport = Boolean(selectedFile && selectedSupplierId && previewReady && previewIssues === 0 && pendingApprovalCount === 0 && !importMutation.isPending);
   const importBlockedReason = !selectedFile
-    ? "Upload a supplier file to generate a preview first."
+    ? "Upload a supplier file to start the review workspace."
     : !selectedSupplierId
-      ? "Choose the supplier that owns this catalog."
+      ? "Choose the supplier that owns this document."
       : previewMutation.isPending
-        ? "Wait for the preview and AI mapping review to finish."
+        ? "Wait while the document is being extracted."
         : previewIssues > 0
-          ? "Resolve or explicitly ignore the remaining unmapped columns before importing."
-          : null;
+          ? "Choose a target field for each extracted column before importing."
+          : pendingApprovalCount > 0
+            ? "Approve the extracted fields one by one or use Auto approve all."
+            : null;
 
   if (productsLoading && suppliersLoading && products.length === 0 && suppliers.length === 0) {
     return (
@@ -460,13 +453,35 @@ function Catalog() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
+        <div className="font-medium">Import checklist</div>
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <div className={["rounded-md border px-3 py-2", selectedFile ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 1</div>
+            <div className="mt-1 font-medium">Upload the document</div>
+          </div>
+          <div className={["rounded-md border px-3 py-2", selectedSupplierId ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 2</div>
+            <div className="mt-1 font-medium">Assign the supplier</div>
+          </div>
+          <div className={["rounded-md border px-3 py-2", previewReady ? "border-success/30 bg-success/10" : "border-border bg-secondary/30"].join(" ")}>
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 3</div>
+            <div className="mt-1 font-medium">Approve extracted fields</div>
+          </div>
+          <div className={["rounded-md border px-3 py-2", canImport ? "border-primary/40 bg-primary/10" : "border-border bg-secondary/30"].join(" ")}>
+            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Step 4</div>
+            <div className="mt-1 font-medium">Import into the live catalog</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <label className="rounded-lg border border-dashed border-border bg-card p-5 cursor-pointer hover:bg-accent/40 transition-colors">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Upload className="h-4 w-4" /></div>
             <div>
-              <div className="font-medium text-sm">Upload Excel / CSV / PDF</div>
-              <div className="text-xs text-muted-foreground">{fileName || "Map columns → SKU, price, unit"}</div>
+              <div className="font-medium text-sm">Upload document</div>
+              <div className="text-xs text-muted-foreground">{fileName || "Select PDF, CSV, or Excel to start review"}</div>
             </div>
           </div>
           <input type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
@@ -476,7 +491,7 @@ function Catalog() {
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground"><Sparkles className="h-4 w-4" /></div>
             <div className="flex-1">
-              <div className="font-medium text-sm">Live preview & import</div>
+              <div className="font-medium text-sm">Assign supplier and import</div>
               <select
                 value={selectedSupplierId}
                 onChange={(event) => handleSupplierSelect(event.target.value)}
@@ -490,208 +505,205 @@ function Catalog() {
               </select>
             </div>
           </div>
-          <button
-            className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            onClick={() => importMutation.mutate()}
-            disabled={!canImport}
-          >
-            {importMutation.isPending ? "Importing…" : "Confirm import"}
-          </button>
-          <div className="mt-2 text-xs text-muted-foreground">
-            {importBlockedReason ?? "Ready for import. The mapped file will be normalized into the live catalog."}
+          <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+            {previewMutation.data
+              ? `${previewMutation.data.rows_in} rows extracted · ${needsReview} checks remaining`
+              : "Upload a document to open the review workspace."}
           </div>
-          {(selectedFile || lastImportResult) && (
-            <button
-              className="mt-3 w-full rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-              onClick={resetImportDraft}
-              type="button"
-            >
-              Reset upload
-            </button>
-          )}
-        </div>
-
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 grid place-items-center rounded-md bg-warning/30 text-warning-foreground"><AlertCircle className="h-4 w-4" /></div>
-            <div>
-              <div className="font-medium text-sm tabular">{needsReview} items need review</div>
-              <div className="text-xs text-muted-foreground">
-                {previewMutation.data
-                  ? `${previewMutation.data.rows_in} uploaded rows previewed · ${previewIssues} columns still need confirmation`
-                  : "Waiting for a supplier file preview"}
-              </div>
-            </div>
+          <div className="mt-3 text-xs text-muted-foreground">
+            {importBlockedReason ?? "Everything is approved and ready to import into the live catalog."}
           </div>
-          {previewMutation.data?.mapping?.warnings?.length ? (
-            <div className="mt-3 text-xs text-warning-foreground">
-              {previewMutation.data.mapping.warnings.join(" · ")}
-            </div>
-          ) : null}
         </div>
-
       </div>
 
-      <div className="mb-6 rounded-lg border border-border bg-card p-5">
-        <div className="font-medium text-sm">Smart filters</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-4">
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search name, SKU, supplier, price or article number"
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm md:col-span-2"
-          />
-          <select value={selectedTrade} onChange={(event) => setSelectedTrade(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
-            {tradeOptions.map((option) => <option key={option} value={option}>{option === "all" ? "All trades" : option}</option>)}
-          </select>
-          <select value={selectedSupplierFilter} onChange={(event) => setSelectedSupplierFilter(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
-            <option value="all">All suppliers</option>
-            {supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
-          </select>
-        </div>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
-          Project standard only
-        </label>
-        <div className="mt-2 text-xs text-muted-foreground">Showing {rows.length} results across names, numbers, suppliers, and prices.</div>
-      </div>
-
-      {(previewMutation.data || selectedFile) && (
+      {!isReviewMode && (
         <div className="mb-6 rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Commercial extraction</div>
-              <h3 className="text-display text-lg font-semibold">Offers, contracts, and quantity discounts</h3>
-            </div>
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-xs">
-              {documentType}
-            </div>
+          <div className="font-medium text-sm">Browse live catalog</div>
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search name, SKU, supplier, price or article number"
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm md:col-span-2"
+            />
+            <select value={selectedTrade} onChange={(event) => setSelectedTrade(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
+              {tradeOptions.map((option) => <option key={option} value={option}>{option === "all" ? "All trades" : option}</option>)}
+            </select>
+            <select value={selectedSupplierFilter} onChange={(event) => setSelectedSupplierFilter(event.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm">
+              <option value="all">All suppliers</option>
+              {supplierOptions.map((supplier) => <option key={supplier.id} value={supplier.name}>{supplier.name}</option>)}
+            </select>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Detected contract fields</div>
-              <div className="mt-1 text-sm font-medium">{contractSignals.length ? contractSignals.join(" · ") : "No explicit contract fields yet"}</div>
-            </div>
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Quantity discount hints</div>
-              <div className="mt-1 text-sm font-medium">{quantityBreakHints.length ? quantityBreakHints.join(" · ") : "Upload a richer quote to detect tiered pricing"}</div>
-            </div>
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Workflow focus</div>
-              <div className="mt-1 text-sm font-medium">Markdown → AI extraction → pricing review → catalog import</div>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">This view is optimized for offer sheets, special quantity breaks, rebates, validity dates, and contract terms before import.</div>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
+            Project standard only
+          </label>
+          <div className="mt-2 text-xs text-muted-foreground">Showing {rows.length} results across names, numbers, suppliers, and prices.</div>
         </div>
       )}
 
-      {(previewMutation.data || selectedFile) && (
-        <div className="mb-6 rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between gap-3">
+      {isReviewMode && (
+        <div className="mb-6 rounded-xl border-2 border-primary/15 bg-card p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Commercial extraction</div>
-              <h3 className="text-display text-lg font-semibold">Offers, contracts, and quantity discounts</h3>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Document review workspace</div>
+              <h3 className="text-display text-lg font-semibold">Compare extracted fields with the original file</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Approve each extracted field one by one, or use auto-approve when everything looks correct.
+              </p>
             </div>
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-xs">
-              {documentType}
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Detected contract fields</div>
-              <div className="mt-1 text-sm font-medium">{contractSignals.length ? contractSignals.join(" · ") : "No explicit contract fields yet"}</div>
-            </div>
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Quantity discount hints</div>
-              <div className="mt-1 text-sm font-medium">{quantityBreakHints.length ? quantityBreakHints.join(" · ") : "Upload a richer quote to detect tiered pricing"}</div>
-            </div>
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Workflow focus</div>
-              <div className="mt-1 text-sm font-medium">Markdown → AI extraction → pricing review → catalog import</div>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">This view is optimized for offer sheets, special quantity breaks, rebates, validity dates, and contract terms before import.</div>
-        </div>
-      )}
-
-      {previewMutation.data && (
-        <div className="mb-6 rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Column mapping review</div>
-              <h3 className="text-display text-lg font-semibold">Confirm the AI mapping before import</h3>
-            </div>
-            {selectedFile && (
-              <button className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent" onClick={() => previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides })}>
-                Refresh preview
+            <div className="flex flex-wrap gap-2">
+              {selectedFile && (
+                <button
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
+                  onClick={() => previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides })}
+                  type="button"
+                >
+                  Refresh preview
+                </button>
+              )}
+              <button
+                className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+                type="button"
+                disabled={reviewEntries.length === 0}
+                onClick={() => {
+                  setApprovedMappings(Object.fromEntries(reviewEntries.filter((entry) => entry.targetField).map((entry) => [entry.source_column, true])));
+                }}
+              >
+                Auto approve all
               </button>
-            )}
+              <button
+                className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                onClick={() => importMutation.mutate()}
+                disabled={!canImport}
+                type="button"
+              >
+                {importMutation.isPending ? "Importing…" : "Import approved fields"}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <div className="text-xs text-muted-foreground">Document type</div>
+              <div className="mt-1 text-sm font-medium">{documentType}</div>
+            </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <div className="text-xs text-muted-foreground">Rows previewed</div>
-              <div className="mt-1 text-lg font-semibold">{previewMutation.data.rows_in}</div>
+              <div className="mt-1 text-sm font-medium">{previewMutation.data?.rows_in ?? 0}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Mapped columns</div>
-              <div className="mt-1 text-lg font-semibold">{mappedCount}</div>
+              <div className="text-xs text-muted-foreground">Mapped fields</div>
+              <div className="mt-1 text-sm font-medium">{mappedCount}</div>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <div className="text-xs text-muted-foreground">Needs confirmation</div>
-              <div className="mt-1 text-lg font-semibold">{previewIssues}</div>
+              <div className="text-xs text-muted-foreground">Still to review</div>
+              <div className="mt-1 text-sm font-medium">{needsReview}</div>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {(previewMutation.data.mapping?.mappings ?? []).map((entry) => (
-              <div key={entry.source_column} className="rounded-md border border-border p-3">
-                <div className="text-xs text-muted-foreground">Source column</div>
-                <div className="font-medium">{entry.source_column}</div>
-                <select
-                  value={mappingOverrides[entry.source_column] ?? entry.target_field ?? ""}
-                  onChange={(event) => setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }))}
-                  className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">Ignore</option>
-                  {(previewMutation.data.canonical_fields ?? []).map((field) => (
-                    <option key={field} value={field}>{field}</option>
-                  ))}
-                </select>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}
-                </div>
+          <div className="mt-3 rounded-md border border-border bg-secondary/30 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Review progress</div>
+                <div className="text-xs text-muted-foreground">{approvedCount} of {reviewEntries.length} extracted fields approved</div>
               </div>
-            ))}
+              <div className="text-sm font-semibold">{reviewProgress}%</div>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-border">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${reviewProgress}%` }} />
+            </div>
           </div>
 
-          {previewMutation.data.preview_rows?.length ? (
-            <div className="mt-5">
-              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Extracted row preview</div>
-              <div className="mt-2 overflow-x-auto rounded-md border border-border">
-                <table className="w-full text-sm">
-                  <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    <tr>
-                      {Object.keys(previewMutation.data.preview_rows[0] ?? {}).map((key) => (
-                        <th key={key} className="px-3 py-2 font-normal">{key}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewMutation.data.preview_rows.map((row, index) => (
-                      <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
-                        {Object.keys(previewMutation.data?.preview_rows?.[0] ?? {}).map((key) => (
-                          <td key={key} className="px-3 py-2 text-muted-foreground">
-                            {renderPreviewValue(row[key])}
-                          </td>
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[420px]">
+              <div className="border-b border-border px-4 py-3">
+                <div className="font-medium text-sm">Original document</div>
+                <div className="text-xs text-muted-foreground">Use this panel to compare the extraction with the uploaded file.</div>
+              </div>
+              {selectedFile && (selectedFile.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) ? (
+                <iframe title="Uploaded document preview" src={documentPreviewUrl} className="h-[420px] w-full bg-white" />
+              ) : previewRows.length > 0 ? (
+                <div className="max-h-[420px] overflow-auto p-4">
+                  <div className="text-xs text-muted-foreground mb-2">Preview of the uploaded content</div>
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                        <tr>
+                          {Object.keys(previewRows[0] ?? {}).map((key) => (
+                            <th key={key} className="px-3 py-2 font-normal">{key}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.slice(0, 8).map((row, index) => (
+                          <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
+                            {Object.keys(previewRows[0] ?? {}).map((key) => (
+                              <td key={key} className="px-3 py-2 text-muted-foreground">{renderPreviewValue(row[key])}</td>
+                            ))}
+                          </tr>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-muted-foreground">Upload a document to see a side-by-side preview here.</div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border overflow-hidden bg-background min-h-[420px]">
+              <div className="border-b border-border px-4 py-3">
+                <div className="font-medium text-sm">Extracted fields</div>
+                <div className="text-xs text-muted-foreground">Approve each field, or use Auto approve all at the top.</div>
+              </div>
+              <div className="max-h-[420px] overflow-auto p-4 space-y-3">
+                {previewMutation.isPending ? (
+                  <div className="text-sm text-muted-foreground">Extracting fields from the document…</div>
+                ) : reviewEntries.length > 0 ? reviewEntries.map((entry) => (
+                  <div key={entry.source_column} className="rounded-md border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Source field</div>
+                        <div className="font-medium">{entry.source_column}</div>
+                      </div>
+                      <span className={["rounded-full px-2 py-1 text-[10px] uppercase tracking-wider", entry.approved ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/20 text-warning-foreground"].join(" ")}>
+                        {entry.approved ? "Approved" : "Needs review"}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">Extracted value</div>
+                    <div className="mt-1 rounded-md bg-secondary/40 px-3 py-2 text-sm">{entry.sampleValue}</div>
+                    <select
+                      value={entry.targetField}
+                      onChange={(event) => {
+                        setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }));
+                        setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: false }));
+                      }}
+                      className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Choose target field</option>
+                      {(previewMutation.data?.canonical_fields ?? []).map((field) => (
+                        <option key={field} value={field}>{field}</option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <div className="text-xs text-muted-foreground">Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}</div>
+                      <button
+                        type="button"
+                        disabled={!entry.targetField}
+                        onClick={() => setApprovedMappings((prev) => ({ ...prev, [entry.source_column]: !entry.approved }))}
+                        className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+                      >
+                        {entry.approved ? "Undo" : "Approve"}
+                      </button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-sm text-muted-foreground">No extracted fields are ready yet. Upload a file and wait for the preview.</div>
+                )}
               </div>
             </div>
-          ) : null}
+          </div>
         </div>
       )}
 
@@ -732,8 +744,67 @@ function Catalog() {
         </div>
       )}
 
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <table className="w-full text-sm">
+      {showAddSupplier && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setShowAddSupplier(false)} />
+          <div className="relative w-full max-w-md rounded-xl border border-border bg-background shadow-2xl overflow-hidden">
+            <div className="border-b border-border bg-secondary/30 px-6 py-4">
+              <div className="text-display text-base font-semibold">Add new supplier</div>
+              <div className="mt-1 text-sm text-muted-foreground">Create the supplier and select it for this import.</div>
+            </div>
+            <div className="space-y-3 px-6 py-5 text-sm">
+              <input
+                value={draftSupplierName}
+                onChange={(event) => setDraftSupplierName(event.target.value)}
+                placeholder="Supplier name"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftSupplierContact}
+                onChange={(event) => setDraftSupplierContact(event.target.value)}
+                placeholder="Contact person"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftSupplierEmail}
+                onChange={(event) => setDraftSupplierEmail(event.target.value)}
+                placeholder="Email"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <input
+                value={draftSupplierPhone}
+                onChange={(event) => setDraftSupplierPhone(event.target.value)}
+                placeholder="Phone"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddSupplier(false);
+                    resetSupplierDraft();
+                  }}
+                  className="rounded-md border border-border px-3 py-2 hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateSupplier}
+                  disabled={createSupplierMutation.isPending}
+                  className="rounded-md bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {createSupplierMutation.isPending ? "Saving…" : "Save supplier"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isReviewMode && (
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <table className="w-full text-sm">
           <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
             <tr>
               <th className="text-left font-normal px-5 py-3">SKU</th>
@@ -743,7 +814,7 @@ function Catalog() {
               <th className="text-left font-normal px-5 py-3">Supplier</th>
               <th className="text-right font-normal px-5 py-3">Price</th>
               <th className="text-left font-normal px-5 py-3">Standard</th>
-              <th className="text-left font-normal px-5 py-3">AI variant</th>
+              <th className="text-left font-normal px-5 py-3">Price position</th>
             </tr>
           </thead>
           <tbody>
@@ -752,12 +823,12 @@ function Catalog() {
                 <td className="px-5 py-3 text-mono text-xs">{item.sku}</td>
                 <td className="px-5 py-3 font-medium">
                   {item.name}
-                  <div className="text-xs text-muted-foreground">Trade fit: {item.tradeFit}</div>
+                  <div className="text-xs text-muted-foreground">Project fit: {item.tradeFit}</div>
                 </td>
                 <td className="px-5 py-3 text-muted-foreground">{item.group}</td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{item.pack} · <span className="text-mono">{item.unit}</span></td>
                 <td className="px-5 py-3">{item.supplier}</td>
-                <td className="px-5 py-3 text-right tabular">{formatCurrency(item.price, item.currency)}</td>
+                <td className="px-5 py-3 text-right tabular">{formatCatalogPrice(item.price, item.currency)}</td>
                 <td className="px-5 py-3">
                   <span className={[
                     "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
@@ -784,8 +855,9 @@ function Catalog() {
               </tr>
             )}
           </tbody>
-        </table>
-      </div>
+          </table>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

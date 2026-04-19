@@ -449,6 +449,24 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
             ),
           ),
         ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          color: const Color(0xFFF7FAFA),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Best results',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: CColors.tealDark),
+              ),
+              SizedBox(height: 6),
+              Text('• Show labels, packaging, pallets, or delivery notes clearly.'),
+              Text('• AI only suggests grounded catalog items for review.'),
+              Text('• If you lose signal, the request is saved and syncs later.'),
+            ],
+          ),
+        ),
       ]),
     );
   }
@@ -541,6 +559,24 @@ class _ImageOrderScreenState extends State<ImageOrderScreen> {
                 onPressed: _analyze,
               ),
             ]),
+          ),
+        if (_materials.isNotEmpty && !_busy)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Colors.white,
+            child: const Row(
+              children: [
+                Icon(Icons.verified_user_outlined, color: CColors.teal, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Only grounded catalog matches are shown here. You always confirm the quantity before the order is sent.',
+                    style: TextStyle(fontSize: 13, color: Colors.black87),
+                  ),
+                ),
+              ],
+            ),
           ),
         // Materials list with glove-friendly quantity controls
         if (_materials.isNotEmpty && !_busy)

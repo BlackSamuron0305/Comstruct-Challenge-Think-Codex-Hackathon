@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..dependencies import require_internal_secret
 from ..models import Product
+from ..taxonomy import infer_taxonomy_fields
 from ..schemas import (
     BulkUpsertRequest,
     BulkUpsertResponse,
@@ -85,6 +86,7 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
             skipped += 1
             continue
         try:
+            taxonomy = infer_taxonomy_fields(p.model_dump())
             existing = await db.execute(
                 select(Product).where(
                     Product.supplier_id == p.supplier_id, Product.sku == p.sku
@@ -94,7 +96,9 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
             if row:
                 row.name = p.name
                 row.description = p.description
-                row.category = p.category
+                row.category = p.category or taxonomy["category"]
+                row.taxonomy_code = p.taxonomy_code or taxonomy["taxonomy_code"]
+                row.taxonomy_label = p.taxonomy_label or taxonomy["taxonomy_label"]
                 row.unit = p.unit
                 row.packaging_qty = p.packaging_qty
                 row.unit_price = p.unit_price
@@ -109,7 +113,9 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
                     internal_sku=f"INT-{p.sku}",
                     name=p.name,
                     description=p.description,
-                    category=p.category,
+                    category=p.category or taxonomy["category"],
+                    taxonomy_code=p.taxonomy_code or taxonomy["taxonomy_code"],
+                    taxonomy_label=p.taxonomy_label or taxonomy["taxonomy_label"],
                     material_class="C",
                     unit=p.unit,
                     packaging_qty=p.packaging_qty,
@@ -124,6 +130,39 @@ async def bulk_upsert(body: BulkUpsertRequest, db: AsyncSession = Depends(get_se
             errors.append(f"{p.sku}: {e}")
     await db.commit()
     return BulkUpsertResponse(upserted=upserted, skipped_a_class=skipped, errors=errors)
+
+
+@internal_router.post(
+    "/backfill-taxonomy",
+    dependencies=[Depends(require_internal_secret)],
+)
+async def backfill_taxonomy(db: AsyncSession = Depends(get_session)):
+    stmt = select(Product).where(Product.material_class == "C", Product.is_active.is_(True))
+    rows = list((await db.execute(stmt)).scalars().all())
+    updated = 0
+    for row in rows:
+        inferred = infer_taxonomy_fields({
+            "name": row.name,
+            "description": row.description,
+            "category": row.category,
+            "taxonomy_code": row.taxonomy_code,
+            "taxonomy_label": row.taxonomy_label,
+        })
+        changed = False
+        if row.category != inferred["category"] and not row.category:
+            row.category = inferred["category"]
+            changed = True
+        if row.taxonomy_code != inferred["taxonomy_code"]:
+            row.taxonomy_code = inferred["taxonomy_code"]
+            changed = True
+        if row.taxonomy_label != inferred["taxonomy_label"]:
+            row.taxonomy_label = inferred["taxonomy_label"]
+            changed = True
+        if changed:
+            updated += 1
+
+    await db.commit()
+    return {"updated": updated, "total": len(rows)}
 
 
 # ── Categories ────────────────────────────────────────────────────────

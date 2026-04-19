@@ -5,6 +5,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SupplierCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    email: str | None = None
+    phone: str | None = None
+    contact_name: str | None = None
+    avatar_url: str | None = None
+
+
 class SupplierOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -24,6 +32,8 @@ class ProductOut(BaseModel):
     name: str
     description: str | None
     category: str | None
+    taxonomy_code: str | None = None
+    taxonomy_label: str | None = None
     material_class: str
     unit: str
     packaging_qty: Decimal
@@ -40,11 +50,13 @@ class ProductBulkUpsert(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
+    taxonomy_code: str | None = None
+    taxonomy_label: str | None = None
     material_class: str = Field(default="C", pattern="^[ABC]$")
     unit: str
     packaging_qty: Decimal = Decimal("1")
     unit_price: Decimal
-    currency: str = "CHF"
+    currency: str = "EUR"
     is_active: bool = True
     embedding: list[float] | None = None
 

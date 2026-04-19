@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
+import '../cubits/auth_cubit.dart';
 import '../cubits/cart_cubit.dart';
 import '../offline_capture_assistant.dart';
 import '../offline_queue.dart';
@@ -18,6 +21,8 @@ class VoiceOrderScreen extends StatefulWidget {
 
 class _VoiceOrderScreenState extends State<VoiceOrderScreen>
     with TickerProviderStateMixin {
+  static const _positionKey = 'comstruct.userPosition';
+
   final SpeechToText _speech = SpeechToText();
 
   _Phase _phase = _Phase.idle;
@@ -29,6 +34,8 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
   String? _statusNote;
   List<Map<String, dynamic>> _results = [];
   bool _approved = false;
+  DateTime? _recordingStartedAt;
+  bool _heardSpeech = false;
 
   late final AnimationController _waveCtrl = AnimationController(
     vsync: this,
@@ -51,16 +58,31 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
 
   Future<void> _initSpeech() async {
     final available = await _speech.initialize(
+      debugLogging: true,
       onStatus: (status) {
         if (!mounted) return;
-        if ((status == 'done' || status == 'notListening') &&
-            _phase == _Phase.recording) {
-          _stopRecording();
+
+        if (status == 'listening') {
+          setState(() => _statusNote = 'Listening… speak naturally now.');
+          return;
+        }
+
+        if ((status == 'done' || status == 'notListening') && _phase == _Phase.recording) {
+          final startedAt = _recordingStartedAt;
+          final elapsedMs = startedAt == null ? 0 : DateTime.now().difference(startedAt).inMilliseconds;
+          if (_heardSpeech || elapsedMs > 1200) {
+            _stopRecording();
+          }
         }
       },
       onError: (error) {
         if (!mounted) return;
-        setState(() => _speechError = error.errorMsg);
+        setState(() {
+          _speechError = error.errorMsg;
+          if (error.errorMsg.toLowerCase().contains('no match')) {
+            _statusNote = 'No speech was detected yet. Keep the phone close and try again.';
+          }
+        });
       },
     );
 
@@ -68,8 +90,7 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
     setState(() {
       _speechReady = available;
       if (!available) {
-        _speechError =
-            'On-device speech recognition is not available on this phone yet.';
+        _speechError = 'Speech recognition is not ready on this phone right now.';
       }
     });
   }
@@ -83,12 +104,12 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
     if (!_speechReady) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content:
-                Text(_speechError ?? 'Speech recognition is not available.')),
+        SnackBar(content: Text(_speechError ?? 'Speech recognition is not available.')),
       );
       return;
     }
+
+    await _speech.cancel();
 
     setState(() {
       _phase = _Phase.recording;
@@ -96,37 +117,52 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       _results = [];
       _approved = false;
       _speechError = null;
-      _statusNote = 'Listening on this phone…';
+      _heardSpeech = false;
+      _recordingStartedAt = DateTime.now();
+      _statusNote = 'Listening… keep speaking until you tap stop.';
     });
 
-    await _speech.listen(
-      onResult: (result) {
-        if (!mounted) return;
-        setState(() {
-          _transcript = result.recognizedWords;
-          _transcriptCtrl.text = _transcript;
-        });
-      },
-      pauseFor: const Duration(seconds: 4),
-      listenFor: const Duration(minutes: 2),
-      listenOptions: SpeechListenOptions(
-        partialResults: true,
-        cancelOnError: true,
-        listenMode: ListenMode.dictation,
-        onDevice: true,
-      ),
-    );
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          if (!mounted) return;
+          setState(() {
+            _transcript = result.recognizedWords;
+            _transcriptCtrl.text = _transcript;
+            _heardSpeech = _transcript.trim().isNotEmpty;
+          });
+          if (result.finalResult && _heardSpeech) {
+            _stopRecording();
+          }
+        },
+        pauseFor: const Duration(seconds: 10),
+        listenFor: const Duration(minutes: 1),
+        listenOptions: SpeechListenOptions(
+          partialResults: true,
+          cancelOnError: false,
+          listenMode: ListenMode.dictation,
+          onDevice: false,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.idle;
+        _speechError = 'Voice recording could not start: $e';
+      });
+    }
   }
 
   Future<void> _stopRecording() async {
+    if (_phase != _Phase.recording) return;
     await _speech.stop();
     if (!mounted) return;
     setState(() {
       _phase = _Phase.done;
       _transcriptCtrl.text = _transcript;
       _statusNote = _transcript.trim().isEmpty
-          ? 'Nothing was heard clearly on the phone. Try again a bit slower.'
-          : 'Voice captured locally on this phone.';
+          ? 'Nothing was captured. Try again more slowly or closer to the phone.'
+          : 'Voice captured and ready for review.';
     });
   }
 
@@ -138,30 +174,38 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
       _approved = false;
       _statusNote = null;
       _speechError = null;
+      _recordingStartedAt = null;
+      _heardSpeech = false;
     });
   }
 
   Future<void> _startProcessing() async {
     final query = _transcriptCtrl.text.trim();
     if (query.isEmpty) return;
+
+    final authUser = context.read<AuthCubit>().state.user;
+    final prefs = await SharedPreferences.getInstance();
+    final projectName = prefs.getString('comstruct.selectedProjectName');
+    final savedPosition = prefs.getString(_positionKey);
+    final trade = (savedPosition != null && savedPosition.trim().isNotEmpty)
+        ? savedPosition.trim()
+        : authUser?['role']?.toString();
+
     setState(() {
       _busy = true;
       _phase = _Phase.results;
-      _statusNote = 'Processing on this phone…';
+      _statusNote = 'Processing your request…';
     });
     try {
       final local = await OfflineCaptureAssistant.analyzeVoiceText(query);
-      var items =
-          List<Map<String, dynamic>>.from((local['items'] as List?) ?? []);
+      var items = List<Map<String, dynamic>>.from((local['items'] as List?) ?? []);
       final summary = local['summary'] as String?;
 
-      final hasCatalogMatch = items
-          .any((item) => (item['product_id'] as String?)?.isNotEmpty == true);
+      final hasCatalogMatch = items.any((item) => (item['product_id'] as String?)?.isNotEmpty == true);
       if (!hasCatalogMatch) {
         try {
-          final res = await AppScope.api.recommend(query);
-          final remoteItems =
-              List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
+          final res = await AppScope.api.recommend(query, projectName: projectName, trade: trade);
+          final remoteItems = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
           if (remoteItems.isNotEmpty) {
             items = remoteItems;
           }
@@ -567,7 +611,7 @@ class _VoiceOrderScreenState extends State<VoiceOrderScreen>
             final item = _results[i];
             final price =
                 (item['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
-            final currency = item['currency'] as String? ?? 'EUR';
+            final currency = normalizeCurrencyCode(item['currency'] as String?);
             return Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(

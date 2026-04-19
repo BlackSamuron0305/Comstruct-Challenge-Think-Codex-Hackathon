@@ -1,11 +1,10 @@
-/// Offline order queue — saves orders locally when offline and syncs when back online.
+// Offline order queue — saves orders locally when offline and syncs when back online.
 import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
-import 'api_client.dart';
 import 'app_scope.dart';
 
 const _boxName = 'offline_queue';

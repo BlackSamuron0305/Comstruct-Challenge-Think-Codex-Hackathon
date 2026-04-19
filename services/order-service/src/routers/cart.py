@@ -17,7 +17,7 @@ def _to_out(line: dict) -> CartLineOut:
 
 def _total(lines: list[dict]) -> tuple[Decimal, str]:
     total = sum((Decimal(l["line_total"]) for l in lines), Decimal("0"))
-    currency = lines[0]["currency"] if lines else "CHF"
+    currency = lines[0]["currency"] if lines else "EUR"
     return total, currency
 
 
@@ -41,6 +41,8 @@ async def add_to_cart(line: CartLineIn, user: CurrentUser = Depends(current_user
         "name": p["name"],
         "sku": p["sku"],
         "category": p.get("category"),
+        "taxonomy_code": p.get("taxonomy_code"),
+        "taxonomy_label": p.get("taxonomy_label"),
         "material_class": p.get("material_class", "C"),
         "quantity": float(line.quantity),
         "unit": p["unit"],

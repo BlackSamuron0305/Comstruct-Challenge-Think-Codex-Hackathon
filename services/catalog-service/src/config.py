@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     INTERNAL_SHARED_SECRET: str = "dev-secret"
     SERVICE_PORT: int = 8003
     LOG_LEVEL: str = "info"
-    DEFAULT_CURRENCY: str = "CHF"
+    DEFAULT_CURRENCY: str = "EUR"
 
 
 @lru_cache

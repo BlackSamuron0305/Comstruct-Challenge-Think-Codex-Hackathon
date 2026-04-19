@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "info"
 
     DEFAULT_APPROVAL_THRESHOLD: Decimal = Decimal("200.00")
-    DEFAULT_CURRENCY: str = "CHF"
+    DEFAULT_CURRENCY: str = "EUR"
     ORDER_STDDEV_MULTIPLIER: float = 2.0
     ORDER_MIN_HISTORY_POINTS: int = 4
     ORDER_LOGISTIC_RISK_THRESHOLD: float = 0.82

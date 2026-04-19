@@ -15,13 +15,25 @@ def _extract_json(content: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
         text = re.sub(r"\n?```$", "", text)
+
+    def _normalise_json_payload(parsed: Any) -> dict[str, Any]:
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"results": parsed}
+        return {"value": parsed}
+
     try:
-        return json.loads(text)
+        return _normalise_json_payload(json.loads(text))
     except json.JSONDecodeError:
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
-            return json.loads(text[start:end + 1])
+            return _normalise_json_payload(json.loads(text[start:end + 1]))
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            return _normalise_json_payload(json.loads(text[start:end + 1]))
         raise
 
 
@@ -41,6 +53,10 @@ def _stringify_content(content: Any) -> str:
                 parts.append(str(item))
         return "\n".join(part for part in parts if part).strip()
     return str(content)
+
+
+def _json_response_kwargs() -> dict[str, Any]:
+    return {"response_format": {"type": "json_object"}}
 
 
 async def call_langchain_openai_json(
@@ -83,6 +99,7 @@ async def call_langchain_openai_json(
             api_key=settings.OPENAI_API_KEY,
             temperature=temperature,
             max_tokens=max_tokens,
+            model_kwargs=_json_response_kwargs(),
         )
         response = await llm.ainvoke(lc_messages)
         return _extract_json(_stringify_content(response.content))
@@ -156,6 +173,7 @@ async def call_langchain_openai_vision_json(
             api_key=settings.OPENAI_API_KEY,
             temperature=temperature,
             max_tokens=max_tokens,
+            model_kwargs=_json_response_kwargs(),
         )
         response = await llm.ainvoke([
             SystemMessage(content=system + "\n\nReturn valid JSON only."),

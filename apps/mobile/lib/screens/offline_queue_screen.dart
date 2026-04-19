@@ -1,4 +1,4 @@
-/// Offline queue screen — view pending, syncing, and synced queued actions.
+// Offline queue screen — view pending, syncing, and synced queued actions.
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';

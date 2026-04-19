@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../api_client.dart';
 import '../translations.dart';
 import 'c_home_screen.dart' show CColors;
 
@@ -76,7 +76,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final order = widget.order;
     final status   = order['status'] as String? ?? 'draft';
     final total    = order['total_amount'] as String? ?? '0.00';
-    final currency = order['currency'] as String? ?? 'EUR';
+    final currency = normalizeCurrencyCode(order['currency'] as String?);
     final id       = (order['id'] as String? ?? '').substring(0, 8).toUpperCase();
     final items    = List<Map<String, dynamic>>.from((order['items'] as List?) ?? []);
     final activeStep   = _steps.indexOf(status).clamp(0, _steps.length - 1);
@@ -257,7 +257,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                           onTap: () => setState(() => _deliveryPhoto = null),
                           child: Container(
                             width: 28, height: 28,
-                            decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                             child: const Icon(Icons.close, color: Colors.white, size: 16),
                           ),
                         ),

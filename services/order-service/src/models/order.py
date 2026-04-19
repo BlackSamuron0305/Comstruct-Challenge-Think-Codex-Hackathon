@@ -106,7 +106,7 @@ class Order(Base):
     foreman_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default=OrderStatus.DRAFT.value, nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), default="CHF", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
     approver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     rejection_reason: Mapped[str | None] = mapped_column(Text)

@@ -6,7 +6,7 @@ class CartState {
   CartState({
     this.lines = const [],
     this.total = 0,
-    this.currency = 'CHF',
+    this.currency = 'EUR',
     this.busy = false,
     this.error,
   });
@@ -53,7 +53,7 @@ class CartCubit extends Cubit<CartState> {
       emit(CartState(
         lines: List<Map<String, dynamic>>.from(rawLines),
         total: parsedTotal,
-        currency: (c['currency'] as String?) ?? 'CHF',
+        currency: normalizeCurrencyCode(c['currency'] as String?),
       ));
     } catch (e) {
       emit(state.copyWith(busy: false, error: 'Could not load order review'));

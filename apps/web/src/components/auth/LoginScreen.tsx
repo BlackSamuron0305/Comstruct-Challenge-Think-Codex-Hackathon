@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import logo from "@/assets/comstruct-logo.svg";
 import { useAuth } from "./AuthContext";
+
+const LAST_EMAIL_KEY = "comstruct-last-email";
 
 export function LoginScreen() {
   const { login } = useAuth();
@@ -9,14 +11,34 @@ export function LoginScreen() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    try {
+      const savedEmail = window.localStorage.getItem(LAST_EMAIL_KEY);
+      if (savedEmail) setEmail(savedEmail);
+    } catch {
+      // Ignore storage issues in locked-down environments.
+    }
+  }, []);
+
+  const fillDemoUser = (nextEmail: string) => {
+    setEmail(nextEmail);
+    setPassword("comstruct-demo");
+    setError("");
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       await login(email.trim(), password);
+      try {
+        window.localStorage.setItem(LAST_EMAIL_KEY, email.trim());
+      } catch {
+        // Ignore storage issues in locked-down environments.
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Sign-in failed. Check your work email and password.");
     } finally {
       setLoading(false);
     }
@@ -26,14 +48,23 @@ export function LoginScreen() {
     <div className="min-h-screen w-full grid place-items-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex justify-center">
-          <img src={logo} alt="comstruct" className="h-14 w-auto" />
+          <img src={logo} alt="comstruct" className="h-16 w-auto max-w-[220px]" />
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <h1 className="text-display text-xl font-semibold">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Use your work email to access the dashboard.
+            Use your work email to access the dashboard, or pick a demo role to review the flows instantly.
           </p>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => fillDemoUser("procurement@comstruct.com")} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-accent">
+              Procurement demo
+            </button>
+            <button type="button" onClick={() => fillDemoUser("foreman@brueckesg.ch")} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-accent">
+              Foreman demo
+            </button>
+          </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
@@ -79,9 +110,9 @@ export function LoginScreen() {
             </button>
           </form>
 
-          <p className="mt-4 text-[11px] text-muted-foreground text-center">
-            Use a seeded demo account, for example the foreman user with the shared demo password.
-          </p>
+          <div className="mt-4 rounded-md border border-border bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground text-center">
+            Shared demo password: comstruct-demo · your last email stays prefilled on this device.
+          </div>
         </div>
       </div>
     </div>

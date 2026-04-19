@@ -18,6 +18,8 @@ def _item(
     quantity: str = "1",
     name: str = "Generic item",
     unit: str = "pc",
+    taxonomy_code: str | None = None,
+    taxonomy_label: str | None = None,
 ):
     return SimpleNamespace(
         product_id=uuid4(),
@@ -28,6 +30,8 @@ def _item(
             "category": category,
             "material_class": material_class,
             "unit": unit,
+            "taxonomy_code": taxonomy_code,
+            "taxonomy_label": taxonomy_label,
         },
         line_total=Decimal(line_total),
     )
@@ -168,3 +172,43 @@ def test_ai_like_family_tags_group_similar_products_together():
         "category": "Tools",
         "material_class": "C",
     }) == "hammers"
+
+
+def test_taxonomy_code_is_used_for_subcategory_grouping():
+    assert _derive_product_tag({
+        "name": "Claw hammer 16oz",
+        "category": "Tools",
+        "taxonomy_code": "tools.hand.hammers.claw",
+        "material_class": "C",
+    }) == "tools.hand.hammers.claw"
+    assert _derive_product_tag({
+        "name": "Sledge hammer 5kg",
+        "category": "Tools",
+        "taxonomy_code": "tools.hand.hammers.sledge",
+        "material_class": "C",
+    }) == "tools.hand.hammers.sledge"
+
+
+@pytest.mark.asyncio
+async def test_restricted_taxonomy_branch():
+    rule = SimpleNamespace(
+        threshold_amount=Decimal("10000.00"),
+        restricted_categories=["tools.hand.hammers.sledge"],
+    )
+    engine = _engine_with_rule(rule)
+    order = _order(
+        "65.00",
+        [
+            _item(
+                category="Tools",
+                name="Sledge hammer 5kg",
+                taxonomy_code="tools.hand.hammers.sledge",
+                taxonomy_label="Hand Tools > Hammers > Sledge Hammer",
+                line_total="65.00",
+            )
+        ],
+    )
+    requires, reason = await engine.evaluate(order)
+    assert requires is True
+    assert "restricted" in (reason or "").lower()
+    assert "sledge" in (reason or "").lower()

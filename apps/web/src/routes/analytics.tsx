@@ -79,7 +79,7 @@ function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" vertical={false} />
                   <XAxis dataKey="project" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                   <YAxis stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                   <Bar dataKey="spend" fill="oklch(0.92 0.18 100)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -96,7 +96,7 @@ function Analytics() {
                     {supplierRows.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
                   </Pie>
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -111,7 +111,7 @@ function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" horizontal={false} />
                   <XAxis type="number" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
                   <YAxis type="category" dataKey="group" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={110} />
-                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                   <Bar dataKey="value" fill="oklch(0.22 0.012 250)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -127,7 +127,7 @@ function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.88 0.006 95)" vertical={false} />
                   <XAxis dataKey="week" stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
                   <YAxis stroke="oklch(0.45 0.01 250)" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
-                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "CHF")} />
+                  <Tooltip contentStyle={{ background: "oklch(1 0 0)", border: "1px solid oklch(0.88 0.006 95)", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatCurrency(Number(v), "EUR")} />
                   <Bar dataKey="spend" fill="oklch(0.55 0.012 250)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

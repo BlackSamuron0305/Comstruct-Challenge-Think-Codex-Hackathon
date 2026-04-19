@@ -15,6 +15,8 @@ class CartLineOut(BaseModel):
     name: str
     sku: str
     category: str | None = None
+    taxonomy_code: str | None = None
+    taxonomy_label: str | None = None
     material_class: str = "C"
     quantity: float
     unit: str
@@ -46,6 +48,7 @@ class OrderOut(BaseModel):
     company_id: UUID
     project_id: UUID
     foreman_id: UUID
+    foreman_name: str | None = None
     status: str
     total_amount: Decimal
     currency: str

@@ -45,6 +45,7 @@ class Product(Base):
         UniqueConstraint("supplier_id", "sku", name="uq_supplier_sku"),
         Index("ix_products_category", "category"),
         Index("ix_products_material_class", "material_class"),
+        Index("ix_products_taxonomy_code", "taxonomy_code"),
         Index("ix_products_name_trgm", "name", postgresql_using="gin",
               postgresql_ops={"name": "gin_trgm_ops"}),
         Index(
@@ -66,11 +67,13 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(64))
+    taxonomy_code: Mapped[str | None] = mapped_column(String(96), index=True)
+    taxonomy_label: Mapped[str | None] = mapped_column(String(255))
     material_class: Mapped[str] = mapped_column(String(2), nullable=False, default="C")
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
     packaging_qty: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=1)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="CHF")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api_client.dart';
 import '../app_scope.dart';
 import '../cubits/cart_cubit.dart';
+import '../offline_capture_assistant.dart';
 import '../translations.dart';
 import 'c_home_screen.dart' show CColors;
 
@@ -51,6 +54,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty || _busy) return;
+    final foundProductsLabel = tRead(context, 'foundProducts');
+    final nothingFoundLabel = tRead(context, 'nothingFound');
+    final connectionErrorLabel = tRead(context, 'connectionError');
+
     _ctrl.clear();
     setState(() {
       _messages.add(_Msg(role: 'user', text: text));
@@ -59,27 +66,62 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
 
     try {
-      final res = await AppScope.api.recommend(text);
-      final items = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
-      final summary = res['summary'] as String?;
+      final prefs = await SharedPreferences.getInstance();
+      final projectName = prefs.getString('comstruct.selectedProjectName');
+      final trade = prefs.getString('comstruct.userPosition') ?? 'foreman';
+
+      final res = await AppScope.api.recommend(
+        text,
+        projectName: projectName,
+        trade: trade,
+      );
+      final remoteItems = List<Map<String, dynamic>>.from((res['items'] as List?) ?? []);
+      final remoteSummary = (res['summary'] as String?)?.trim();
+
+      final localRes = await OfflineCaptureAssistant.analyzeVoiceText(text);
+      final localItems = List<Map<String, dynamic>>.from((localRes['items'] as List?) ?? []);
+      final localSummary = (localRes['summary'] as String?)?.trim();
+
+      if (!mounted) return;
+
+      final items = remoteItems.isNotEmpty ? remoteItems : localItems;
+      final summary = items.isNotEmpty
+          ? (remoteItems.isNotEmpty
+              ? (remoteSummary?.isNotEmpty == true
+                  ? remoteSummary!
+                  : foundProductsLabel.replaceAll('{n}', '${items.length}'))
+              : (localSummary?.isNotEmpty == true
+                  ? localSummary!
+                  : foundProductsLabel.replaceAll('{n}', '${items.length}')))
+          : nothingFoundLabel;
 
       setState(() {
-        if (summary != null && summary.isNotEmpty) {
-          _messages.add(_Msg(role: 'assistant', text: summary, items: items));
-        } else if (items.isNotEmpty) {
-          _messages.add(_Msg(
-            role: 'assistant',
-            text: t(context, 'foundProducts').replaceAll('{n}', '${items.length}'),
-            items: items,
-          ));
-        } else {
-          _messages.add(_Msg(role: 'assistant', text: t(context, 'nothingFound')));
-        }
+        _messages.add(_Msg(role: 'assistant', text: summary, items: items));
       });
     } catch (_) {
-      setState(() {
-        _messages.add(_Msg(role: 'assistant', text: t(context, 'connectionError')));
-      });
+      try {
+        final localRes = await OfflineCaptureAssistant.analyzeVoiceText(text);
+        final localItems = List<Map<String, dynamic>>.from((localRes['items'] as List?) ?? []);
+        final localSummary = (localRes['summary'] as String?)?.trim();
+
+        if (!mounted) return;
+
+        setState(() {
+          _messages.add(_Msg(
+            role: 'assistant',
+            text: localItems.isNotEmpty
+                ? (localSummary?.isNotEmpty == true
+                    ? localSummary!
+                    : foundProductsLabel.replaceAll('{n}', '${localItems.length}'))
+                : connectionErrorLabel,
+            items: localItems,
+          ));
+        });
+      } catch (_) {
+        setState(() {
+          _messages.add(_Msg(role: 'assistant', text: connectionErrorLabel));
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
       _scrollToBottom();
@@ -95,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Text(t(context, 'chatTitle')),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/c-home'),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/c-home'),
         ),
       ),
       body: Column(children: [
@@ -227,7 +269,7 @@ class _ProductChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = (item['unit_price'] as num?)?.toStringAsFixed(2) ?? '?';
-    final currency = (item['currency'] as String?) ?? 'EUR';
+    final currency = normalizeCurrencyCode(item['currency'] as String?);
     final qty = (item['suggested_qty'] as num?) ?? 1;
 
     return Container(

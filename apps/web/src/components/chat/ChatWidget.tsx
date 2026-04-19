@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { MessageSquare, X, Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { api, type OrderSummary, type ProjectRecord, type SupplierRecord } from "@/lib/api";
 import { answerQuestion } from "./answerEngine";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 const SUGGESTIONS = [
-  "What's pending?",
-  "Spend this month?",
-  "Suppliers that need attention",
-  "Who's the biggest spender?",
+  "What needs approval?",
+  "Current spend summary",
+  "Top suppliers",
+  "Which project is busiest?",
 ];
 
 function renderMarkdown(text: string) {
@@ -69,10 +71,25 @@ export function ChatWidget() {
     {
       role: "assistant",
       content:
-        "Hi 👋 I'm your procurement assistant. Ask me about pending approvals, spend, suppliers, or how the dashboard works.",
+        "Hi 👋 I'm your procurement assistant. I answer from the live dashboard data and explain statistical approvals, spend, suppliers, and project activity in plain language.",
     },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { data: orders = [] } = useQuery({
+    queryKey: ["assistant", "orders"],
+    queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
+  });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["assistant", "suppliers"],
+    queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
+  });
+  const { data: projects = [] } = useQuery({
+    queryKey: ["assistant", "projects"],
+    queryFn: () => api.get<ProjectRecord[]>("/api/projects"),
+  });
+
+  const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -83,11 +100,10 @@ export function ChatWidget() {
     if (!q) return;
     setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
-    // Simulate small thinking delay for UX
     setTimeout(() => {
-      const a = answerQuestion(q);
+      const a = answerQuestion(q, { orders, suppliers, projectMap });
       setMessages((m) => [...m, { role: "assistant", content: a }]);
-    }, 250);
+    }, 180);
   }
 
   return (

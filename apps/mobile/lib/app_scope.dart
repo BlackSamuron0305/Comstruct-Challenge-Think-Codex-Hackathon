@@ -1,4 +1,4 @@
-/// Service locator for shared instances.
+// Service locator for shared instances.
 import 'api_client.dart';
 import 'local_llm.dart';
 

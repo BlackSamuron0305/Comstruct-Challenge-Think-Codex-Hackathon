@@ -44,6 +44,11 @@ String describeApiError(Object error, {String? baseUrl}) {
   return message.isEmpty ? 'Unknown backend error.' : message;
 }
 
+String normalizeCurrencyCode(String? currency) {
+  final code = (currency ?? 'EUR').toUpperCase();
+  return code == 'CHF' ? 'EUR' : code;
+}
+
 // ─── Secure Token Storage ─────────────────────────────────────────────
 class TokenStore {
   static const _kAccess = 'comstruct.access';
@@ -286,7 +291,7 @@ class ApiClient {
     await OfflineCache.put('cart', {
       'items': <Map<String, dynamic>>[],
       'total_amount': '0.00',
-      'currency': 'CHF',
+      'currency': 'EUR',
     }, ttl: const Duration(minutes: 30));
   }
 
@@ -375,7 +380,7 @@ class ApiClient {
   Future<Map<String, dynamic>> extractImageText(
     String filePath, {
     String documentType = 'order',
-    String defaultCurrency = 'CHF',
+    String defaultCurrency = 'EUR',
   }) async {
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath),

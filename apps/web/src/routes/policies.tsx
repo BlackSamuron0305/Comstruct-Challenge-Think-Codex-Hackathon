@@ -1,138 +1,42 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { BrainCircuit, Sigma, Tags, Truck, Workflow } from "lucide-react";
+
 import { DashboardLayout } from "@/components/dashboard/Layout";
+import { QueryState } from "@/components/dashboard/QueryState";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BrainCircuit, Save, Sigma, Tags, Truck, Workflow } from "lucide-react";
-import { toast } from "sonner";
+import { api, formatCurrency, type ApprovalRule, type OrderSummary, type ProductRecord, type SupplierRecord } from "@/lib/api";
 
 export const Route = createFileRoute("/policies")({
+  head: () => ({
+    meta: [
+      { title: "Demand intelligence · comstruct C-Materials" },
+      { name: "description", content: "Live demand intelligence using the current catalog, suppliers, and order history." },
+    ],
+  }),
   component: PoliciesPage,
 });
 
 type SupplierBenchmark = {
   name: string;
   avgPrice: number;
-  leadDays: number;
-  fillRate: number;
-  score: number;
+  itemCount: number;
 };
 
 type DemandFamily = {
   tag: string;
   label: string;
-  cClass: boolean;
   aliases: string[];
   history: number[];
   suppliers: SupplierBenchmark[];
 };
 
-const STORAGE_KEY = "comstruct_statistics_v2";
-
 const DEFAULTS = {
   stddevMultiplier: 2.0,
-  logisticRiskThreshold: 0.82,
   recencyWeight: 0.65,
-  minHistoryPoints: 6,
 };
-
-const PRODUCT_FAMILIES: DemandFamily[] = [
-  {
-    tag: "brushes",
-    label: "Brushes & rollers",
-    cClass: true,
-    aliases: ["Painter brush 50mm", "Malerpinsel Set", "Flat brush 2in", "Paint roller mini"],
-    history: [6, 8, 10, 12, 12, 14, 16, 18, 20, 24],
-    suppliers: [
-      { name: "HG Commerciale", avgPrice: 4.2, leadDays: 1.2, fillRate: 97, score: 91 },
-      { name: "Würth Schweiz", avgPrice: 4.6, leadDays: 0.8, fillRate: 98, score: 92 },
-      { name: "PUAG AG", avgPrice: 4.0, leadDays: 2.8, fillRate: 89, score: 78 },
-    ],
-  },
-  {
-    tag: "hammers",
-    label: "Hammers & hand tools",
-    cClass: true,
-    aliases: ["Schlosserhammer 500g", "Rubber mallet", "Machinist hammer"],
-    history: [1, 1, 2, 2, 2, 3, 3, 4],
-    suppliers: [
-      { name: "Debrunner Acifer", avgPrice: 16.9, leadDays: 1.6, fillRate: 96, score: 90 },
-      { name: "Hilti Schweiz", avgPrice: 19.4, leadDays: 0.9, fillRate: 97, score: 88 },
-      { name: "Würth Schweiz", avgPrice: 17.8, leadDays: 1.1, fillRate: 95, score: 89 },
-    ],
-  },
-  {
-    tag: "gloves",
-    label: "Gloves & PPE",
-    cClass: true,
-    aliases: ["Arbeitshandschuhe Nitril Gr. 9", "Protective gloves", "Work glove pack"],
-    history: [12, 20, 24, 36, 48, 60, 72, 84],
-    suppliers: [
-      { name: "HG Commerciale", avgPrice: 1.9, leadDays: 0.9, fillRate: 98, score: 95 },
-      { name: "Würth Schweiz", avgPrice: 2.1, leadDays: 0.8, fillRate: 97, score: 93 },
-      { name: "PUAG AG", avgPrice: 1.8, leadDays: 2.1, fillRate: 90, score: 80 },
-    ],
-  },
-  {
-    tag: "screws",
-    label: "Screws & anchors",
-    cClass: true,
-    aliases: ["Spanplattenschraube Torx 4.5×40", "Wood screws box", "Nylon anchor UX 8×50"],
-    history: [120, 180, 220, 260, 300, 340, 390, 430, 500],
-    suppliers: [
-      { name: "Würth Schweiz", avgPrice: 0.06, leadDays: 0.7, fillRate: 99, score: 97 },
-      { name: "Hilti Schweiz", avgPrice: 0.08, leadDays: 1.1, fillRate: 97, score: 91 },
-      { name: "Debrunner Acifer", avgPrice: 0.07, leadDays: 1.6, fillRate: 95, score: 88 },
-    ],
-  },
-  {
-    tag: "sealants",
-    label: "Foam & sealants",
-    cClass: true,
-    aliases: ["PU-Schaum 750ml Standard", "Silikon sanitär weiss 310ml", "Acrylic sealant"],
-    history: [4, 6, 8, 10, 12, 12, 16, 18, 20],
-    suppliers: [
-      { name: "PUAG AG", avgPrice: 4.7, leadDays: 1.7, fillRate: 92, score: 84 },
-      { name: "HG Commerciale", avgPrice: 5.0, leadDays: 1.1, fillRate: 95, score: 89 },
-      { name: "Würth Schweiz", avgPrice: 5.4, leadDays: 0.9, fillRate: 97, score: 90 },
-    ],
-  },
-  {
-    tag: "tapes",
-    label: "Tapes & wraps",
-    cClass: true,
-    aliases: ["Gewebeband silber 19mm × 50m", "Electrical tape", "Masking tape"],
-    history: [2, 3, 4, 5, 6, 8, 10, 12],
-    suppliers: [
-      { name: "Hilti Schweiz", avgPrice: 5.4, leadDays: 1.0, fillRate: 96, score: 90 },
-      { name: "Würth Schweiz", avgPrice: 5.7, leadDays: 0.8, fillRate: 98, score: 92 },
-      { name: "HG Commerciale", avgPrice: 5.1, leadDays: 1.4, fillRate: 94, score: 87 },
-    ],
-  },
-  {
-    tag: "batteries",
-    label: "Batteries & site supplies",
-    cClass: true,
-    aliases: ["Batterie Alkaline AA", "Battery pack 9V", "AAA batteries"],
-    history: [4, 8, 8, 12, 12, 16, 20, 24],
-    suppliers: [
-      { name: "Würth Schweiz", avgPrice: 0.65, leadDays: 0.8, fillRate: 97, score: 93 },
-      { name: "HG Commerciale", avgPrice: 0.61, leadDays: 1.3, fillRate: 95, score: 90 },
-      { name: "PUAG AG", avgPrice: 0.58, leadDays: 2.6, fillRate: 88, score: 77 },
-    ],
-  },
-];
-
-function loadSaved() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // ignore
-  }
-  return null;
-}
 
 function parseNum(val: string): number | "" {
   if (val === "" || val === undefined) return "";
@@ -140,20 +44,16 @@ function parseNum(val: string): number | "" {
   return Number.isNaN(n) ? "" : n;
 }
 
-function normalize(text: string) {
-  return text.toLowerCase();
+function normalizeKey(value?: string | null): string {
+  return value?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || "uncategorised";
 }
 
-function matchFamily(text: string) {
-  const q = normalize(text);
-  if (/(brush|pinsel|roller|borste)/.test(q)) return "brushes";
-  if (/(hammer|mallet|faustel)/.test(q)) return "hammers";
-  if (/(glove|handschuh|nitril)/.test(q)) return "gloves";
-  if (/(screw|schraub|anchor|dübel|dubel|fastener)/.test(q)) return "screws";
-  if (/(foam|schaum|silikon|sealant|adhesive)/.test(q)) return "sealants";
-  if (/(tape|band)/.test(q)) return "tapes";
-  if (/(battery|batterie|akku)/.test(q)) return "batteries";
-  return "brushes";
+function titleCase(value: string): string {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function computeStats(history: number[], recencyWeight: number, stddevMultiplier: number) {
@@ -167,103 +67,209 @@ function computeStats(history: number[], recencyWeight: number, stddevMultiplier
   return { mean, expected, std, upper };
 }
 
-function PoliciesPage() {
-  const saved = loadSaved();
-  const [stddevMultiplier, setStddevMultiplier] = useState<number | "">(
-    saved?.stddevMultiplier ?? DEFAULTS.stddevMultiplier,
-  );
-  const [logisticRiskThreshold, setLogisticRiskThreshold] = useState<number | "">(
-    saved?.logisticRiskThreshold ?? DEFAULTS.logisticRiskThreshold,
-  );
-  const [recencyWeight, setRecencyWeight] = useState<number | "">(
-    saved?.recencyWeight ?? DEFAULTS.recencyWeight,
-  );
-  const [minHistoryPoints, setMinHistoryPoints] = useState<number | "">(
-    saved?.minHistoryPoints ?? DEFAULTS.minHistoryPoints,
-  );
-  const [newProductName, setNewProductName] = useState<string>("Profi Malerpinsel 70mm");
-  const [sampleTag, setSampleTag] = useState<string>("brushes");
-  const [sampleQuantity, setSampleQuantity] = useState<number | "">(18);
+function chooseBestFamily(text: string, families: DemandFamily[]): DemandFamily | null {
+  const query = text.toLowerCase().trim();
+  if (!query) return families[0] ?? null;
 
-  const selectedFamily = useMemo(
-    () => PRODUCT_FAMILIES.find((item) => item.tag === sampleTag) ?? PRODUCT_FAMILIES[0],
-    [sampleTag],
-  );
+  const ranked = families
+    .map((family) => {
+      const haystack = [family.label, family.tag, ...family.aliases].join(" ").toLowerCase();
+      const tokenScore = query.split(/\s+/).reduce((sum, token) => sum + (token && haystack.includes(token) ? 1 : 0), 0);
+      const directBonus = haystack.includes(query) ? 4 : 0;
+      return { family, score: tokenScore + directBonus };
+    })
+    .sort((left, right) => right.score - left.score || right.family.aliases.length - left.family.aliases.length);
+
+  return ranked[0]?.family ?? families[0] ?? null;
+}
+
+function PoliciesPage() {
+  const [stddevMultiplier, setStddevMultiplier] = useState<number | "">(DEFAULTS.stddevMultiplier);
+  const [recencyWeight, setRecencyWeight] = useState<number | "">(DEFAULTS.recencyWeight);
+  const [newProductName, setNewProductName] = useState<string>("");
+  const [sampleTag, setSampleTag] = useState<string>("");
+  const [sampleQuantity, setSampleQuantity] = useState<number | "">(5);
+
+  const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
+    queryKey: ["policies", "products"],
+    queryFn: () => api.get<ProductRecord[]>("/api/products", { params: { page_size: 500 } }),
+  });
+  const { data: orders = [], isLoading: ordersLoading, isError: ordersError, refetch: refetchOrders } = useQuery({
+    queryKey: ["policies", "orders"],
+    queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
+  });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["policies", "suppliers"],
+    queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
+  });
+  const { data: approvalRule } = useQuery({
+    queryKey: ["policies", "rule"],
+    queryFn: () => api.get<ApprovalRule | null>("/api/approvals/rule"),
+  });
+
+  const families = useMemo<DemandFamily[]>(() => {
+    type SupplierAggregate = { totalPrice: number; samples: number; itemCount: number };
+    type Bucket = { label: string; aliases: Set<string>; history: number[]; suppliers: Map<string, SupplierAggregate> };
+
+    const supplierNameById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
+    const buckets = new Map<string, Bucket>();
+
+    function getBucket(key: string, label?: string): Bucket {
+      const existing = buckets.get(key);
+      if (existing) {
+        if (label && (!existing.label || existing.label === titleCase(key))) {
+          existing.label = label;
+        }
+        return existing;
+      }
+      const created: Bucket = { label: label || titleCase(key), aliases: new Set<string>(), history: [], suppliers: new Map<string, SupplierAggregate>() };
+      buckets.set(key, created);
+      return created;
+    }
+
+    function addSupplierMetric(bucket: Bucket, name: string, unitPrice: number, itemCount: number) {
+      const current = bucket.suppliers.get(name) ?? { totalPrice: 0, samples: 0, itemCount: 0 };
+      current.totalPrice += unitPrice;
+      current.samples += 1;
+      current.itemCount += itemCount;
+      bucket.suppliers.set(name, current);
+    }
+
+    products.forEach((product) => {
+      const key = normalizeKey(product.taxonomy_code ?? product.category ?? product.name);
+      const bucket = getBucket(key, product.taxonomy_label ?? product.category ?? product.name);
+      bucket.aliases.add(product.name);
+      const supplierName = product.supplier_name ?? supplierNameById.get(product.supplier_id ?? "") ?? "Unknown supplier";
+      const unitPrice = Number(product.unit_price ?? 0);
+      if (supplierName && Number.isFinite(unitPrice) && unitPrice > 0) {
+        addSupplierMetric(bucket, supplierName, unitPrice, 1);
+      }
+    });
+
+    orders.forEach((order) => {
+      order.items?.forEach((item) => {
+        const key = normalizeKey(
+          item.product_snapshot?.taxonomy_code
+            ?? item.product_snapshot?.taxonomy_label
+            ?? item.product_snapshot?.category
+            ?? item.product_snapshot?.name
+            ?? "Uncategorised",
+        );
+        const bucket = getBucket(
+          key,
+          item.product_snapshot?.taxonomy_label
+            ?? item.product_snapshot?.category
+            ?? item.product_snapshot?.name
+            ?? "Uncategorised",
+        );
+        if (item.product_snapshot?.name) {
+          bucket.aliases.add(item.product_snapshot.name);
+        }
+
+        const quantity = Number(item.quantity ?? 0);
+        if (Number.isFinite(quantity) && quantity > 0) {
+          bucket.history.push(quantity);
+        }
+
+        const supplierName = item.product_snapshot?.supplier_name
+          ?? order.supplier_name
+          ?? supplierNameById.get(order.supplier_id ?? "")
+          ?? "Unknown supplier";
+        const unitPrice = Number(item.unit_price ?? 0);
+        if (supplierName && Number.isFinite(unitPrice) && unitPrice > 0) {
+          addSupplierMetric(bucket, supplierName, unitPrice, 0);
+        }
+      });
+    });
+
+    return [...buckets.entries()]
+      .map(([key, bucket]) => ({
+        tag: key,
+        label: bucket.label || titleCase(key),
+        aliases: [...bucket.aliases].slice(0, 4),
+        history: bucket.history.length ? bucket.history : [1],
+        suppliers: [...bucket.suppliers.entries()]
+          .map(([name, stats]) => ({
+            name,
+            avgPrice: stats.samples ? stats.totalPrice / stats.samples : 0,
+            itemCount: stats.itemCount,
+          }))
+          .sort((left, right) => left.avgPrice - right.avgPrice || right.itemCount - left.itemCount),
+      }))
+      .sort((left, right) => right.history.length - left.history.length || left.label.localeCompare(right.label));
+  }, [orders, products, suppliers]);
+
+  const selectedFamily = families.find((family) => family.tag === sampleTag) ?? families[0] ?? null;
+  const matchedFamily = chooseBestFamily(newProductName, families) ?? selectedFamily;
 
   const recency = Number(recencyWeight || DEFAULTS.recencyWeight);
   const sigma = Number(stddevMultiplier || DEFAULTS.stddevMultiplier);
-  const riskThreshold = Number(logisticRiskThreshold || DEFAULTS.logisticRiskThreshold);
-  const stats = computeStats(selectedFamily.history, recency, sigma);
-  const zScore = typeof sampleQuantity === "number" ? (sampleQuantity - stats.expected) / stats.std : 0;
-  const logistic = 1 / (1 + Math.exp(-(Math.abs(zScore) - 1.5)));
-  const flagged = typeof sampleQuantity === "number"
-    ? sampleQuantity > stats.upper || logistic >= riskThreshold
-    : false;
+  const stats = computeStats(selectedFamily?.history ?? [1], recency, sigma);
+  const quantity = typeof sampleQuantity === "number" ? sampleQuantity : 0;
+  const zScore = (quantity - stats.expected) / stats.std;
+  const estimatedUnitPrice = selectedFamily?.suppliers[0]?.avgPrice ?? 0;
+  const thresholdAmount = Number(approvalRule?.threshold_amount ?? 500);
+  const estimatedSpend = quantity * estimatedUnitPrice;
+  const flagged = quantity > stats.upper || estimatedSpend > thresholdAmount;
+  const orderLines = orders.reduce((sum, order) => sum + (order.items?.length ?? 0), 0);
 
-  const matchedTag = matchFamily(newProductName);
-  const matchedFamily = PRODUCT_FAMILIES.find((item) => item.tag === matchedTag) ?? PRODUCT_FAMILIES[0];
-  const bestSupplier = [...selectedFamily.suppliers].sort((a, b) => b.score - a.score)[0];
+  if (productsLoading || ordersLoading) {
+    return (
+      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
+        <QueryState kind="loading" title="Loading live demand intelligence" description="Catalog, suppliers, and order history are being analyzed now." />
+      </DashboardLayout>
+    );
+  }
 
-  function handleSave() {
-    const data = {
-      stddevMultiplier,
-      logisticRiskThreshold,
-      recencyWeight,
-      minHistoryPoints,
-    };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // ignore storage errors
-    }
-    toast.success("Statistical model saved", {
-      description: `σ multiplier ${sigma} · risk threshold ${riskThreshold} · min history ${minHistoryPoints || DEFAULTS.minHistoryPoints}`,
-    });
+  if (productsError || ordersError) {
+    return (
+      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
+        <QueryState kind="error" title="Demand intelligence could not be loaded" description="The live policy inputs are temporarily unavailable." onRetry={() => { void refetchProducts(); void refetchOrders(); }} />
+      </DashboardLayout>
+    );
+  }
+
+  if (!selectedFamily) {
+    return (
+      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
+        <div className="rounded-lg border border-border bg-card p-8 text-sm text-muted-foreground">
+          No live catalog or order history is available yet. Import a supplier file to start building demand intelligence.
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (
-    <DashboardLayout
-      title="Demand intelligence"
-      subtitle="Statistical auto-approval using AI product tags, expected order size, and supplier learning"
-    >
+    <DashboardLayout title="Demand intelligence" subtitle="Statistical approval guidance from live catalog and order history">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 space-y-6">
           <Card className="p-5">
             <div className="flex items-center gap-2 mb-1">
               <BrainCircuit className="h-4 w-4 text-hivis" />
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Statistics instead of fixed policies
+                Live policy model
               </div>
             </div>
             <h3 className="text-display text-lg font-semibold">How approval works now</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              New C-class products are compared against existing items, mapped to the same AI tag,
-              and scored using Erwartungswert and Standardabweichung from historical demand.
+              This page now derives its baselines from live catalog subcategories, supplier prices, and historical order line quantities stored in the database.
             </p>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  σ multiplier
-                </label>
+                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">σ multiplier</label>
                 <Input value={stddevMultiplier} onChange={(e) => setStddevMultiplier(parseNum(e.target.value))} className="mt-1" type="number" step="0.1" />
               </div>
               <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Risk threshold
-                </label>
-                <Input value={logisticRiskThreshold} onChange={(e) => setLogisticRiskThreshold(parseNum(e.target.value))} className="mt-1" type="number" step="0.01" />
-              </div>
-              <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Recency weight
-                </label>
+                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Recency weight</label>
                 <Input value={recencyWeight} onChange={(e) => setRecencyWeight(parseNum(e.target.value))} className="mt-1" type="number" step="0.05" />
               </div>
-              <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Min history
-                </label>
-                <Input value={minHistoryPoints} onChange={(e) => setMinHistoryPoints(parseNum(e.target.value))} className="mt-1" type="number" />
+              <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm">
+                <div className="text-xs text-muted-foreground">Observed groups</div>
+                <div className="font-medium mt-1">{families.length}</div>
+              </div>
+              <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm">
+                <div className="text-xs text-muted-foreground">Order lines analysed</div>
+                <div className="font-medium mt-1">{orderLines}</div>
               </div>
             </div>
           </Card>
@@ -272,35 +278,34 @@ function PoliciesPage() {
             <div className="flex items-center gap-2 mb-1">
               <Sigma className="h-4 w-4 text-primary" />
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Product-family baselines
+                Live baselines by category
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Mock demand history by AI tag</h3>
+            <h3 className="text-display text-lg font-semibold">Current demand history from the database</h3>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="py-2 pr-3">Tag</th>
-                    <th className="py-2 pr-3">Aliases</th>
-                    <th className="py-2 pr-3">Erwartungswert</th>
-                    <th className="py-2 pr-3">Standardabw.</th>
-                    <th className="py-2 pr-3">Best supplier</th>
+                    <th className="py-2 pr-3">Group</th>
+                    <th className="py-2 pr-3">Example items</th>
+                    <th className="py-2 pr-3">Expected qty</th>
+                    <th className="py-2 pr-3">Std. dev.</th>
+                    <th className="py-2 pr-3">Best live supplier</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {PRODUCT_FAMILIES.map((family) => {
+                  {families.map((family) => {
                     const familyStats = computeStats(family.history, recency, sigma);
-                    const supplier = [...family.suppliers].sort((a, b) => b.score - a.score)[0];
                     return (
                       <tr key={family.tag} className="border-b border-border/60">
                         <td className="py-3 pr-3">
                           <div className="font-medium">{family.label}</div>
-                          <div className="text-xs text-muted-foreground">{family.tag}</div>
+                          <div className="text-xs text-muted-foreground">{family.history.length} observations</div>
                         </td>
-                        <td className="py-3 pr-3 text-xs text-muted-foreground">{family.aliases.slice(0, 2).join(" · ")}</td>
+                        <td className="py-3 pr-3 text-xs text-muted-foreground">{family.aliases.slice(0, 2).join(" · ") || "No named items yet"}</td>
                         <td className="py-3 pr-3">{familyStats.expected.toFixed(1)}</td>
                         <td className="py-3 pr-3">{familyStats.std.toFixed(1)}</td>
-                        <td className="py-3 pr-3">{supplier.name}</td>
+                        <td className="py-3 pr-3">{family.suppliers[0]?.name ?? "No live supplier data"}</td>
                       </tr>
                     );
                   })}
@@ -313,22 +318,22 @@ function PoliciesPage() {
             <div className="flex items-center gap-2 mb-1">
               <Tags className="h-4 w-4 text-primary" />
               <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                AI product matching
+                Live item matching
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Tag new products without relying on article numbers</h3>
+            <h3 className="text-display text-lg font-semibold">Map new items to real catalog groups</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              If a new product looks similar to an existing family, it inherits the same tag and joins the same statistical history.
+              Enter a material name to see which live product group it most closely matches in the current database.
             </p>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">New product</label>
-                <Input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} className="mt-1" placeholder="Example: Profi Malerpinsel 70mm" />
+                <Input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} className="mt-1" placeholder="Example: Drywall screw 4.5 × 40" />
               </div>
               <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2">
-                <div className="text-xs text-muted-foreground">Matched AI tag</div>
-                <div className="font-medium mt-1">{matchedFamily.label}</div>
-                <div className="text-xs text-muted-foreground mt-1">Similar items: {matchedFamily.aliases.join(" · ")}</div>
+                <div className="text-xs text-muted-foreground">Closest live group</div>
+                <div className="font-medium mt-1">{matchedFamily?.label ?? "Waiting for input"}</div>
+                <div className="text-xs text-muted-foreground mt-1">Examples: {matchedFamily?.aliases.join(" · ") || "No examples available yet"}</div>
               </div>
             </div>
           </Card>
@@ -344,21 +349,20 @@ function PoliciesPage() {
             </div>
             <h3 className="text-display text-lg font-semibold">Expected order size calculator</h3>
             <div className="mt-3 space-y-2">
-              <select
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
-                value={sampleTag}
-                onChange={(e) => setSampleTag(e.target.value)}
-              >
-                {PRODUCT_FAMILIES.map((family) => (
+              <select className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm" value={selectedFamily.tag} onChange={(e) => setSampleTag(e.target.value)}>
+                {families.map((family) => (
                   <option key={family.tag} value={family.tag}>{family.label}</option>
                 ))}
               </select>
               <Input type="number" value={sampleQuantity} onChange={(e) => setSampleQuantity(parseNum(e.target.value))} placeholder="Quantity" />
             </div>
             <div className={["mt-3 rounded-md border px-3 py-3 text-sm", flagged ? "border-warning/40 bg-warning/20" : "border-success/40 bg-success/10"].join(" ")}>
-              <div className="font-medium">{flagged ? "Route to approval review" : "Auto-accept statistically normal order"}</div>
+              <div className="font-medium">{flagged ? "Route to approval review" : "Order stays within the normal live range"}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                Erwartungswert {stats.expected.toFixed(1)} · Standardabweichung {stats.std.toFixed(1)} · upper band {stats.upper.toFixed(1)} · z {zScore.toFixed(2)} · risk {logistic.toFixed(2)}
+                Expected {stats.expected.toFixed(1)} · std. dev. {stats.std.toFixed(1)} · upper band {stats.upper.toFixed(1)} · estimated spend {formatCurrency(estimatedSpend, "EUR")}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Approval threshold: {formatCurrency(thresholdAmount, "EUR")} · z-score {zScore.toFixed(2)}
               </div>
             </div>
           </Card>
@@ -370,30 +374,25 @@ function PoliciesPage() {
                 Supplier benchmarking
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Preferred suppliers for {selectedFamily.label}</h3>
+            <h3 className="text-display text-lg font-semibold">Live supplier options for {selectedFamily.label}</h3>
             <div className="mt-3 space-y-2">
-              {selectedFamily.suppliers.map((supplier) => (
+              {selectedFamily.suppliers.length > 0 ? selectedFamily.suppliers.map((supplier) => (
                 <div key={supplier.name} className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-medium">{supplier.name}</div>
-                    <div className="text-xs text-muted-foreground">score {supplier.score}</div>
+                    <div className="text-xs text-muted-foreground">{supplier.itemCount} items</div>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    avg CHF {supplier.avgPrice.toFixed(2)} · lead {supplier.leadDays.toFixed(1)}d · fill rate {supplier.fillRate}%
+                    Average live unit price {formatCurrency(supplier.avgPrice, "EUR")}
                   </div>
                 </div>
-              ))}
-            </div>
-            <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-              Current best supplier: <span className="font-medium text-foreground">{bestSupplier.name}</span>
+              )) : (
+                <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+                  No supplier pricing is available yet for this group.
+                </div>
+              )}
             </div>
           </Card>
-
-          <div className="flex justify-end">
-            <Button onClick={handleSave} className="bg-hivis text-hivis-foreground hover:bg-hivis/90">
-              <Save className="h-4 w-4 mr-2" /> Save model settings
-            </Button>
-          </div>
         </div>
       </div>
     </DashboardLayout>
