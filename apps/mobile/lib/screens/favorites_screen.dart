@@ -167,6 +167,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   }
 
   Future<void> _toggleFavorite(Map<String, dynamic> item) async {
+    final messenger = ScaffoldMessenger.of(context);
     final productId = _itemProductId(item);
     if (productId == null) return;
     final ids = await FavoritesStore.toggle(productId);
@@ -176,34 +177,37 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       _favoriteIds = ids;
       _favorites = _resolveFavoriteItems(ids, pool);
     });
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(content: Text(ids.contains(productId) ? 'Saved to favorites' : 'Removed from favorites')),
     );
   }
 
   Future<void> _addToReview(Map<String, dynamic> item) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final cartCubit = context.read<CartCubit>();
     final prefs = await SharedPreferences.getInstance();
     final projectId = prefs.getString(kSelectedProjectKey);
     if (projectId == null || projectId.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Select a project first')),
       );
-      context.go('/projects');
+      router.go('/projects');
       return;
     }
 
     final productId = _itemProductId(item);
     if (productId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('This item is not ready to add yet')),
       );
       return;
     }
     final quantity = parseFlexibleNumber(item['suggested_qty']) ?? 1;
-    final ok = await context.read<CartCubit>().add(productId, quantity);
+    final ok = await cartCubit.add(productId, quantity);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.showSnackBar(
       SnackBar(content: Text(ok ? 'Added to order review' : 'Could not add item')),
     );
   }

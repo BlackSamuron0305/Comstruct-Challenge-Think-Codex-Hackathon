@@ -47,6 +47,9 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _checkout() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final cartCubit = context.read<CartCubit>();
     final prefs = await SharedPreferences.getInstance();
     final projectId = prefs.getString(kSelectedProjectKey);
     final projectName = prefs.getString(kSelectedProjectNameKey) ?? 'Select a project';
@@ -61,10 +64,10 @@ class _CartScreenState extends State<CartScreen> {
       setState(() {
         _checkoutError = 'Select a project first before placing the order.';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Please select a project first')),
       );
-      context.go('/projects');
+      router.go('/projects');
       return;
     }
 
@@ -82,11 +85,11 @@ class _CartScreenState extends State<CartScreen> {
       );
       _idempotencyKey = null; // Reset after successful checkout
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('Order ${order['status']} (${(order['id'] as String).substring(0, 8)})')),
       );
-      await context.read<CartCubit>().refresh();
-      if (mounted) context.go('/c-orders');
+      await cartCubit.refresh();
+      if (mounted) router.go('/c-orders');
     } catch (e) {
       // Offline fallback — queue checkout for later
       final isOnline = await AppScope.llm.isOnline;
@@ -99,7 +102,7 @@ class _CartScreenState extends State<CartScreen> {
           },
         );
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('Offline: order saved and will sync when connected')),
         );
         _idempotencyKey = null;
@@ -108,7 +111,7 @@ class _CartScreenState extends State<CartScreen> {
       if (!mounted) return;
       final friendly = '${describeApiError(e, baseUrl: AppScope.api.baseUrl)} ${AppConfig.backendConnectionHelp}';
       setState(() => _checkoutError = friendly);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text(friendly)),
       );
     } finally {
@@ -119,6 +122,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartCubit>().state;
+    final cartCubit = context.read<CartCubit>();
     final controlsEnabled = _hasSelectedProject && !_checkingOut;
 
     return Scaffold(
@@ -158,7 +162,7 @@ class _CartScreenState extends State<CartScreen> {
                     : RefreshIndicator(
                         onRefresh: () async {
                           await _loadSelectedProject();
-                          await context.read<CartCubit>().refresh();
+                          await cartCubit.refresh();
                         },
                         child: ListView.separated(
                           physics: const AlwaysScrollableScrollPhysics(),
