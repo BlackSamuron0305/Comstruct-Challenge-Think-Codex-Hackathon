@@ -60,12 +60,14 @@ End-to-end ordering platform for **C-materials** — low-value, high-variety con
 
 | Layer | Technology |
 |-------|-----------|
-| Mobile | Flutter 3 · Dart · Riverpod |
-| Web | React 18 · TypeScript · Vite · Tailwind CSS |
-| Gateway | Fastify 4 · jose (RS256 JWT) · Helmet · @fastify/rate-limit |
-| Backend | FastAPI · SQLAlchemy 2 (async) · Alembic · Pydantic v2 |
-| AI/LLM | Ollama (gemma3:4b, local) · pgvector embeddings |
-| Database | PostgreSQL 16 + pgvector · Redis 7 |
+| Mobile | Flutter 3 · Dart · Riverpod · Hive (offline queue) · Google ML Kit OCR |
+| Web | React 18 · TypeScript · Vite · Tailwind CSS · Server-Sent Events |
+| Gateway | Fastify 4 · jose (RS256 JWT) · Helmet · @fastify/rate-limit · WebSocket bridge |
+| Backend | FastAPI · SQLAlchemy 2 (async) · Alembic · Pydantic v2 · LangChain |
+| AI/LLM | **Hybrid LLM**: OpenAI GPT-4.1-mini · Anthropic Claude Sonnet 4.5 · Ollama gemma3:4b (edge) |
+| Embeddings | OpenAI `text-embedding-3-small` (768-dim) · pgvector cosine similarity |
+| NLP/ML | Statistical anomaly detection · Logistic risk scoring · ABC classification · RAG |
+| Database | PostgreSQL 16 + pgvector + pg_trgm · Redis 7 (Pub/Sub + Lua atomics) |
 | Storage | MinIO (S3-compatible) |
 | Infra | Docker Compose · Turborepo · Melos · Makefile |
 
@@ -277,13 +279,36 @@ tests/
 | `make lint` | Run linters (ruff + eslint) |
 | `make clean` | Full cleanup (volumes, node_modules, caches) |
 
+## Key AI & Data Science Capabilities
+
+| Capability | Technique | Detail |
+|------------|-----------|--------|
+| **Retrieval-Augmented Generation (RAG)** | Dual-path hybrid search | pgvector cosine similarity + pg_trgm trigram (≥0.55) with score fusion |
+| **Sigmoid-Gated Anomaly Detection** | Logistic risk function | $\text{risk} = 1/(1+e^{-(|z|-1.5)})$ with configurable threshold (0.82) |
+| **Recency-Weighted Demand Forecasting** | Exponential recency bias | 65% recent 4-point mean + 35% long-term mean for expected quantities |
+| **Multi-Factor Supplier Scoring** | 5-dimensional composite | Price (25%) + Delivery (25%) + Web reputation (20%) + Trust (15%) + Specs fit (15%) |
+| **Multi-Modal Document Intelligence** | Vision + OCR + NLP | PDF (pdfplumber + pymupdf4llm), Excel (pandas), Images (GPT-4.1-mini Vision) |
+| **Confidence-Calibrated Grounding** | Asymmetric scoring | Grounded → confidence ≥0.6; ungrounded → capped at 0.25 |
+| **On-Device Edge AI** | Gemma 3 (4B) local inference | Zero-latency classification on construction sites via Android MethodChannel |
+| **Offline-First with Idempotent Sync** | Hive queue + dedup keys | FIFO sync with server-side idempotency when connectivity restores |
+| **Delta Detection Pipeline** | Multi-stage fuzzy matching | SKU exact → normalised name → cross-supplier with Swiss price format handling |
+| **Prompt Drift Prevention** | Golden test regression suite | Pinned classification outputs block silent prompt changes in CI |
+| **SSE Token Streaming** | LangChain astream / Ollama HTTP | Real-time token-by-token LLM responses via Server-Sent Events |
+| **Event-Driven Architecture** | Redis Pub/Sub channels | `ai.progress`, `order.status`, `price.alert` — real-time push to all clients |
+| **Atomic Cart Operations** | Redis Lua scripting | Race-condition-free read-modify-write with 7-day TTL |
+| **Multilingual Alias Resolution** | 13 product groups × DE/EN | Fuzzy scoring: +3 per token, +2 per alias group for voice ordering |
+| **Procurement Constraint Detection** | Regex NLP extraction | "must be purchased from" → `source_locked=True` from supplier documents |
+| **Burn-Down Reorder Prediction** | Stock depletion modelling | `days_until_depleted = stock / daily_usage`; urgency: ≤3d → immediate |
+
 ## Key Design Decisions
 
-- **Local LLM (Ollama)** — All AI inference runs on-premise via Ollama with gemma3:4b. No procurement data leaves the infrastructure. Deterministic fallback ensures the platform works without LLM.
-- **A-material hard block** — Items >500 CHF or matching structural keywords (Beton, Stahl, Bewehrung, Schacht, Träger) are never classified as C-material, regardless of LLM output.
-- **State machine enforcement** — Order lifecycle (`draft → pending_approval → approved → ordered → in_transit → delivered`) is enforced by a strict transition map with exhaustive tests.
-- **Cart in Redis** — Atomic Lua-scripted cart operations for sub-millisecond performance. 7-day TTL auto-cleanup.
-- **Approval engine** — Rule-based: per-company thresholds + restricted category lists. Auto-approve below threshold, require PM approval above.
+- **Hybrid LLM Architecture (Cloud + Edge)** — Multi-provider orchestration: OpenAI GPT-4.1-mini, Anthropic Claude Sonnet 4.5, and Ollama gemma3:4b (local). Automatic failover with zero data egress option via on-premise Ollama. On-device Gemma 3 inference on mobile for construction-site edge AI.
+- **Statistics-First Approval Engine** — Statistical demand modelling is the primary decision-maker, not static thresholds. Logistic risk scoring with recency-weighted demand forecasting and z-score anomaly detection. Static rules serve as safety guardrails only.
+- **A-Material Hard Block** — Items >500 CHF or matching structural keywords (Beton, Stahl, Bewehrung, Schacht, Träger) are never classified as C-material, regardless of LLM output. Hard rules always override LLM.
+- **State Machine Enforcement** — Order lifecycle (`draft → pending_approval → approved → ordered → in_transit → delivered`) enforced by a strict transition map with exhaustive tests.
+- **Atomic Cart (Redis Lua)** — Cart state managed via Lua scripts for atomic read-modify-write operations. Sub-millisecond performance, 7-day TTL auto-cleanup, race-condition-free across concurrent devices.
+- **Dual-Path Retrieval (Semantic + Lexical)** — Vector similarity (pgvector) for semantic understanding + trigram matching (pg_trgm) for exact Swiss-German terms, SKU codes, and brand names. Score fusion for optimal recall.
+- **Confidence-Calibrated AI** — Grounded catalog matches get boosted confidence (≥0.6); ungrounded suggestions capped at 0.25. Prevents hallucinated recommendations from appearing authoritative.
 
 ## License
 
