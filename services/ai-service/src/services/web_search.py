@@ -2,7 +2,7 @@
 
 Searches the web for supplier reputation, reviews, and quality information.
 Uses DuckDuckGo HTML search (no API key required) for open web search.
-AI-based summarization is stubbed — will use ChatGPT in production.
+Produces an evidence-based summary from public signals when no model is used.
 """
 import logging
 import re
@@ -22,6 +22,65 @@ SEARCH_HEADERS = {
                   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
 }
+
+
+def _build_supplier_summary(
+    supplier_name: str,
+    unique_results: list[dict],
+    page_texts: list[dict],
+    positive_hits: int,
+    negative_hits: int,
+) -> dict:
+    combined_text = " ".join(r.get("snippet", "") for r in unique_results).lower()
+    combined_text += " " + " ".join(p.get("text", "") for p in page_texts).lower()
+
+    themes = []
+    theme_map = {
+        "construction focus": ["construction", "baustoff", "building", "contractor", "civil"],
+        "swiss presence": ["switzerland", "schweiz", "zurich", "basel", "bern", "geneva"],
+        "b2b supply": ["wholesale", "supplier", "trade", "procurement", "distribution"],
+        "quality credentials": ["iso", "certified", "certification", "ce", "en 1090"],
+    }
+    for theme, keywords in theme_map.items():
+        if any(keyword in combined_text for keyword in keywords):
+            themes.append(theme)
+
+    signal_delta = positive_hits - negative_hits
+    if signal_delta >= 3:
+        risk_level = "low"
+        confidence = "medium"
+        sentiment = "mostly positive public signals"
+    elif signal_delta <= -2:
+        risk_level = "high"
+        confidence = "medium"
+        sentiment = "mixed to negative public signals"
+    else:
+        risk_level = "medium"
+        confidence = "low"
+        sentiment = "limited or balanced public evidence"
+
+    summary = (
+        f"Found {len(unique_results)} public references for {supplier_name}. "
+        f"The evidence suggests {sentiment}. "
+        + (f"Detected themes: {', '.join(themes)}. " if themes else "No strong specialization theme was detected. ")
+        + f"Reviewed {len(page_texts)} source pages."
+    )
+
+    recommendation = {
+        "low": "Supplier appears worth shortlisting, but pricing and delivery terms should still be validated.",
+        "medium": "Supplier should be reviewed manually before large commitments.",
+        "high": "Escalate for manual due diligence before approval.",
+    }[risk_level]
+
+    return {
+        "summary": summary,
+        "quality_assessment": {
+            "risk_level": risk_level,
+            "confidence": confidence,
+            "themes": themes or ["limited evidence"],
+            "recommendation": recommendation,
+        },
+    }
 
 
 async def _db_pool():
@@ -103,8 +162,7 @@ async def search_supplier_info(
 ) -> dict:
     """Search the web for supplier reputation and quality info.
 
-    Returns structured results with search hits and extracted info.
-    AI summarization is stubbed — will be done by ChatGPT in production.
+    Returns structured results with search hits and extracted evidence.
     """
     queries = [
         f"{supplier_name} Bewertung Erfahrung Baustoff",
@@ -156,6 +214,14 @@ async def search_supplier_info(
     else:
         reputation_score = 50  # neutral if no signals
 
+    summary_payload = _build_supplier_summary(
+        supplier_name=supplier_name,
+        unique_results=unique_results,
+        page_texts=page_texts,
+        positive_hits=positive_hits,
+        negative_hits=negative_hits,
+    )
+
     result = {
         "supplier_name": supplier_name,
         "search_results_count": len(unique_results),
@@ -164,9 +230,8 @@ async def search_supplier_info(
         "reputation_score": reputation_score,
         "positive_signals": positive_hits,
         "negative_signals": negative_hits,
-        # Stub: AI summary will be filled in by ChatGPT later
-        "ai_summary": None,
-        "ai_quality_assessment": None,
+        "ai_summary": summary_payload["summary"],
+        "ai_quality_assessment": summary_payload["quality_assessment"],
     }
 
     # Cache results in DB if supplier_id given

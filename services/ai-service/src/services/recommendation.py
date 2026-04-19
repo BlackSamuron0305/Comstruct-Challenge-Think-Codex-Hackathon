@@ -7,21 +7,41 @@ from ..prompts import task_recommender as tr
 from .catalog_client import search_by_vector
 
 
-def _stub_recommend(task: str, candidates: list[dict]) -> dict:
-    chosen = candidates[:3]
+def _build_retrieval_recommendation(task: str, candidates: list[dict]) -> dict:
+    task_tokens = {
+        token.lower() for token in task.replace(",", " ").split()
+        if len(token) > 2
+    }
+    ranked = sorted(
+        candidates,
+        key=lambda c: sum(
+            1 for token in task_tokens
+            if token in f"{c.get('name', '')} {c.get('category', '')}".lower()
+        ),
+        reverse=True,
+    )
+    chosen = ranked[:3]
+    if not chosen:
+        return {
+            "language": "en",
+            "summary": "No catalog matches found for the current task description.",
+            "items": [],
+            "missing": ["Add the material type, dimensions, substrate, or trade for better retrieval."],
+        }
+
     return {
         "language": "en",
-        "summary": f"Suggestion for: {task[:80]}" if chosen else "No matching C-materials found.",
+        "summary": f"Retrieved {len(chosen)} catalog candidates aligned with the task description.",
         "items": [
             {
                 "product_id": c["product_id"],
                 "quantity": 1,
                 "unit": c.get("unit", "pc"),
-                "rationale": "heuristic top-match",
+                "rationale": f"Recommended from catalog retrieval for task '{task[:60]}'",
             }
             for c in chosen
         ],
-        "missing": [] if chosen else ["LLM unavailable and no candidates"],
+        "missing": [],
     }
 
 
@@ -51,7 +71,7 @@ async def recommend_for_task(
         messages=tr.build_messages(task, candidates, project=project, trade=trade, cart=cart),
         max_tokens=1500,
         temperature=0.2,
-        stub=_stub_recommend(task, candidates),
+        stub=_build_retrieval_recommendation(task, candidates),
     )
     # Enrich items with display info from candidates so the mobile app
     # can render without a second round-trip.

@@ -99,7 +99,7 @@ class _SmartAddScreenState extends State<SmartAddScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  _source == LlmSource.local ? 'On-device AI (offline)' : 'Cloud AI',
+                  _source == LlmSource.local ? 'On-device AI / offline mode' : 'Cloud AI',
                   style: const TextStyle(fontSize: 12, color: Colors.black45),
                 ),
               ]),

@@ -1,576 +1,429 @@
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
-import { DashboardLayout } from "@/components/dashboard/Layout";
-import { catalog as initialCatalog, type CatalogItem } from "@/lib/mock-data";
-import {
-  Upload,
-  Sparkles,
-  AlertCircle,
-  X,
-  CheckCircle2,
-  FileSpreadsheet,
-  FileText,
-  Plus,
-  Building2,
-} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { DashboardLayout } from "@/components/dashboard/Layout";
+import { QueryState } from "@/components/dashboard/QueryState";
+import { api, formatCurrency, shortId, type ProductRecord, type SupplierRecord } from "@/lib/api";
 
 export const Route = createFileRoute("/catalog")({
   head: () => ({
     meta: [
       { title: "Catalog · comstruct C-Materials" },
-      {
-        name: "description",
-        content:
-          "Normalized C-material catalog mapped from supplier Excel files, contracts and PunchOut feeds.",
-      },
+      { name: "description", content: "Normalized C-material catalog mapped from supplier Excel files, contracts and PunchOut feeds." },
     ],
   }),
   component: Catalog,
 });
 
-const CHF = (n: number) =>
-  new Intl.NumberFormat("de-CH", {
-    style: "currency",
-    currency: "CHF",
-    minimumFractionDigits: 2,
-  }).format(n);
-
-// Mock items "parsed" from an Excel upload
-const EXCEL_MOCK_ITEMS = [
-  {
-    sku: "NEW-WUR-0055",
-    name: "Holzschraube Torx 6×80 verzinkt",
-    group: "Fasteners > Wood screws",
-    unit: "pc",
-    pack: "Box / 200",
-    supplier: "Würth Schweiz",
-    price: 0.09,
-    status: "mapped",
-    confidence: 0.94,
-  },
-  {
-    sku: "NEW-WUR-0056",
-    name: "Sechskantschraube M8×50 A2",
-    group: "Fasteners > Bolts",
-    unit: "pc",
-    pack: "Box / 50",
-    supplier: "Würth Schweiz",
-    price: 0.24,
-    status: "mapped",
-    confidence: 0.91,
-  },
-  {
-    sku: "NEW-WUR-0057",
-    name: "Unterlegscheibe M8 verzinkt",
-    group: "Fasteners > Washers",
-    unit: "pc",
-    pack: "Box / 100",
-    supplier: "Würth Schweiz",
-    price: 0.04,
-    status: "needs-review",
-    confidence: 0.58,
-  },
-  {
-    sku: "NEW-WUR-0058",
-    name: "Mutter M8 selbstsichernd",
-    group: "Fasteners > Nuts",
-    unit: "pc",
-    pack: "Box / 100",
-    supplier: "Würth Schweiz",
-    price: 0.07,
-    status: "mapped",
-    confidence: 0.88,
-  },
-  {
-    sku: "NEW-WUR-0059",
-    name: "Blindniete 4.8×12 Alu/Stahl",
-    group: "Fasteners > Rivets",
-    unit: "pc",
-    pack: "Box / 500",
-    supplier: "Würth Schweiz",
-    price: 0.03,
-    status: "needs-review",
-    confidence: 0.51,
-  },
-];
-
-// Mock items "extracted" from a PDF contract
-const PDF_MOCK_ITEMS = [
-  {
-    sku: "NEW-PUA-021",
-    name: "Acryl-Dichtstoff weiss 310ml",
-    group: "Consumables > Sealants",
-    unit: "tb",
-    pack: "Carton/25",
-    supplier: "PUAG AG",
-    price: 3.8,
-    status: "mapped",
-    confidence: 0.89,
-  },
-  {
-    sku: "NEW-PUA-022",
-    name: "Brandschutzschaum B1 750ml",
-    group: "Consumables > Sealants",
-    unit: "can",
-    pack: "Carton/12",
-    supplier: "PUAG AG",
-    price: 12.4,
-    status: "needs-review",
-    confidence: 0.47,
-  },
-  {
-    sku: "NEW-PUA-023",
-    name: "Universalschaum 750ml low expansion",
-    group: "Consumables > Sealants",
-    unit: "can",
-    pack: "Carton/12",
-    supplier: "PUAG AG",
-    price: 7.2,
-    status: "mapped",
-    confidence: 0.82,
-  },
-];
-
-type ExtractedItem = CatalogItem & { confidence: number; decision?: "approved" | "denied" };
-
-type UploadResult = {
-  type: "excel" | "pdf";
-  filename: string;
-  items: ExtractedItem[];
+type PreviewPayload = {
+  status: string;
+  rows_in: number;
+  preview_rows: Array<Record<string, unknown>>;
+  source_columns?: Array<Record<string, unknown>>;
+  canonical_fields?: string[];
+  mapping?: {
+    warnings?: string[];
+    mappings?: Array<{
+      source_column: string;
+      target_field?: string | null;
+      confidence?: number;
+      reason?: string;
+    }>;
+  };
 };
 
-const MIN_AUTO_APPROVAL_CONFIDENCE = 0.8;
+type CatalogRow = {
+  sku: string;
+  name: string;
+  group: string;
+  unit: string;
+  pack: string;
+  supplier: string;
+  price: number;
+  currency: string;
+  status: "mapped" | "needs-review";
+  standard: boolean;
+  tradeFit: string;
+  variant: "Good" | "Better" | "Best";
+};
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "The upload could not be processed.";
+}
+
+function renderPreviewValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+const tradeMatchers: Record<string, RegExp> = {
+  drywall: /drywall|wall|board|fastener|screw/i,
+  electrical: /electric|cable|tape|battery|light/i,
+  sanitary: /sanitary|silikon|foam|pipe|seal/i,
+  ppe: /ppe|glove|mask|safety/i,
+  construction: /fastener|consumable|tool|site|ppe/i,
+};
+
+function toMappingOverridePayload(mappingOverrides: Record<string, string>) {
+  return Object.entries(mappingOverrides)
+    .filter(([, targetField]) => targetField !== "")
+    .map(([sourceColumn, targetField]) => ({
+      source_column: sourceColumn,
+      target_field: targetField,
+      confidence: 1,
+      reason: "confirmed in UI",
+    }));
+}
+
+function determineVariant(index: number, total: number): "Good" | "Better" | "Best" {
+  if (total <= 1 || index === 0) return "Good";
+  if (index === total - 1) return "Best";
+  return "Better";
+}
 
 function Catalog() {
-  const xlsxRef = useRef<HTMLInputElement>(null);
-  const pdfRef = useRef<HTMLInputElement>(null);
-  const [processing, setProcessing] = useState<"excel" | "pdf" | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [catalogItems, setCatalogItems] = useState(initialCatalog);
-  const [seller, setSeller] = useState("Würth Schweiz");
-  const [showAddSeller, setShowAddSeller] = useState(false);
-  const [newSellerName, setNewSellerName] = useState("");
-  const [newSellerContact, setNewSellerContact] = useState("");
-  const [sellers, setSellers] = useState([
-    "Würth Schweiz",
-    "PUAG AG",
-    "Hilti Schweiz",
-    "HG Commerciale",
-    "Debrunner Acifer",
-  ]);
+  const queryClient = useQueryClient();
+  const [fileName, setFileName] = useState<string>("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  const [selectedTrade, setSelectedTrade] = useState<string>("all");
+  const [standardsOnly, setStandardsOnly] = useState<boolean>(false);
 
-  const needsReview = catalogItems.filter((c) => c.status === "needs-review").length;
+  const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => api.get<ProductRecord[]>("/api/products", { params: { page_size: 200 } }),
+  });
 
-  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const { data: suppliers = [], isLoading: suppliersLoading, isError: suppliersError, refetch: refetchSuppliers } = useQuery({
+    queryKey: ["catalog-suppliers"],
+    queryFn: () => api.get<SupplierRecord[]>("/api/suppliers"),
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: ({ file, overrides }: { file: File; overrides?: Record<string, string> }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const overridePayload = toMappingOverridePayload(overrides ?? {});
+      if (overridePayload.length > 0) {
+        formData.append("mapping_overrides", JSON.stringify(overridePayload));
+      }
+      return api.post<PreviewPayload>("/api/ingest/preview", formData);
+    },
+    onSuccess: (data) => {
+      if (Object.keys(mappingOverrides).length === 0 && data.mapping?.mappings?.length) {
+        setMappingOverrides(Object.fromEntries(data.mapping.mappings.map((entry) => [entry.source_column, entry.target_field ?? ""])));
+      }
+    },
+    onError: (error) => toast.error(toErrorMessage(error)),
+  });
+
+  const importMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedFile) throw new Error("Choose a file first");
+      if (!selectedSupplierId) throw new Error("Choose a supplier first");
+      const formData = new FormData();
+      formData.append("supplier_id", selectedSupplierId);
+      formData.append("file", selectedFile);
+      formData.append("default_currency", "EUR");
+      const overridePayload = toMappingOverridePayload(mappingOverrides);
+      if (overridePayload.length > 0) {
+        formData.append("mapping_overrides", JSON.stringify(overridePayload));
+      }
+      return api.post("/api/ingest/supplier-file", formData);
+    },
+    onSuccess: () => {
+      toast.success("Catalog import started");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Import failed"),
+  });
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
-    setProcessing("excel");
-    setTimeout(() => {
-      setProcessing(null);
-      setUploadResult({
-        type: "excel",
-        filename: file.name,
-        items: EXCEL_MOCK_ITEMS.map((i) => ({ ...i, supplier: seller })),
-      });
-      toast.success(`${file.name} parsed`, {
-        description: `${EXCEL_MOCK_ITEMS.length} items found, ${EXCEL_MOCK_ITEMS.filter((i) => i.status === "needs-review").length} need review.`,
-      });
-    }, 900);
-    e.target.value = "";
-  };
+    setSelectedFile(file);
+    setFileName(file.name);
+    setMappingOverrides({});
+    previewMutation.mutate({ file, overrides: {} });
+  }
 
-  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setProcessing("pdf");
-    setTimeout(() => {
-      setProcessing(null);
-      setUploadResult({
-        type: "pdf",
-        filename: file.name,
-        items: PDF_MOCK_ITEMS.map((i) => ({ ...i, supplier: seller })),
-      });
-      toast.success(`AI parsed ${file.name}`, {
-        description: `${PDF_MOCK_ITEMS.length} items extracted from framework contract.`,
-      });
-    }, 1400);
-    e.target.value = "";
-  };
+  const baseRows = useMemo(() => {
+    return products.map((product) => ({
+      sku: product.sku ?? shortId(product.id),
+      name: product.name,
+      group: product.category ?? "Uncategorised",
+      unit: product.unit ?? "pc",
+      pack: product.packaging_qty ? `Pack ${product.packaging_qty}` : "Single",
+      supplier: suppliers.find((supplier) => supplier.id === product.supplier_id)?.name ?? shortId(product.supplier_id),
+      price: product.unit_price ?? 0,
+      currency: product.currency ?? "EUR",
+      status: product.is_active === false || !product.category ? "needs-review" as const : "mapped" as const,
+    }));
+  }, [products, suppliers]);
 
-  const importItems = () => {
-    if (!uploadResult) return;
-    const approved = uploadResult.items.filter(
-      (i) =>
-        i.decision !== "denied" &&
-        (i.decision === "approved" || i.confidence >= MIN_AUTO_APPROVAL_CONFIDENCE),
+  const rows = useMemo<CatalogRow[]>(() => {
+    const byGroup = baseRows.reduce<Record<string, typeof baseRows>>((acc, row) => {
+      acc[row.group] = [...(acc[row.group] ?? []), row].sort((left, right) => left.price - right.price);
+      return acc;
+    }, {});
+
+    return baseRows.map((row) => {
+      const bucket = byGroup[row.group] ?? [row];
+      const index = bucket.findIndex((candidate) => candidate.sku === row.sku);
+      const tradeKey = selectedTrade === "all" ? "construction" : selectedTrade;
+      const matcher = tradeMatchers[tradeKey] ?? tradeMatchers.construction;
+      const tradeFit = matcher.test(`${row.name} ${row.group}`) ? "Matched" : "General";
+      return {
+        ...row,
+        standard: row.status === "mapped" && !/uncategorised/i.test(row.group),
+        tradeFit,
+        variant: determineVariant(index, bucket.length),
+      };
+    }).filter((row) => {
+      const tradeKey = selectedTrade === "all" ? null : selectedTrade;
+      const matcher = tradeKey ? (tradeMatchers[tradeKey] ?? tradeMatchers.construction) : null;
+      const tradeOk = !matcher || matcher.test(`${row.name} ${row.group}`);
+      const standardsOk = !standardsOnly || row.standard;
+      return tradeOk && standardsOk;
+    });
+  }, [baseRows, selectedTrade, standardsOnly]);
+
+  const mappedColumns = previewMutation.data?.mapping?.mappings ?? [];
+  const previewIssues = mappedColumns.filter((entry) => !entry.target_field).length;
+  const needsReview = previewMutation.data ? previewIssues : rows.filter((item) => item.status === "needs-review").length;
+  const tradeOptions = ["all", "drywall", "electrical", "sanitary", "ppe"];
+
+  if (productsLoading || suppliersLoading) {
+    return (
+      <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
+        <QueryState
+          kind="loading"
+          title="Loading catalog workspace"
+          description="Supplier products and mapping helpers are being prepared now."
+        />
+      </DashboardLayout>
     );
-    // Add only items not already in catalog
-    const existingSkus = new Set(catalogItems.map((c) => c.sku));
-    const newItems = approved
-      .filter((i) => !existingSkus.has(i.sku))
-      .map(({ confidence, decision, ...rest }) => rest);
-    setCatalogItems((prev) => [...prev, ...newItems]);
-    toast.success(`${newItems.length} items added to catalog`);
-    setUploadResult(null);
-  };
+  }
+
+  if (productsError || suppliersError) {
+    return (
+      <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
+        <QueryState
+          kind="error"
+          title="Catalog data could not be loaded"
+          description="The live catalog or supplier list is temporarily unavailable."
+          onRetry={() => {
+            void refetchProducts();
+            void refetchSuppliers();
+          }}
+        />
+      </DashboardLayout>
+    );
+  }
 
   return (
-    <>
-      <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
-        {/* Hidden file inputs */}
-        <input
-          ref={xlsxRef}
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          className="hidden"
-          onChange={handleExcelUpload}
-        />
-        <input
-          ref={pdfRef}
-          type="file"
-          accept=".pdf"
-          className="hidden"
-          onChange={handlePdfUpload}
-        />
+    <DashboardLayout title="Catalog" subtitle="Normalized C-material assortment across suppliers">
+      <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
+        <div className="font-medium">Live catalog records</div>
+        <p className="mt-1 text-muted-foreground">
+          All products shown below are loaded from the backend catalog database and supplier imports.
+        </p>
+      </div>
 
-        {/* Import strip */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="rounded-lg border border-border bg-card p-5">
-            <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
-              Seller source
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <label className="rounded-lg border border-dashed border-border bg-card p-5 cursor-pointer hover:bg-accent/40 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground"><Upload className="h-4 w-4" /></div>
+            <div>
+              <div className="font-medium text-sm">Upload Excel / CSV / PDF</div>
+              <div className="text-xs text-muted-foreground">{fileName || "Map columns → SKU, price, unit"}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <input type="file" accept=".csv,.xlsx,.xls,.pdf" className="hidden" onChange={handleFileChange} />
+        </label>
+
+        <div className="rounded-lg border border-dashed border-border bg-card p-5">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground"><Sparkles className="h-4 w-4" /></div>
+            <div className="flex-1">
+              <div className="font-medium text-sm">Live preview & import</div>
               <select
-                className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm"
-                value={seller}
-                onChange={(e) => setSeller(e.target.value)}
+                value={selectedSupplierId}
+                onChange={(event) => setSelectedSupplierId(event.target.value)}
+                className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
               >
-                {sellers.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
+                <option value="">Choose supplier</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                 ))}
               </select>
-              <button
-                onClick={() => setShowAddSeller(true)}
-                className="h-9 px-3 rounded-md border border-border text-sm hover:bg-accent inline-flex items-center gap-1"
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
-              </button>
-            </div>
-            <div className="text-xs text-muted-foreground mt-2">
-              Track uploader, timestamp, and API price refresh metadata on import.
             </div>
           </div>
-
           <button
-            onClick={() => xlsxRef.current?.click()}
-            disabled={processing !== null}
-            className="rounded-lg border border-dashed border-border bg-card p-5 text-left hover:bg-accent/50 transition-colors disabled:opacity-60 cursor-pointer"
+            className="mt-3 w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            onClick={() => importMutation.mutate()}
+            disabled={!selectedFile || !selectedSupplierId || importMutation.isPending}
           >
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 grid place-items-center rounded-md bg-primary text-primary-foreground shrink-0">
-                {processing === "excel" ? (
-                  <div className="h-4 w-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-              </div>
-              <div>
-                <div className="font-medium text-sm">
-                  {processing === "excel" ? "Parsing…" : "Upload Excel / CSV"}
-                </div>
-                <div className="text-xs text-muted-foreground">Map columns → SKU, price, unit</div>
-              </div>
-            </div>
+            {importMutation.isPending ? "Importing…" : "Confirm import"}
           </button>
+        </div>
 
-          <button
-            onClick={() => pdfRef.current?.click()}
-            disabled={processing !== null}
-            className="rounded-lg border border-dashed border-border bg-card p-5 text-left hover:bg-accent/50 transition-colors disabled:opacity-60 cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 grid place-items-center rounded-md bg-hivis text-hivis-foreground shrink-0">
-                {processing === "pdf" ? (
-                  <div className="h-4 w-4 rounded-full border-2 border-hivis-foreground border-t-transparent animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-              </div>
-              <div>
-                <div className="font-medium text-sm">
-                  {processing === "pdf" ? "Extracting…" : "PDF contract extract"}
-                </div>
-                <div className="text-xs text-muted-foreground">AI parses framework prices</div>
-              </div>
-            </div>
-          </button>
-
-          <div className="rounded-lg border border-border bg-card p-5">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 grid place-items-center rounded-md bg-warning/30 text-warning-foreground shrink-0">
-                <AlertCircle className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="font-medium text-sm tabular">{needsReview} items need review</div>
-                <div className="text-xs text-muted-foreground">
-                  Auto-categorization low confidence
-                </div>
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 grid place-items-center rounded-md bg-warning/30 text-warning-foreground"><AlertCircle className="h-4 w-4" /></div>
+            <div>
+              <div className="font-medium text-sm tabular">{needsReview} items need review</div>
+              <div className="text-xs text-muted-foreground">
+                {previewMutation.data
+                  ? `${previewMutation.data.rows_in} uploaded rows previewed · ${previewIssues} columns still need confirmation`
+                  : "Waiting for a supplier file preview"}
               </div>
             </div>
           </div>
+          {previewMutation.data?.mapping?.warnings?.length ? (
+            <div className="mt-3 text-xs text-warning-foreground">
+              {previewMutation.data.mapping.warnings.join(" · ")}
+            </div>
+          ) : null}
         </div>
 
-        {/* Catalog table */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
-              <tr>
-                <th className="text-left font-normal px-5 py-3">SKU</th>
-                <th className="text-left font-normal px-5 py-3">Name</th>
-                <th className="text-left font-normal px-5 py-3">Group</th>
-                <th className="text-left font-normal px-5 py-3">Pack / Unit</th>
-                <th className="text-left font-normal px-5 py-3">Supplier</th>
-                <th className="text-right font-normal px-5 py-3">Price</th>
-                <th className="text-left font-normal px-5 py-3">Mapping</th>
-              </tr>
-            </thead>
-            <tbody>
-              {catalogItems.map((c) => (
-                <tr key={c.sku} className="border-t border-border hover:bg-secondary/60">
-                  <td className="px-5 py-3 text-mono text-xs">{c.sku}</td>
-                  <td className="px-5 py-3 font-medium">{c.name}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{c.group}</td>
-                  <td className="px-5 py-3 text-muted-foreground text-xs">
-                    {c.pack} · <span className="text-mono">{c.unit}</span>
-                  </td>
-                  <td className="px-5 py-3">{c.supplier}</td>
-                  <td className="px-5 py-3 text-right tabular">{CHF(c.price)}</td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={[
-                        "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
-                        c.status === "mapped"
-                          ? "bg-success/15 text-[oklch(0.42_0.13_155)]"
-                          : "bg-warning/30 text-warning-foreground",
-                      ].join(" ")}
-                    >
-                      {c.status === "mapped" ? "Mapped" : "Needs review"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-lg border border-border bg-card p-5">
+          <div className="font-medium text-sm">Smart filters</div>
+          <select value={selectedTrade} onChange={(event) => setSelectedTrade(event.target.value)} className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+            {tradeOptions.map((option) => <option key={option} value={option}>{option === "all" ? "All trades" : option}</option>)}
+          </select>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={standardsOnly} onChange={(event) => setStandardsOnly(event.target.checked)} />
+            Project standard only
+          </label>
         </div>
-      </DashboardLayout>
+      </div>
 
-      {/* Upload result modal */}
-      {uploadResult && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setUploadResult(null)} />
-          <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl overflow-hidden">
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/30">
-              <div className="flex items-center gap-3">
-                {uploadResult.type === "excel" ? (
-                  <FileSpreadsheet className="h-5 w-5 text-primary" />
-                ) : (
-                  <FileText className="h-5 w-5 text-hivis" />
-                )}
-                <div>
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    {uploadResult.type === "excel"
-                      ? "Excel / CSV import"
-                      : "PDF contract extract · AI"}
-                  </div>
-                  <div className="text-sm font-semibold mt-0.5 truncate max-w-xs">
-                    {uploadResult.filename}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setUploadResult(null)}
-                className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent"
-              >
-                <X className="h-4 w-4" />
+      {previewMutation.data && (
+        <div className="mb-6 rounded-lg border border-border bg-card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Column mapping review</div>
+              <h3 className="text-display text-lg font-semibold">Confirm the AI mapping before import</h3>
+            </div>
+            {selectedFile && (
+              <button className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent" onClick={() => previewMutation.mutate({ file: selectedFile, overrides: mappingOverrides })}>
+                Refresh preview
               </button>
-            </div>
+            )}
+          </div>
 
-            {/* Summary */}
-            <div className="px-6 py-4 flex gap-4 border-b border-border bg-secondary/10">
-              <div className="text-sm">
-                <span className="font-semibold">{uploadResult.items.length}</span>
-                <span className="text-muted-foreground ml-1">items found</span>
-              </div>
-              <div className="text-sm">
-                <span className="font-semibold text-[oklch(0.42_0.13_155)]">
-                  {uploadResult.items.filter((i) => i.status === "mapped").length}
-                </span>
-                <span className="text-muted-foreground ml-1">ready to import</span>
-              </div>
-              <div className="text-sm">
-                <span className="font-semibold text-warning-foreground">
-                  {uploadResult.items.filter((i) => i.status === "needs-review").length}
-                </span>
-                <span className="text-muted-foreground ml-1">need review</span>
-              </div>
-            </div>
-
-            {/* Item list */}
-            <div className="overflow-y-auto max-h-72">
-              <table className="w-full text-xs">
-                <thead className="bg-secondary text-muted-foreground sticky top-0">
-                  <tr>
-                    <th className="text-left font-normal px-4 py-2">SKU</th>
-                    <th className="text-left font-normal px-4 py-2">Name</th>
-                    <th className="text-left font-normal px-4 py-2">Group</th>
-                    <th className="text-right font-normal px-4 py-2">Price</th>
-                    <th className="text-right font-normal px-4 py-2">Confidence</th>
-                    <th className="text-left font-normal px-4 py-2">Status</th>
-                    <th className="text-left font-normal px-4 py-2">Decision</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {uploadResult.items.map((item, i) => (
-                    <tr key={i} className="border-t border-border">
-                      <td className="px-4 py-2 font-mono">{item.sku}</td>
-                      <td className="px-4 py-2">{item.name}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{item.group}</td>
-                      <td className="px-4 py-2 text-right tabular">{CHF(item.price)}</td>
-                      <td className="px-4 py-2 text-right tabular">
-                        {Math.round(item.confidence * 100)}%
-                      </td>
-                      <td className="px-4 py-2">
-                        {item.status === "mapped" ? (
-                          <span className="flex items-center gap-1 text-[oklch(0.42_0.13_155)]">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Mapped
-                          </span>
-                        ) : (
-                          <span className="text-warning-foreground">Needs review</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() =>
-                              setUploadResult((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      items: prev.items.map((x, idx) =>
-                                        idx === i ? { ...x, decision: "approved" } : x,
-                                      ),
-                                    }
-                                  : prev,
-                              )
-                            }
-                            className="h-7 px-2 rounded border border-success/40 bg-success/10 text-[11px]"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() =>
-                              setUploadResult((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      items: prev.items.map((x, idx) =>
-                                        idx === i ? { ...x, decision: "denied" } : x,
-                                      ),
-                                    }
-                                  : prev,
-                              )
-                            }
-                            className="h-7 px-2 rounded border border-destructive/40 bg-destructive/10 text-[11px]"
-                          >
-                            Deny
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {(previewMutation.data.mapping?.mappings ?? []).map((entry) => (
+              <div key={entry.source_column} className="rounded-md border border-border p-3">
+                <div className="text-xs text-muted-foreground">Source column</div>
+                <div className="font-medium">{entry.source_column}</div>
+                <select
+                  value={mappingOverrides[entry.source_column] ?? entry.target_field ?? ""}
+                  onChange={(event) => setMappingOverrides((prev) => ({ ...prev, [entry.source_column]: event.target.value }))}
+                  className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Ignore</option>
+                  {(previewMutation.data.canonical_fields ?? []).map((field) => (
+                    <option key={field} value={field}>{field}</option>
                   ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Modal footer */}
-            <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
-              <button
-                onClick={() => setUploadResult(null)}
-                className="h-9 px-4 rounded-md border border-border text-sm hover:bg-accent"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={importItems}
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center gap-2"
-              >
-                <Upload className="h-3.5 w-3.5" /> Import approved items
-              </button>
-            </div>
+                </select>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Confidence {Math.round((entry.confidence ?? 0) * 100)}% · {entry.reason ?? "AI suggestion"}
+                </div>
+              </div>
+            ))}
           </div>
+
+          {previewMutation.data.preview_rows?.length ? (
+            <div className="mt-5">
+              <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Extracted row preview</div>
+              <div className="mt-2 overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-secondary text-left text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <tr>
+                      {Object.keys(previewMutation.data.preview_rows[0] ?? {}).map((key) => (
+                        <th key={key} className="px-3 py-2 font-normal">{key}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewMutation.data.preview_rows.map((row, index) => (
+                      <tr key={`${index}-${JSON.stringify(row)}`} className="border-t border-border">
+                        {Object.keys(previewMutation.data?.preview_rows?.[0] ?? {}).map((key) => (
+                          <td key={key} className="px-3 py-2 text-muted-foreground">
+                            {renderPreviewValue(row[key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
-      {showAddSeller && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setShowAddSeller(false)} />
-          <div className="relative bg-background border border-border rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-secondary/30">
-              <div className="text-display text-base font-semibold">Add seller</div>
-              <div className="text-xs text-muted-foreground">
-                Name, contact, uploader and refresh metadata
-              </div>
-            </div>
-            <div className="px-6 py-4 space-y-3">
-              <input
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
-                placeholder="Seller name"
-                value={newSellerName}
-                onChange={(e) => setNewSellerName(e.target.value)}
-              />
-              <input
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
-                placeholder="Contact / owner"
-                value={newSellerContact}
-                onChange={(e) => setNewSellerContact(e.target.value)}
-              />
-              <div className="text-xs text-muted-foreground">
-                Uploaded by procurement · {new Date().toLocaleString()} · last API refresh: not
-                synced
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
-              <button
-                className="h-9 px-4 rounded-md border border-border text-sm"
-                onClick={() => setShowAddSeller(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm"
-                onClick={() => {
-                  if (!newSellerName.trim()) return;
-                  setSellers((prev) => [...prev, newSellerName.trim()]);
-                  setSeller(newSellerName.trim());
-                  toast.success(`Seller ${newSellerName.trim()} added`, {
-                    description: `Owner: ${newSellerContact || "N/A"}`,
-                  });
-                  setNewSellerName("");
-                  setNewSellerContact("");
-                  setShowAddSeller(false);
-                }}
-              >
-                Save seller
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
+            <tr>
+              <th className="text-left font-normal px-5 py-3">SKU</th>
+              <th className="text-left font-normal px-5 py-3">Name</th>
+              <th className="text-left font-normal px-5 py-3">Group</th>
+              <th className="text-left font-normal px-5 py-3">Pack / Unit</th>
+              <th className="text-left font-normal px-5 py-3">Supplier</th>
+              <th className="text-right font-normal px-5 py-3">Price</th>
+              <th className="text-left font-normal px-5 py-3">Standard</th>
+              <th className="text-left font-normal px-5 py-3">AI variant</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((item) => (
+              <tr key={`${item.sku}-${item.name}`} className="border-t border-border hover:bg-secondary/60">
+                <td className="px-5 py-3 text-mono text-xs">{item.sku}</td>
+                <td className="px-5 py-3 font-medium">
+                  {item.name}
+                  <div className="text-xs text-muted-foreground">Trade fit: {item.tradeFit}</div>
+                </td>
+                <td className="px-5 py-3 text-muted-foreground">{item.group}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{item.pack} · <span className="text-mono">{item.unit}</span></td>
+                <td className="px-5 py-3">{item.supplier}</td>
+                <td className="px-5 py-3 text-right tabular">{formatCurrency(item.price, item.currency)}</td>
+                <td className="px-5 py-3">
+                  <span className={[
+                    "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
+                    item.standard ? "bg-success/15 text-[oklch(0.42_0.13_155)]" : "bg-warning/30 text-warning-foreground",
+                  ].join(" ")}>
+                    {item.standard ? "Standard" : "Review"}
+                  </span>
+                </td>
+                <td className="px-5 py-3">
+                  <span className={[
+                    "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
+                    item.variant === "Good" ? "bg-secondary text-foreground" : item.variant === "Better" ? "bg-hivis/20 text-foreground" : "bg-primary/15 text-primary",
+                  ].join(" ")}>
+                    {item.variant}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted-foreground">
+                  No catalog records are stored in the database yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </DashboardLayout>
   );
 }

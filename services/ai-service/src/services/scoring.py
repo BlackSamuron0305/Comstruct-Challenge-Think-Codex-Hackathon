@@ -1,7 +1,8 @@
 """Supplier scoring engine.
 
 Computes composite scores from price history, delivery performance,
-interaction history, web reputation, and AI-powered specs fit.
+interaction history, web reputation, and model-assisted specs fit.
+Falls back to an evidence-based local assessment when model output is unavailable.
 Stores results in procurement.supplier_scores.
 """
 import logging
@@ -9,10 +10,45 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import httpx
+
 from ..config import settings
-from ..llm.anthropic_client import call_claude_json
+from ..llm.ollama_client import call_ollama_json
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_specs_fit_local(cached: dict) -> tuple[int, str]:
+    hits = cached.get("search_results") or cached.get("hits") or cached.get("results") or []
+    combined_text = ""
+    if isinstance(hits, list):
+        for hit in hits[:8]:
+            if isinstance(hit, dict):
+                combined_text += f" {hit.get('title', '')} {hit.get('snippet', '')}"
+    combined_text = combined_text.lower()
+
+    score = 45
+    reasons: list[str] = []
+
+    if any(token in combined_text for token in ["construction", "baustoff", "building", "civil", "contractor"]):
+        score += 20
+        reasons.append("construction-sector relevance")
+    if any(token in combined_text for token in ["switzerland", "schweiz", "zurich", "basel", "bern", "geneva"]):
+        score += 10
+        reasons.append("swiss market presence")
+    if any(token in combined_text for token in ["wholesale", "supplier", "trade", "b2b", "distribution"]):
+        score += 10
+        reasons.append("trade or B2B supply signals")
+    if any(token in combined_text for token in ["iso", "certified", "certification", "ce", "en 1090"]):
+        score += 10
+        reasons.append("quality or certification signals")
+    if any(token in combined_text for token in ["complaint", "delayed", "unreliable", "poor", "bad"]):
+        score -= 15
+        reasons.append("negative public reliability signals")
+
+    score = max(0, min(100, score))
+    reasoning = "; ".join(reasons) if reasons else "limited public evidence available"
+    return score, reasoning
 
 # Weight configuration for composite scoring
 SCORE_WEIGHTS = {
@@ -117,8 +153,7 @@ async def compute_supplier_score(supplier_id: str) -> dict:
             except Exception:
                 pass
 
-        # Specs fit score: placeholder — will be computed by AI when comparing
-        # against specific product requirements. Default neutral.
+        # Specs-fit score starts from a neutral local baseline and is refined when evidence exists.
         specs_fit_score = Decimal("50.0")
 
         # Try AI-powered specs fit if supplier has web data
@@ -227,8 +262,10 @@ async def _compute_specs_fit_ai(supplier_id: str, web_cache_json: str) -> Decima
     except Exception:
         return Decimal("50.0")
 
+    local_score, local_reason = _compute_specs_fit_local(cached)
+
     snippets = ""
-    hits = cached.get("hits", cached.get("results", []))
+    hits = cached.get("search_results") or cached.get("hits") or cached.get("results", [])
     if isinstance(hits, list):
         for h in hits[:5]:
             if isinstance(h, dict):
@@ -236,7 +273,7 @@ async def _compute_specs_fit_ai(supplier_id: str, web_cache_json: str) -> Decima
     if not snippets:
         snippets = str(cached)[:600]
 
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system=(
             "You are a construction procurement analyst evaluating suppliers. "
             "Score how well a supplier matches Swiss construction material procurement needs. "
@@ -253,7 +290,7 @@ async def _compute_specs_fit_ai(supplier_id: str, web_cache_json: str) -> Decima
         }],
         max_tokens=256,
         temperature=0.2,
-        stub={"specs_fit_score": 50, "reasoning": "Ollama unavailable"},
+        stub={"specs_fit_score": local_score, "reasoning": local_reason},
     )
     raw = result.get("specs_fit_score", 50)
     return Decimal(str(max(0, min(100, int(raw)))))

@@ -15,15 +15,9 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.anthropic_client import call_claude_json
+from ..llm.ollama_client import call_ollama_json
 from ..services.delta_detection import detect_deltas
-from ..services.parsing import (
-    extract_catalog_from_markdown,
-    parse_image_to_table,
-    parse_pdf_to_markdown,
-    parse_pdf_to_table,
-    parse_tabular,
-)
+from ..services.parsing import parse_image_to_table, parse_pdf_to_table, parse_tabular
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +25,6 @@ router = APIRouter(prefix="/ai", tags=["documents"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp"}
 MAX_DOC_SIZE = 50 * 1024 * 1024  # 50 MB
-MAX_MARKDOWN_CHARS_FOR_PROMPT = 12000  # keeps prompt size bounded for predictable token usage
 
 
 class ExtractionResult(BaseModel):
@@ -62,6 +55,25 @@ async def _run_delta_detection(items: list[dict], supplier_id: str | None = None
         return [], {"error": str(e)}
 
 
+def _fallback_itemise_rows(rows: list[dict], default_currency: str = "CHF") -> list[dict]:
+    items: list[dict] = []
+    for row in rows[:10]:
+        values = [str(value).strip() for value in row.values() if str(value).strip()]
+        if not values:
+            continue
+        items.append({
+            "name": values[0],
+            "sku": values[1] if len(values) > 1 else "",
+            "quantity": 1,
+            "unit": "pc",
+            "unit_price": None,
+            "currency": default_currency,
+            "category": "Uncategorised",
+            "raw": row,
+        })
+    return items
+
+
 @router.post("/extract-pdf", response_model=ExtractionResult, dependencies=[Depends(require_internal_secret)])
 async def extract_pdf(
     file: UploadFile = File(...),
@@ -70,7 +82,6 @@ async def extract_pdf(
 ):
     """Extract structured data from a PDF document using AI."""
     content = await file.read()
-    markdown = parse_pdf_to_markdown(content)
     df = parse_pdf_to_table(content)
 
     if df.empty:
@@ -80,39 +91,26 @@ async def extract_pdf(
 
     sample = df.head(20).to_dict(orient="records")
     columns = list(df.columns)
-    direct_items = extract_catalog_from_markdown(markdown)
 
-    if direct_items:
-        items = direct_items
-        metadata = {
-            "document_type": document_type,
-            "strategy": "markdown_direct",
-            "markdown_chars": len(markdown),
-        }
-    else:
-        result = await call_claude_json(
-            system=f"""You are a document extraction AI for construction materials procurement.
-Extract structured data from this {document_type} PDF content converted to markdown.
-Prefer deterministic extraction from markdown tables before inference.
-The tabular parse columns are: {columns}
+    result = await call_ollama_json(
+        system=f"""You are a document extraction AI for construction materials procurement.
+Extract structured data from this {document_type} PDF content.
+The table has columns: {columns}
 
 Return JSON: {{
-  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "CHF", "category": "...", "confidence": 0.0-1.0}}],
+  "items": [{{"name": "...", "sku": "...", "quantity": ..., "unit": "...", "unit_price": ..., "currency": "CHF", "category": "..."}}],
   "metadata": {{"supplier_name": "...", "document_date": "...", "document_number": "...", "total_amount": ..., "currency": "CHF"}}
 }}""",
-            messages=[{
-                "role": "user",
-                "content": f"Markdown:\n{markdown[:MAX_MARKDOWN_CHARS_FOR_PROMPT]}\n\nTabular rows:\n{sample}",
-            }],
-            max_tokens=2048,
-            temperature=0.0,
-            stub={
-                "items": [{"name": row.get(columns[0], ""), "raw": row, "confidence": 0.5} for row in sample[:5]] if sample else [],
-                "metadata": {"document_type": document_type, "note": "LLM extraction fallback used"},
-            },
-        )
-        items = result.get("items", [])
-        metadata = result.get("metadata", {})
+        messages=[{"role": "user", "content": f"Document rows:\n{sample}"}],
+        max_tokens=2048,
+        temperature=0.0,
+        stub={
+            "items": _fallback_itemise_rows(sample, "CHF"),
+            "metadata": {"document_type": document_type, "note": "Fallback extraction from parsed table rows"},
+        },
+    )
+
+    items = result.get("items", [])
     deltas, delta_summary = await _run_delta_detection(items, supplier_id=supplier_id or None)
 
     return ExtractionResult(
@@ -120,7 +118,7 @@ Return JSON: {{
         items=items,
         deltas=deltas,
         delta_summary=delta_summary,
-        metadata=metadata,
+        metadata=result.get("metadata", {}),
         raw_row_count=len(df),
     )
 
@@ -144,7 +142,7 @@ async def extract_excel(
     sample = df.head(20).to_dict(orient="records")
     columns = list(df.columns)
 
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system=f"""You are a data extraction AI for construction material price lists.
 Map the columns to standard fields and extract product data.
 Source columns: {columns}
@@ -157,8 +155,8 @@ Return JSON: {{
         max_tokens=2048,
         temperature=0.0,
         stub={
-            "items": [{"name": str(row.get(columns[0], "")), "raw": row} for row in sample[:5]] if sample else [],
-            "metadata": {"supplier_id": supplier_id},
+            "items": _fallback_itemise_rows(sample, default_currency),
+            "metadata": {"supplier_id": supplier_id, "note": "Fallback extraction from spreadsheet rows"},
         },
     )
 
@@ -202,7 +200,7 @@ async def extract_image(
 
     sample = df.head(30).to_dict(orient="records")
 
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system=f"""You are a document extraction AI for construction materials procurement.
 Extract structured product data from this OCR text captured from a {document_type} image.
 The text may have OCR artifacts — be tolerant of typos and misaligned columns.
@@ -215,8 +213,8 @@ Return JSON: {{
         max_tokens=2048,
         temperature=0.0,
         stub={
-            "items": [],
-            "metadata": {"document_type": document_type, "ocr": "processed", "note": "Ollama extraction pending"},
+            "items": _fallback_itemise_rows(sample, default_currency),
+            "metadata": {"document_type": document_type, "ocr": "processed", "note": "Fallback extraction from OCR rows"},
         },
     )
 
@@ -241,7 +239,7 @@ class TextExtractionRequest(BaseModel):
 @router.post("/extract-text", dependencies=[Depends(require_internal_secret)])
 async def extract_text(body: TextExtractionRequest):
     """Extract structured procurement data from freeform text (WhatsApp, email, voice transcripts)."""
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system=f"""You are a text extraction AI for construction procurement.
 Extract structured data from this {body.extraction_type} text.
 Look for: material names, quantities, units, prices, dates, supplier names, addresses.
@@ -255,9 +253,15 @@ Return JSON: {{
         max_tokens=1024,
         temperature=0.0,
         stub={
-            "items": [],
-            "metadata": {"extraction_type": body.extraction_type},
-            "summary": "Text extraction requires Ollama model.",
+            "items": [{
+                "name": body.text[:80].strip(),
+                "quantity": 1,
+                "unit": "pc",
+                "estimated_price": None,
+                "currency": "CHF",
+            }] if body.text.strip() else [],
+            "metadata": {"extraction_type": body.extraction_type, "chars": len(body.text)},
+            "summary": f"Fallback extraction generated from {len(body.text.split())} words of source text.",
         },
     )
     return result

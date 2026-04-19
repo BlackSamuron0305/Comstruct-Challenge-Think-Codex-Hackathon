@@ -8,6 +8,19 @@ def _headers() -> dict[str, str]:
     return {"X-Internal-Secret": settings.INTERNAL_SHARED_SECRET}
 
 
+async def search_products(query: str, limit: int = 8) -> list[dict]:
+    if not query.strip():
+        return []
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(
+            f"{settings.CATALOG_SERVICE_URL}/products",
+            headers=_headers(),
+            params={"q": query, "limit": limit},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
 async def bulk_upsert_products(supplier_id: str, products: list[dict]) -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.post(

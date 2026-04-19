@@ -8,6 +8,7 @@ Run with: pytest tests/ -v --tb=short
 import os
 import json
 import pytest
+import pytest_asyncio
 import httpx
 
 GATEWAY_URL = os.environ.get("API_GATEWAY_URL", "http://localhost:8001")
@@ -19,7 +20,7 @@ TEST_EMAIL = "foreman@brueckesg.ch"
 TEST_PASSWORD = "comstruct-demo"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_token():
     """Get a valid JWT token via login."""
     async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=30) as client:
@@ -63,6 +64,19 @@ async def test_login_invalid_credentials():
             "password": "wrong-password",
         })
         assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_payload_returns_400():
+    """Malformed login input should return a validation error, not a 500."""
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=10) as client:
+        r = await client.post("/auth/login", json={
+            "email": "sss@j",
+            "password": "1234",
+        })
+        assert r.status_code == 400
+        data = r.json()
+        assert "message" in data
 
 
 @pytest.mark.asyncio
@@ -164,6 +178,46 @@ async def test_ai_workflow_auto_approve_via_gateway(auth_token):
         assert r.status_code == 200
         data = r.json()
         assert data["decision"] == "auto_approved"
+
+
+@pytest.mark.asyncio
+async def test_ingest_preview_via_gateway(auth_token):
+    """Supplier file preview should extract rows and mapping via the gateway."""
+    files = {
+        "file": ("supplier.csv", b"sku,name,price\nA1,Concrete Screws,9.50\n", "text/csv"),
+    }
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=120) as client:
+        r = await client.post(
+            "/api/ingest/preview",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            files=files,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["status"] == "ok"
+        assert data["rows_in"] >= 1
+        assert len(data.get("preview_rows", [])) >= 1
+        assert any(m.get("target_field") == "name" for m in data.get("mapping", {}).get("mappings", []))
+
+
+@pytest.mark.asyncio
+async def test_text_extraction_via_gateway(auth_token):
+    """Freeform procurement text should be extracted into structured items."""
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=120) as client:
+        r = await client.post(
+            "/api/ai/extract-text",
+            headers={"Authorization": f"Bearer {auth_token}"},
+            json={
+                "text": "Need 12 boxes of concrete screws for facade mounting tomorrow morning.",
+                "extraction_type": "order",
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert "items" in data
+        assert isinstance(data["items"], list)
+        assert len(data["items"]) >= 1
+        assert "summary" in data
 
 
 # ── Service Health Checks ─────────────────────────────────────────

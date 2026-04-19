@@ -8,16 +8,84 @@ AI-driven workflows:
 """
 import logging
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..dependencies import require_internal_secret
-from ..llm.anthropic_client import call_claude_json
+from ..llm.ollama_client import call_ollama_json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["workflows"])
+
+
+def _build_price_analysis_fallback(body) -> dict:
+    history = [
+        float(item.get("price"))
+        for item in (body.historical_prices or [])
+        if item.get("price") is not None
+    ]
+    if history:
+        low = min(history)
+        high = max(history)
+        avg = sum(history) / len(history)
+    else:
+        low = body.current_price * 0.9
+        high = body.current_price * 1.1
+        avg = body.current_price
+
+    if body.current_price > avg * 1.1:
+        assessment = "high"
+    elif body.current_price < avg * 0.9:
+        assessment = "low"
+    else:
+        assessment = "fair"
+
+    return {
+        "assessment": assessment,
+        "confidence": 0.65 if history else 0.4,
+        "market_range": {"low": round(low, 2), "high": round(high, 2)},
+        "recommendation": "Review alternative suppliers for this item." if assessment == "high" else "Current price is within the expected range.",
+        "savings_potential": round(max(0.0, body.current_price - avg), 2),
+    }
+
+
+def _build_reorder_fallback(materials: list[dict]) -> dict:
+    alerts: list[dict] = []
+    for material in materials:
+        stock = float(material.get("current_stock") or 0)
+        daily = float(material.get("daily_usage") or 0)
+        if daily <= 0:
+            continue
+        days_until_depleted = round(stock / daily, 1)
+        if days_until_depleted <= 3:
+            urgency = "immediate"
+            suggested = max((daily * 7) - stock, daily)
+        elif days_until_depleted <= 7:
+            urgency = "soon"
+            suggested = max((daily * 10) - stock, daily)
+        elif days_until_depleted <= 14:
+            urgency = "planned"
+            suggested = max((daily * 14) - stock, daily)
+        else:
+            continue
+
+        alerts.append({
+            "name": material.get("name", "Unknown material"),
+            "days_until_depleted": days_until_depleted,
+            "reorder_urgency": urgency,
+            "suggested_quantity": round(suggested, 2),
+            "unit": material.get("unit") or "pc",
+        })
+
+    summary = (
+        f"{len(alerts)} materials need reorder attention based on current stock burn-down."
+        if alerts else
+        "No urgent reorders detected from the provided stock data."
+    )
+    return {"alerts": alerts, "summary": summary}
 
 
 # ── Auto-Approval ─────────────────────────────────────────────────
@@ -65,7 +133,7 @@ async def auto_approve(body: ApprovalRequest):
         )
 
     # Use AI for complex decisions
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system="""You are a procurement approval AI for Swiss construction companies.
 Evaluate the order and decide: auto_approved, requires_review, or rejected.
 Consider: total amount, supplier reliability, item types, company policies.
@@ -87,7 +155,11 @@ Return JSON: {"decision": "auto_approved|requires_review|rejected", "confidence"
         stub={
             "decision": "requires_review" if risk_factors else "auto_approved",
             "confidence": 0.7,
-            "reason": "AI analysis pending" if risk_factors else "Within policy limits.",
+            "reason": (
+                "Manual review recommended because risk flags were detected: " + "; ".join(risk_factors)
+                if risk_factors else
+                "Order is within routine approval limits based on the available policy inputs."
+            ),
             "risk_factors": risk_factors,
             "recommended_approver": "project_manager" if risk_factors else None,
         },
@@ -115,7 +187,7 @@ class PriceAnalysisRequest(BaseModel):
 @router.post("/workflow/price-analysis", dependencies=[Depends(require_internal_secret)])
 async def price_analysis(body: PriceAnalysisRequest):
     """Analyze price fairness using historical data and AI."""
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system="""You are a construction materials pricing analyst.
 Analyze the current price against historical data and market knowledge.
 Consider Swiss construction material market conditions.
@@ -129,13 +201,7 @@ Return JSON: {"assessment": "fair|high|low|suspicious", "confidence": 0.0-1.0, "
         }, ensure_ascii=False)}],
         max_tokens=512,
         temperature=0.1,
-        stub={
-            "assessment": "fair",
-            "confidence": 0.5,
-            "market_range": {"low": body.current_price * 0.8, "high": body.current_price * 1.2},
-            "recommendation": "Price analysis requires loaded Ollama model.",
-            "savings_potential": 0,
-        },
+        stub=_build_price_analysis_fallback(body),
     )
     return result
 
@@ -149,7 +215,7 @@ class ReorderCheckRequest(BaseModel):
 @router.post("/workflow/reorder-check", dependencies=[Depends(require_internal_secret)])
 async def reorder_check(body: ReorderCheckRequest):
     """Predict material depletion and suggest reorders."""
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system="""You are a construction project logistics AI.
 Given current stock levels and usage rates, identify materials that need reordering.
 Account for typical delivery times in Switzerland (2-5 business days for standard materials).
@@ -161,10 +227,7 @@ Return JSON: {"alerts": [{"name": "...", "days_until_depleted": ..., "reorder_ur
         }, ensure_ascii=False)}],
         max_tokens=1024,
         temperature=0.1,
-        stub={
-            "alerts": [],
-            "summary": "Reorder analysis requires loaded Ollama model.",
-        },
+        stub=_build_reorder_fallback(body.materials),
     )
     return result
 
@@ -192,7 +255,7 @@ async def compliance_check(body: ComplianceCheckRequest):
         if order_total > remaining:
             issues.append(f"Order ({body.currency} {order_total:.2f}) exceeds remaining budget ({body.currency} {remaining:.2f})")
 
-    result = await call_claude_json(
+    result = await call_ollama_json(
         system="""You are a procurement compliance checker for Swiss construction.
 Check the order against budget constraints and construction regulations.
 

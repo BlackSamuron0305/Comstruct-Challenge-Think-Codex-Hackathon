@@ -1,11 +1,13 @@
-/// On-device LLM client — runs Gemma locally for offline AI.
-/// Uses HTTP to a local inference server (MediaPipe LLM Inference API)
-/// bundled inside the app, or falls back to OpenAI when online.
+// Hybrid LLM client for mobile AI.
+// OpenAI is used when online.
+// On Android, a native on-device Gemma bridge is used when a local task model
+// is available on the device. Otherwise the app falls back to a local summary.
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'config.dart';
 
@@ -24,9 +26,11 @@ class LlmResult {
       };
 }
 
-/// Hybrid AI client: OpenAI when online, local Gemma when offline.
+/// Hybrid AI client: OpenAI when online, on-device Gemma when available offline.
 class LocalLlmClient {
   LocalLlmClient();
+
+  static const MethodChannel _nativeChannel = MethodChannel('comstruct/local_llm');
 
   final Dio _openAiDio = Dio(BaseOptions(
     baseUrl: 'https://api.openai.com/v1',
@@ -81,7 +85,7 @@ class LocalLlmClient {
   }) async {
     final result = await generate(
       prompt: prompt,
-      systemPrompt: (systemPrompt ?? '') + '\n\nRespond with valid JSON only. No markdown.',
+      systemPrompt: '${systemPrompt ?? ''}\n\nRespond with valid JSON only. No markdown.',
       temperature: 0.2,
       maxTokens: 1024,
     );
@@ -135,78 +139,88 @@ class LocalLlmClient {
     return LlmResult(text: content, source: LlmSource.openai, confidence: 0.9);
   }
 
-  /// Call the on-device Gemma model via platform channel or local HTTP server.
-  /// For the hackathon, this uses a simplified prompt compression approach.
-  /// In production, integrate MediaPipe LLM Inference API directly via
-  /// platform channels (Android: Java/Kotlin, iOS: Swift).
+  Future<Map<String, dynamic>?> _getNativeStatus() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android || !AppConfig.enableLocalLlm) {
+      return null;
+    }
+    try {
+      final status = await _nativeChannel.invokeMapMethod<String, dynamic>('status');
+      return status == null ? null : Map<String, dynamic>.from(status);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  LlmResult _buildOfflineFallback({
+    required String prompt,
+    String? systemPrompt,
+    bool modelMissing = false,
+  }) {
+    final cleaned = prompt.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final tokens = cleaned
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9à-ÿ]+'))
+        .where((token) => token.length > 3)
+        .toList();
+
+    final focus = <String>[];
+    for (final token in tokens) {
+      if (!focus.contains(token)) {
+        focus.add(token);
+      }
+      if (focus.length >= 4) break;
+    }
+
+    final focusText = focus.isEmpty ? 'materials and supplier details' : focus.join(', ');
+    final intro = systemPrompt?.isNotEmpty == true ? '${systemPrompt!.trim()} ' : '';
+    final nextStep = modelMissing
+        ? 'No local Gemma task file was found on the device, so add ${AppConfig.localModelName} to the phone or bundle it with the app.'
+        : 'The request was captured locally, but the native model was not available for a grounded answer.';
+
+    return LlmResult(
+      text: '${intro}Offline assistant mode is active. I captured your request and identified likely focus areas: '
+          '$focusText. $nextStep',
+      source: LlmSource.local,
+      confidence: focus.isEmpty ? 0.2 : 0.35,
+    );
+  }
+
+  /// Call the on-device Gemma model via a native Android bridge.
   Future<LlmResult> _callLocalModel({
     required String prompt,
     String? systemPrompt,
   }) async {
-    // On-device inference via platform channel stub.
-    // In production, this would call:
-    //   Android: MediaPipe LlmInference.generateResponse()
-    //   iOS: MediaPipe LlmInference.generateResponse()
-    //
-    // For now, provide a helpful offline response based on keyword matching
-    // until the native platform channel bridge is set up.
-    final lowerPrompt = prompt.toLowerCase();
-
-    // Construction material keyword matching for offline mode
-    if (lowerPrompt.contains('screw') || lowerPrompt.contains('bolt') || lowerPrompt.contains('fastener')) {
-      return LlmResult(
-        text: 'For fastening tasks, consider: stainless steel screws (A2/A4), '
-            'concrete anchors, or machine bolts. Check SIA 118 for load requirements.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
-    }
-    if (lowerPrompt.contains('pipe') || lowerPrompt.contains('plumb') || lowerPrompt.contains('sanit')) {
-      return LlmResult(
-        text: 'For plumbing work: PE-X pipes, copper fittings, sealing tape, '
-            'and pipe insulation are typically needed. Follow SIA 385 standards.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
-    }
-    if (lowerPrompt.contains('tile') || lowerPrompt.contains('floor') || lowerPrompt.contains('ceramic')) {
-      return LlmResult(
-        text: 'For tiling: adhesive mortar, grout, spacers, leveling compound, '
-            'and waterproofing membrane. Calculate ~5% extra for cuts.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
-    }
-    if (lowerPrompt.contains('paint') || lowerPrompt.contains('coat') || lowerPrompt.contains('wall')) {
-      return LlmResult(
-        text: 'For painting/coating: primer, wall paint, rollers, masking tape, '
-            'and drop cloths. Calculate ~0.15L/m² per coat.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
-    }
-    if (lowerPrompt.contains('electric') || lowerPrompt.contains('cable') || lowerPrompt.contains('wire')) {
-      return LlmResult(
-        text: 'For electrical work: NYM cables, junction boxes, circuit breakers, '
-            'conduit pipes, and cable ties. Follow NIN/SEV standards.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
-    }
-    if (lowerPrompt.contains('insul') || lowerPrompt.contains('thermal') || lowerPrompt.contains('dämm')) {
-      return LlmResult(
-        text: 'For insulation: mineral wool, XPS boards, vapor barriers, '
-            'and adhesive. Check Minergie standards for Swiss compliance.',
-        source: LlmSource.local,
-        confidence: 0.6,
-      );
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android || !AppConfig.enableLocalLlm) {
+      return _buildOfflineFallback(prompt: prompt, systemPrompt: systemPrompt, modelMissing: true);
     }
 
-    return LlmResult(
-      text: 'I can help with construction material recommendations. '
-          'For detailed AI suggestions, please connect to the internet.',
-      source: LlmSource.local,
-      confidence: 0.3,
-    );
+    try {
+      final response = await _nativeChannel.invokeMapMethod<String, dynamic>('generate', {
+        'prompt': prompt,
+        'systemPrompt': systemPrompt ?? '',
+        'temperature': 0.2,
+        'maxTokens': AppConfig.localMaxTokens,
+      });
+
+      final text = response?['text'] as String?;
+      if (text != null && text.trim().isNotEmpty) {
+        return LlmResult(
+          text: text.trim(),
+          source: LlmSource.local,
+          confidence: 0.72,
+        );
+      }
+    } on PlatformException {
+      final status = await _getNativeStatus();
+      return _buildOfflineFallback(
+        prompt: prompt,
+        systemPrompt: systemPrompt,
+        modelMissing: status?['modelReady'] != true,
+      );
+    } catch (_) {
+      // Fall back below.
+    }
+
+    return _buildOfflineFallback(prompt: prompt, systemPrompt: systemPrompt);
   }
 }
