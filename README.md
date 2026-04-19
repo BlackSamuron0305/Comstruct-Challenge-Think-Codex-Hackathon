@@ -15,6 +15,8 @@ End-to-end ordering platform for **C-materials** — low-value, high-variety con
 
 > Deployed on Google Compute Engine. Use any of the demo accounts after seeding.
 
+> **⚠️ Flutter Web Limitation:** The foreman mobile app is built with Flutter, which is optimised for native Android/iOS. Some features (e.g. camera OCR, voice ordering, on-device AI, push notifications) may not work or may behave differently in the browser-based Flutter Web build. For the full experience, run the app on an **Android emulator** or deploy it to a **physical device** — see the demo video or request a live demo from our team.
+
 ---
 
 ## Architecture
