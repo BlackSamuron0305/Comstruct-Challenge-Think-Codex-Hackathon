@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .routers import approvals, cart, internal_auth, orders, projects, registration
+from .routers import approvals, cart, gdpr, internal_auth, orders, projects, registration
 
 logger = logging.getLogger("order-service")
 
@@ -19,6 +19,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        # HSTS: browsers remember to use HTTPS for 1 year (only meaningful behind TLS termination).
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 
@@ -62,6 +64,7 @@ app.include_router(approvals.router)
 app.include_router(projects.router)
 app.include_router(internal_auth.router)
 app.include_router(registration.router)
+app.include_router(gdpr.router)
 
 
 @app.get("/health")

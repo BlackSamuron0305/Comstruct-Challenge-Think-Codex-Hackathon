@@ -7,13 +7,24 @@ import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { api, formatCurrency, type ApprovalRule, type OrderSummary, type ProductRecord, type SupplierRecord } from "@/lib/api";
+import {
+  api,
+  formatCurrency,
+  type ApprovalRule,
+  type OrderSummary,
+  type ProductRecord,
+  type SupplierRecord,
+} from "@/lib/api";
 
 export const Route = createFileRoute("/policies")({
   head: () => ({
     meta: [
       { title: "Demand intelligence · comstruct C-Materials" },
-      { name: "description", content: "Live demand intelligence using the current catalog, suppliers, and order history." },
+      {
+        name: "description",
+        content:
+          "Live demand intelligence using the current catalog, suppliers, and order history.",
+      },
     ],
   }),
   component: PoliciesPage,
@@ -45,7 +56,12 @@ function parseNum(val: string): number | "" {
 }
 
 function normalizeKey(value?: string | null): string {
-  return value?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || "uncategorised";
+  return (
+    value
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim() || "uncategorised"
+  );
 }
 
 function titleCase(value: string): string {
@@ -74,11 +90,16 @@ function chooseBestFamily(text: string, families: DemandFamily[]): DemandFamily 
   const ranked = families
     .map((family) => {
       const haystack = [family.label, family.tag, ...family.aliases].join(" ").toLowerCase();
-      const tokenScore = query.split(/\s+/).reduce((sum, token) => sum + (token && haystack.includes(token) ? 1 : 0), 0);
+      const tokenScore = query
+        .split(/\s+/)
+        .reduce((sum, token) => sum + (token && haystack.includes(token) ? 1 : 0), 0);
       const directBonus = haystack.includes(query) ? 4 : 0;
       return { family, score: tokenScore + directBonus };
     })
-    .sort((left, right) => right.score - left.score || right.family.aliases.length - left.family.aliases.length);
+    .sort(
+      (left, right) =>
+        right.score - left.score || right.family.aliases.length - left.family.aliases.length,
+    );
 
   return ranked[0]?.family ?? families[0] ?? null;
 }
@@ -90,11 +111,21 @@ function PoliciesPage() {
   const [sampleTag, setSampleTag] = useState<string>("");
   const [sampleQuantity, setSampleQuantity] = useState<number | "">(5);
 
-  const { data: products = [], isLoading: productsLoading, isError: productsError, refetch: refetchProducts } = useQuery({
+  const {
+    data: products = [],
+    isLoading: productsLoading,
+    isError: productsError,
+    refetch: refetchProducts,
+  } = useQuery({
     queryKey: ["policies", "products"],
     queryFn: () => api.get<ProductRecord[]>("/api/products", { params: { page_size: 500 } }),
   });
-  const { data: orders = [], isLoading: ordersLoading, isError: ordersError, refetch: refetchOrders } = useQuery({
+  const {
+    data: orders = [],
+    isLoading: ordersLoading,
+    isError: ordersError,
+    refetch: refetchOrders,
+  } = useQuery({
     queryKey: ["policies", "orders"],
     queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
   });
@@ -109,7 +140,12 @@ function PoliciesPage() {
 
   const families = useMemo<DemandFamily[]>(() => {
     type SupplierAggregate = { totalPrice: number; samples: number; itemCount: number };
-    type Bucket = { label: string; aliases: Set<string>; history: number[]; suppliers: Map<string, SupplierAggregate> };
+    type Bucket = {
+      label: string;
+      aliases: Set<string>;
+      history: number[];
+      suppliers: Map<string, SupplierAggregate>;
+    };
 
     const supplierNameById = new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
     const buckets = new Map<string, Bucket>();
@@ -122,7 +158,12 @@ function PoliciesPage() {
         }
         return existing;
       }
-      const created: Bucket = { label: label || titleCase(key), aliases: new Set<string>(), history: [], suppliers: new Map<string, SupplierAggregate>() };
+      const created: Bucket = {
+        label: label || titleCase(key),
+        aliases: new Set<string>(),
+        history: [],
+        suppliers: new Map<string, SupplierAggregate>(),
+      };
       buckets.set(key, created);
       return created;
     }
@@ -139,7 +180,10 @@ function PoliciesPage() {
       const key = normalizeKey(product.taxonomy_code ?? product.category ?? product.name);
       const bucket = getBucket(key, product.taxonomy_label ?? product.category ?? product.name);
       bucket.aliases.add(product.name);
-      const supplierName = product.supplier_name ?? supplierNameById.get(product.supplier_id ?? "") ?? "Unknown supplier";
+      const supplierName =
+        product.supplier_name ??
+        supplierNameById.get(product.supplier_id ?? "") ??
+        "Unknown supplier";
       const unitPrice = Number(product.unit_price ?? 0);
       if (supplierName && Number.isFinite(unitPrice) && unitPrice > 0) {
         addSupplierMetric(bucket, supplierName, unitPrice, 1);
@@ -149,18 +193,18 @@ function PoliciesPage() {
     orders.forEach((order) => {
       order.items?.forEach((item) => {
         const key = normalizeKey(
-          item.product_snapshot?.taxonomy_code
-            ?? item.product_snapshot?.taxonomy_label
-            ?? item.product_snapshot?.category
-            ?? item.product_snapshot?.name
-            ?? "Uncategorised",
+          item.product_snapshot?.taxonomy_code ??
+            item.product_snapshot?.taxonomy_label ??
+            item.product_snapshot?.category ??
+            item.product_snapshot?.name ??
+            "Uncategorised",
         );
         const bucket = getBucket(
           key,
-          item.product_snapshot?.taxonomy_label
-            ?? item.product_snapshot?.category
-            ?? item.product_snapshot?.name
-            ?? "Uncategorised",
+          item.product_snapshot?.taxonomy_label ??
+            item.product_snapshot?.category ??
+            item.product_snapshot?.name ??
+            "Uncategorised",
         );
         if (item.product_snapshot?.name) {
           bucket.aliases.add(item.product_snapshot.name);
@@ -171,10 +215,11 @@ function PoliciesPage() {
           bucket.history.push(quantity);
         }
 
-        const supplierName = item.product_snapshot?.supplier_name
-          ?? order.supplier_name
-          ?? supplierNameById.get(order.supplier_id ?? "")
-          ?? "Unknown supplier";
+        const supplierName =
+          item.product_snapshot?.supplier_name ??
+          order.supplier_name ??
+          supplierNameById.get(order.supplier_id ?? "") ??
+          "Unknown supplier";
         const unitPrice = Number(item.unit_price ?? 0);
         if (supplierName && Number.isFinite(unitPrice) && unitPrice > 0) {
           addSupplierMetric(bucket, supplierName, unitPrice, 0);
@@ -194,9 +239,14 @@ function PoliciesPage() {
             avgPrice: stats.samples ? stats.totalPrice / stats.samples : 0,
             itemCount: stats.itemCount,
           }))
-          .sort((left, right) => left.avgPrice - right.avgPrice || right.itemCount - left.itemCount),
+          .sort(
+            (left, right) => left.avgPrice - right.avgPrice || right.itemCount - left.itemCount,
+          ),
       }))
-      .sort((left, right) => right.history.length - left.history.length || left.label.localeCompare(right.label));
+      .sort(
+        (left, right) =>
+          right.history.length - left.history.length || left.label.localeCompare(right.label),
+      );
   }, [orders, products, suppliers]);
 
   const selectedFamily = families.find((family) => family.tag === sampleTag) ?? families[0] ?? null;
@@ -215,32 +265,57 @@ function PoliciesPage() {
 
   if (productsLoading || ordersLoading) {
     return (
-      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
-        <QueryState kind="loading" title="Loading live demand intelligence" description="Catalog, suppliers, and order history are being analyzed now." />
+      <DashboardLayout
+        title="Demand intelligence"
+        subtitle="Live policy insight from the current database"
+      >
+        <QueryState
+          kind="loading"
+          title="Loading live demand intelligence"
+          description="Catalog, suppliers, and order history are being analyzed now."
+        />
       </DashboardLayout>
     );
   }
 
   if (productsError || ordersError) {
     return (
-      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
-        <QueryState kind="error" title="Demand intelligence could not be loaded" description="The live policy inputs are temporarily unavailable." onRetry={() => { void refetchProducts(); void refetchOrders(); }} />
+      <DashboardLayout
+        title="Demand intelligence"
+        subtitle="Live policy insight from the current database"
+      >
+        <QueryState
+          kind="error"
+          title="Demand intelligence could not be loaded"
+          description="The live policy inputs are temporarily unavailable."
+          onRetry={() => {
+            void refetchProducts();
+            void refetchOrders();
+          }}
+        />
       </DashboardLayout>
     );
   }
 
   if (!selectedFamily) {
     return (
-      <DashboardLayout title="Demand intelligence" subtitle="Live policy insight from the current database">
+      <DashboardLayout
+        title="Demand intelligence"
+        subtitle="Live policy insight from the current database"
+      >
         <div className="rounded-lg border border-border bg-card p-8 text-sm text-muted-foreground">
-          No live catalog or order history is available yet. Import a supplier file to start building demand intelligence.
+          No live catalog or order history is available yet. Import a supplier file to start
+          building demand intelligence.
         </div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="Demand intelligence" subtitle="Statistical approval guidance from live catalog and order history">
+    <DashboardLayout
+      title="Demand intelligence"
+      subtitle="Statistical approval guidance from live catalog and order history"
+    >
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 space-y-6">
           <Card className="p-5">
@@ -252,19 +327,37 @@ function PoliciesPage() {
             </div>
             <h3 className="text-display text-lg font-semibold">How approval works now</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              This page now derives its baselines from live catalog subcategories, supplier prices, and historical order line quantities stored in the database.
+              This page now derives its baselines from live catalog subcategories, supplier prices,
+              and historical order line quantities stored in the database.
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              If you are not sure how to configure these numbers, it is perfectly fine to keep them as they are.
+              If you are not sure how to configure these numbers, it is perfectly fine to keep them
+              as they are.
             </p>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">σ multiplier</label>
-                <Input value={stddevMultiplier} onChange={(e) => setStddevMultiplier(parseNum(e.target.value))} className="mt-1" type="number" step="0.1" />
+                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  σ multiplier
+                </label>
+                <Input
+                  value={stddevMultiplier}
+                  onChange={(e) => setStddevMultiplier(parseNum(e.target.value))}
+                  className="mt-1"
+                  type="number"
+                  step="0.1"
+                />
               </div>
               <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Recency weight</label>
-                <Input value={recencyWeight} onChange={(e) => setRecencyWeight(parseNum(e.target.value))} className="mt-1" type="number" step="0.05" />
+                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Recency weight
+                </label>
+                <Input
+                  value={recencyWeight}
+                  onChange={(e) => setRecencyWeight(parseNum(e.target.value))}
+                  className="mt-1"
+                  type="number"
+                  step="0.05"
+                />
               </div>
               <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm">
                 <div className="text-xs text-muted-foreground">Observed groups</div>
@@ -284,7 +377,9 @@ function PoliciesPage() {
                 Live baselines by category
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Current demand history from the database</h3>
+            <h3 className="text-display text-lg font-semibold">
+              Current demand history from the database
+            </h3>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -303,12 +398,18 @@ function PoliciesPage() {
                       <tr key={family.tag} className="border-b border-border/60">
                         <td className="py-3 pr-3">
                           <div className="font-medium">{family.label}</div>
-                          <div className="text-xs text-muted-foreground">{family.history.length} observations</div>
+                          <div className="text-xs text-muted-foreground">
+                            {family.history.length} observations
+                          </div>
                         </td>
-                        <td className="py-3 pr-3 text-xs text-muted-foreground">{family.aliases.slice(0, 2).join(" · ") || "No named items yet"}</td>
+                        <td className="py-3 pr-3 text-xs text-muted-foreground">
+                          {family.aliases.slice(0, 2).join(" · ") || "No named items yet"}
+                        </td>
                         <td className="py-3 pr-3">{familyStats.expected.toFixed(1)}</td>
                         <td className="py-3 pr-3">{familyStats.std.toFixed(1)}</td>
-                        <td className="py-3 pr-3">{family.suppliers[0]?.name ?? "No live supplier data"}</td>
+                        <td className="py-3 pr-3">
+                          {family.suppliers[0]?.name ?? "No live supplier data"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -324,19 +425,33 @@ function PoliciesPage() {
                 Live item matching
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Map new items to real catalog groups</h3>
+            <h3 className="text-display text-lg font-semibold">
+              Map new items to real catalog groups
+            </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Enter a material name to see which live product group it most closely matches in the current database.
+              Enter a material name to see which live product group it most closely matches in the
+              current database.
             </p>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">New product</label>
-                <Input value={newProductName} onChange={(e) => setNewProductName(e.target.value)} className="mt-1" placeholder="Example: Drywall screw 4.5 × 40" />
+                <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  New product
+                </label>
+                <Input
+                  value={newProductName}
+                  onChange={(e) => setNewProductName(e.target.value)}
+                  className="mt-1"
+                  placeholder="Example: Drywall screw 4.5 × 40"
+                />
               </div>
               <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2">
                 <div className="text-xs text-muted-foreground">Closest live group</div>
-                <div className="font-medium mt-1">{matchedFamily?.label ?? "Waiting for input"}</div>
-                <div className="text-xs text-muted-foreground mt-1">Examples: {matchedFamily?.aliases.join(" · ") || "No examples available yet"}</div>
+                <div className="font-medium mt-1">
+                  {matchedFamily?.label ?? "Waiting for input"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Examples: {matchedFamily?.aliases.join(" · ") || "No examples available yet"}
+                </div>
               </div>
             </div>
           </Card>
@@ -352,20 +467,40 @@ function PoliciesPage() {
             </div>
             <h3 className="text-display text-lg font-semibold">Expected order size calculator</h3>
             <div className="mt-3 space-y-2">
-              <select className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm" value={selectedFamily.tag} onChange={(e) => setSampleTag(e.target.value)}>
+              <select
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+                value={selectedFamily.tag}
+                onChange={(e) => setSampleTag(e.target.value)}
+              >
                 {families.map((family) => (
-                  <option key={family.tag} value={family.tag}>{family.label}</option>
+                  <option key={family.tag} value={family.tag}>
+                    {family.label}
+                  </option>
                 ))}
               </select>
-              <Input type="number" value={sampleQuantity} onChange={(e) => setSampleQuantity(parseNum(e.target.value))} placeholder="Quantity" />
+              <Input
+                type="number"
+                value={sampleQuantity}
+                onChange={(e) => setSampleQuantity(parseNum(e.target.value))}
+                placeholder="Quantity"
+              />
             </div>
-            <div className={["mt-3 rounded-md border px-3 py-3 text-sm", flagged ? "border-warning/40 bg-warning/20" : "border-success/40 bg-success/10"].join(" ")}>
-              <div className="font-medium">{flagged ? "Route to approval review" : "Order stays within the normal live range"}</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Expected {stats.expected.toFixed(1)} · std. dev. {stats.std.toFixed(1)} · upper band {stats.upper.toFixed(1)} · estimated spend {formatCurrency(estimatedSpend, "EUR")}
+            <div
+              className={[
+                "mt-3 rounded-md border px-3 py-3 text-sm",
+                flagged ? "border-warning/40 bg-warning/20" : "border-success/40 bg-success/10",
+              ].join(" ")}
+            >
+              <div className="font-medium">
+                {flagged ? "Route to approval review" : "Order stays within the normal live range"}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                Approval threshold: {formatCurrency(thresholdAmount, "EUR")} · z-score {zScore.toFixed(2)}
+                Expected {stats.expected.toFixed(1)} · std. dev. {stats.std.toFixed(1)} · upper band{" "}
+                {stats.upper.toFixed(1)} · estimated spend {formatCurrency(estimatedSpend, "EUR")}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Approval threshold: {formatCurrency(thresholdAmount, "EUR")} · z-score{" "}
+                {zScore.toFixed(2)}
               </div>
             </div>
           </Card>
@@ -377,19 +512,25 @@ function PoliciesPage() {
                 Supplier benchmarking
               </div>
             </div>
-            <h3 className="text-display text-lg font-semibold">Live supplier options for {selectedFamily.label}</h3>
+            <h3 className="text-display text-lg font-semibold">
+              Live supplier options for {selectedFamily.label}
+            </h3>
             <div className="mt-3 space-y-2">
-              {selectedFamily.suppliers.length > 0 ? selectedFamily.suppliers.map((supplier) => (
-                <div key={supplier.name} className="rounded-md border border-border px-3 py-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium">{supplier.name}</div>
-                    <div className="text-xs text-muted-foreground">{supplier.itemCount} items</div>
+              {selectedFamily.suppliers.length > 0 ? (
+                selectedFamily.suppliers.map((supplier) => (
+                  <div key={supplier.name} className="rounded-md border border-border px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium">{supplier.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {supplier.itemCount} items
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Average live unit price {formatCurrency(supplier.avgPrice, "EUR")}
+                    </div>
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Average live unit price {formatCurrency(supplier.avgPrice, "EUR")}
-                  </div>
-                </div>
-              )) : (
+                ))
+              ) : (
                 <div className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
                   No supplier pricing is available yet for this group.
                 </div>

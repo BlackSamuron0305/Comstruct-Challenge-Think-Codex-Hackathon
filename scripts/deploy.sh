@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ACTION="${1:-update}"
-
+# Compose invocation — always run from repo root so volume paths resolve correctly
+COMPOSE="docker compose --project-directory $ROOT_DIR -f $ROOT_DIR/infra/compose/docker-compose.yml"
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -59,8 +60,8 @@ warn_if_localhost_env() {
 }
 
 compose_up() {
-  docker compose up -d --build
-  docker compose ps
+  $COMPOSE up -d --build
+  $COMPOSE ps
 }
 
 show_help() {
@@ -95,10 +96,10 @@ case "$ACTION" in
     compose_up
     ;;
   logs)
-    docker compose logs -f --tail=100
+    $COMPOSE logs -f --tail=100
     ;;
   status)
-    docker compose ps
+    $COMPOSE ps
     ;;
   pull)
     git pull --ff-only

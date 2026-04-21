@@ -40,13 +40,14 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
     return sorted.slice(0, 4).map((order) => {
       const status = normalizeStatus(order.status);
       const firstItem = order.items?.[0]?.product_snapshot?.name;
-      const statusLabel = status === "pending" || status === "pending_approval"
-        ? "Approval required"
-        : status === "delivered"
-          ? "Delivered"
-          : status === "rejected"
-            ? "Rejected"
-            : "Order update";
+      const statusLabel =
+        status === "pending" || status === "pending_approval"
+          ? "Approval required"
+          : status === "delivered"
+            ? "Delivered"
+            : status === "rejected"
+              ? "Rejected"
+              : "Order update";
 
       return {
         id: order.id,
@@ -89,7 +90,9 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div>
                     <div className="text-sm font-semibold">Notifications</div>
-                    <div className="text-[11px] text-muted-foreground">Order and approval updates</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Order and approval updates
+                    </div>
                   </div>
                   <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {notifications.length}
@@ -103,13 +106,20 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
                     </div>
                   ) : (
                     notifications.map((notification) => (
-                      <div key={notification.id} className="rounded-md px-3 py-2 hover:bg-accent/60">
+                      <div
+                        key={notification.id}
+                        className="rounded-md px-3 py-2 hover:bg-accent/60"
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="text-sm font-medium">{notification.title}</div>
-                            <div className="text-xs text-muted-foreground">{notification.detail}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {notification.detail}
+                            </div>
                           </div>
-                          <span className="whitespace-nowrap text-[10px] text-muted-foreground">{notification.time}</span>
+                          <span className="whitespace-nowrap text-[10px] text-muted-foreground">
+                            {notification.time}
+                          </span>
                         </div>
                       </div>
                     ))

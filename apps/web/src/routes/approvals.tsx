@@ -8,13 +8,26 @@ import { DashboardLayout } from "@/components/dashboard/Layout";
 import { QueryState } from "@/components/dashboard/QueryState";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
 import { useProject, ALL_PROJECTS } from "@/components/dashboard/ProjectContext";
-import { api, formatCurrency, normalizeCurrency, shortId, type ApprovalRule, type OrderSummary, type ProductRecommendationChoice, type ProjectRecord } from "@/lib/api";
+import {
+  api,
+  formatCurrency,
+  normalizeCurrency,
+  shortId,
+  type ApprovalRule,
+  type OrderSummary,
+  type ProductRecommendationChoice,
+  type ProjectRecord,
+} from "@/lib/api";
 
 export const Route = createFileRoute("/approvals")({
   head: () => ({
     meta: [
       { title: "Approvals · comstruct C-Materials" },
-      { name: "description", content: "Review statistically flagged C-material orders and fallback guardrail exceptions." },
+      {
+        name: "description",
+        content:
+          "Review statistically flagged C-material orders and fallback guardrail exceptions.",
+      },
     ],
   }),
   component: Approvals,
@@ -36,11 +49,17 @@ function describeItems(order: Pick<OrderSummary, "items">) {
   const items = order.items ?? [];
   if (!items.length) return "No line items captured";
 
-  const preview = items.slice(0, 2).map((item) => {
-    const label = item.product_snapshot?.name?.trim() || item.product_snapshot?.sku?.trim() || "Material item";
-    const qty = formatQty(item.quantity);
-    return qty ? `${label} × ${qty}` : label;
-  }).join(" · ");
+  const preview = items
+    .slice(0, 2)
+    .map((item) => {
+      const label =
+        item.product_snapshot?.name?.trim() ||
+        item.product_snapshot?.sku?.trim() ||
+        "Material item";
+      const qty = formatQty(item.quantity);
+      return qty ? `${label} × ${qty}` : label;
+    })
+    .join(" · ");
 
   const remaining = items.length - 2;
   return remaining > 0 ? `${preview} +${remaining} more` : preview;
@@ -49,7 +68,10 @@ function describeItems(order: Pick<OrderSummary, "items">) {
 function approvalReason(order: Pick<OrderSummary, "notes" | "requires_approval" | "status">) {
   const cleaned = (order.notes ?? "").replace(/\[approval\]\s*/i, "").trim();
   if (cleaned) return cleaned;
-  if (["pending", "pending_approval"].includes(normalizeStatus(order.status)) || order.requires_approval) {
+  if (
+    ["pending", "pending_approval"].includes(normalizeStatus(order.status)) ||
+    order.requires_approval
+  ) {
     return "Statistical quantity anomaly detected";
   }
   return "Auto-approved";
@@ -57,7 +79,8 @@ function approvalReason(order: Pick<OrderSummary, "notes" | "requires_approval" 
 
 function routeLabel(order: Pick<OrderSummary, "notes" | "requires_approval" | "status">) {
   const reason = approvalReason(order).toLowerCase();
-  if (reason.includes("restricted categor") || reason.includes("restricted group")) return "Group guard";
+  if (reason.includes("restricted categor") || reason.includes("restricted group"))
+    return "Group guard";
   if (reason.includes("a-material")) return "A-material guard";
   if (reason.includes("anomaly") || reason.includes("risk")) return "Stat review";
   return "Auto-cleared";
@@ -65,10 +88,17 @@ function routeLabel(order: Pick<OrderSummary, "notes" | "requires_approval" | "s
 
 function routeTone(order: Pick<OrderSummary, "notes" | "requires_approval" | "status">) {
   const reason = approvalReason(order).toLowerCase();
-  if (reason.includes("restricted categor") || reason.includes("restricted group") || reason.includes("a-material")) {
+  if (
+    reason.includes("restricted categor") ||
+    reason.includes("restricted group") ||
+    reason.includes("a-material")
+  ) {
     return "bg-destructive/10 text-destructive";
   }
-  if (["pending", "pending_approval"].includes(normalizeStatus(order.status)) || order.requires_approval) {
+  if (
+    ["pending", "pending_approval"].includes(normalizeStatus(order.status)) ||
+    order.requires_approval
+  ) {
     return "bg-warning/30 text-warning-foreground";
   }
   return "bg-success/15 text-[oklch(0.42_0.13_155)]";
@@ -95,7 +125,9 @@ function reviewChecklist(order: Pick<OrderSummary, "notes" | "requires_approval"
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("de-CH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return new Intl.DateTimeFormat("de-CH", { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(value),
+  );
 }
 
 function formatEta(value?: number | string | null) {
@@ -117,9 +149,18 @@ function Approvals() {
   const [activeFilter, setActiveFilter] = useState<string>("Pending");
   const [selected, setSelected] = useState<OrderSummary | null>(null);
   const [note, setNote] = useState("");
-  const [decisionMessage, setDecisionMessage] = useState<{ tone: "success" | "warn"; title: string; detail: string } | null>(null);
+  const [decisionMessage, setDecisionMessage] = useState<{
+    tone: "success" | "warn";
+    title: string;
+    detail: string;
+  } | null>(null);
 
-  const { data: orders = [], isLoading, isError, refetch } = useQuery({
+  const {
+    data: orders = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["approvals", "orders"],
     queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
   });
@@ -137,8 +178,14 @@ function Approvals() {
   const approveMutation = useMutation({
     mutationFn: (orderId: string) => api.post(`/api/orders/${orderId}/approve`, null),
     onSuccess: () => {
-      toast.success("Order approved", { description: "The requester can continue with the purchase now." });
-      setDecisionMessage({ tone: "success", title: "Order released successfully", detail: "The requester and overview queue have been updated." });
+      toast.success("Order approved", {
+        description: "The requester can continue with the purchase now.",
+      });
+      setDecisionMessage({
+        tone: "success",
+        title: "Order released successfully",
+        detail: "The requester and overview queue have been updated.",
+      });
       setSelected(null);
       setNote("");
       queryClient.invalidateQueries({ queryKey: ["approvals"] });
@@ -151,10 +198,17 @@ function Approvals() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) => api.post(`/api/orders/${orderId}/reject`, { reason }),
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      api.post(`/api/orders/${orderId}/reject`, { reason }),
     onSuccess: () => {
-      toast.success("Order rejected", { description: "The note is now visible for the requester." });
-      setDecisionMessage({ tone: "warn", title: "Order sent back with context", detail: "The requester can review the note and adjust the request." });
+      toast.success("Order rejected", {
+        description: "The note is now visible for the requester.",
+      });
+      setDecisionMessage({
+        tone: "warn",
+        title: "Order sent back with context",
+        detail: "The requester can review the note and adjust the request.",
+      });
       setSelected(null);
       setNote("");
       queryClient.invalidateQueries({ queryKey: ["approvals"] });
@@ -167,10 +221,24 @@ function Approvals() {
   });
 
   const selectSupplierMutation = useMutation({
-    mutationFn: ({ orderId, orderItemId, productId }: { orderId: string; orderItemId: string; productId: string }) =>
-      api.post<OrderSummary>(`/api/orders/${orderId}/select-supplier-option`, { order_item_id: orderItemId, product_id: productId, note: note.trim() || undefined }),
+    mutationFn: ({
+      orderId,
+      orderItemId,
+      productId,
+    }: {
+      orderId: string;
+      orderItemId: string;
+      productId: string;
+    }) =>
+      api.post<OrderSummary>(`/api/orders/${orderId}/select-supplier-option`, {
+        order_item_id: orderItemId,
+        product_id: productId,
+        note: note.trim() || undefined,
+      }),
     onSuccess: (updatedOrder) => {
-      toast.success("Supplier option updated", { description: "The order now uses the selected ranked supplier option." });
+      toast.success("Supplier option updated", {
+        description: "The order now uses the selected ranked supplier option.",
+      });
       setSelected(updatedOrder);
       queryClient.invalidateQueries({ queryKey: ["approvals"] });
       queryClient.invalidateQueries({ queryKey: ["overview"] });
@@ -187,28 +255,48 @@ function Approvals() {
         ...order,
         projectName: projectMap.get(order.project_id ?? "") ?? shortId(order.project_id),
         foremanName: order.foreman_name?.trim() || shortId(order.foreman_id).toUpperCase(),
-        supplierName: order.supplier_name ?? order.items?.[0]?.product_snapshot?.supplier_name ?? "—",
+        supplierName:
+          order.supplier_name ?? order.items?.[0]?.product_snapshot?.supplier_name ?? "—",
         total: Number(order.total_amount ?? 0),
       }))
       .filter((order) => project === ALL_PROJECTS || order.projectName === project)
       .filter((order) => {
-        if (activeFilter === "Pending") return ["pending", "pending_approval"].includes(normalizeStatus(order.status));
-        if (activeFilter === "Approved") return ["approved", "ordered", "delivered"].includes(normalizeStatus(order.status));
+        if (activeFilter === "Pending")
+          return ["pending", "pending_approval"].includes(normalizeStatus(order.status));
+        if (activeFilter === "Approved")
+          return ["approved", "ordered", "delivered"].includes(normalizeStatus(order.status));
         if (activeFilter === "Rejected") return normalizeStatus(order.status) === "rejected";
         return true;
       });
   }, [activeFilter, orders, project, projectMap]);
 
-  const pendingOrders = orders.filter((order) => ["pending", "pending_approval"].includes(normalizeStatus(order.status)));
-  const pendingValue = pendingOrders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
-  const highRiskCount = pendingOrders.filter((order) => order.requires_approval || (order.notes ?? "").includes("[approval]")).length;
+  const pendingOrders = orders.filter((order) =>
+    ["pending", "pending_approval"].includes(normalizeStatus(order.status)),
+  );
+  const pendingValue = pendingOrders.reduce(
+    (sum, order) => sum + Number(order.total_amount ?? 0),
+    0,
+  );
+  const highRiskCount = pendingOrders.filter(
+    (order) => order.requires_approval || (order.notes ?? "").includes("[approval]"),
+  ).length;
   const restrictedCategories = approvalRule?.restricted_categories ?? [];
 
   return (
     <>
-      <DashboardLayout title="Approvals" subtitle={`${project === ALL_PROJECTS ? "All projects" : project} · order review and sign-off`}>
+      <DashboardLayout
+        title="Approvals"
+        subtitle={`${project === ALL_PROJECTS ? "All projects" : project} · order review and sign-off`}
+      >
         {decisionMessage && (
-          <div className={["mb-4 rounded-lg border p-4 text-sm", decisionMessage.tone === "success" ? "border-success/30 bg-success/10" : "border-warning/30 bg-warning/10"].join(" ")}>
+          <div
+            className={[
+              "mb-4 rounded-lg border p-4 text-sm",
+              decisionMessage.tone === "success"
+                ? "border-success/30 bg-success/10"
+                : "border-warning/30 bg-warning/10",
+            ].join(" ")}
+          >
             <div className="font-medium">{decisionMessage.title}</div>
             <div className="mt-1 text-muted-foreground">{decisionMessage.detail}</div>
           </div>
@@ -221,7 +309,9 @@ function Approvals() {
               onClick={() => setActiveFilter(filter)}
               className={[
                 "text-mono text-[11px] uppercase tracking-wider px-3 py-1.5 rounded-md border",
-                activeFilter === filter ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border hover:bg-accent",
+                activeFilter === filter
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card border-border hover:bg-accent",
               ].join(" ")}
             >
               {filter}
@@ -239,7 +329,9 @@ function Approvals() {
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs text-muted-foreground">Queue value</div>
-            <div className="mt-1 text-2xl font-semibold">{formatCurrency(pendingValue, normalizeCurrency(orders[0]?.currency))}</div>
+            <div className="mt-1 text-2xl font-semibold">
+              {formatCurrency(pendingValue, normalizeCurrency(orders[0]?.currency))}
+            </div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs text-muted-foreground">Escalated orders</div>
@@ -248,9 +340,18 @@ function Approvals() {
         </div>
 
         {isLoading ? (
-          <QueryState kind="loading" title="Loading approval queue" description="Statistical review signals and live orders are being refreshed now." />
+          <QueryState
+            kind="loading"
+            title="Loading approval queue"
+            description="Statistical review signals and live orders are being refreshed now."
+          />
         ) : isError ? (
-          <QueryState kind="error" title="Approval data could not be loaded" description="The review queue is temporarily unavailable." onRetry={() => void refetch()} />
+          <QueryState
+            kind="error"
+            title="Approval data could not be loaded"
+            description="The review queue is temporarily unavailable."
+            onRetry={() => void refetch()}
+          />
         ) : (
           <div className="rounded-lg border border-border bg-card overflow-x-auto">
             <table className="w-full text-sm" style={{ minWidth: "960px" }}>
@@ -261,7 +362,9 @@ function Approvals() {
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Project</th>
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Requester</th>
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Supplier</th>
-                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Ordered items</th>
+                  <th className="text-left font-normal px-5 py-3 whitespace-nowrap">
+                    Ordered items
+                  </th>
                   <th className="text-left font-normal px-5 py-3 whitespace-nowrap">Status</th>
                   <th className="text-right font-normal px-5 py-3 whitespace-nowrap">Items</th>
                   <th className="text-right font-normal px-5 py-3 whitespace-nowrap">Total</th>
@@ -270,24 +373,58 @@ function Approvals() {
               </thead>
               <tbody>
                 {rows.map((order) => (
-                  <tr key={order.id} className={["border-t border-border hover:bg-secondary/60 cursor-pointer", selected?.id === order.id ? "bg-secondary/80" : ""].join(" ")} onClick={() => setSelected(order)}>
-                    <td className="px-5 py-3 text-mono text-xs whitespace-nowrap">{shortId(order.id).toUpperCase()}</td>
-                    <td className="px-5 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(order.created_at)}</td>
+                  <tr
+                    key={order.id}
+                    className={[
+                      "border-t border-border hover:bg-secondary/60 cursor-pointer",
+                      selected?.id === order.id ? "bg-secondary/80" : "",
+                    ].join(" ")}
+                    onClick={() => setSelected(order)}
+                  >
+                    <td className="px-5 py-3 text-mono text-xs whitespace-nowrap">
+                      {shortId(order.id).toUpperCase()}
+                    </td>
+                    <td className="px-5 py-3 text-muted-foreground text-xs whitespace-nowrap">
+                      {formatDate(order.created_at)}
+                    </td>
                     <td className="px-5 py-3 whitespace-nowrap">{order.projectName}</td>
-                    <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{order.foremanName}</td>
+                    <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">
+                      {order.foremanName}
+                    </td>
                     <td className="px-5 py-3 whitespace-nowrap">{order.supplierName}</td>
-                    <td className="px-5 py-3 max-w-[22rem] text-xs text-muted-foreground whitespace-normal">{describeItems(order)}</td>
-                    <td className="px-5 py-3 whitespace-nowrap"><StatusBadge status={order.status} /></td>
-                    <td className="px-5 py-3 text-right tabular whitespace-nowrap">{order.items?.length ?? 0}</td>
-                    <td className="px-5 py-3 text-right tabular font-medium whitespace-nowrap">{formatCurrency(order.total, order.currency)}</td>
+                    <td className="px-5 py-3 max-w-[22rem] text-xs text-muted-foreground whitespace-normal">
+                      {describeItems(order)}
+                    </td>
                     <td className="px-5 py-3 whitespace-nowrap">
-                      <span className={["text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded", routeTone(order)].join(" ")}>{routeLabel(order)}</span>
+                      <StatusBadge status={order.status} />
+                    </td>
+                    <td className="px-5 py-3 text-right tabular whitespace-nowrap">
+                      {order.items?.length ?? 0}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular font-medium whitespace-nowrap">
+                      {formatCurrency(order.total, order.currency)}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      <span
+                        className={[
+                          "text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
+                          routeTone(order),
+                        ].join(" ")}
+                      >
+                        {routeLabel(order)}
+                      </span>
                     </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-muted-foreground text-sm">No requests need review right now. Statistical checks are clear for the current filter.</td>
+                    <td
+                      colSpan={9}
+                      className="px-5 py-10 text-center text-muted-foreground text-sm"
+                    >
+                      No requests need review right now. Statistical checks are clear for the
+                      current filter.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -302,10 +439,17 @@ function Approvals() {
           <div className="w-[500px] max-w-full bg-background border-l border-border flex flex-col shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/30 shrink-0">
               <div>
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Order review</div>
-                <div className="text-display text-lg font-semibold mt-0.5">{shortId(selected.id).toUpperCase()}</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Order review
+                </div>
+                <div className="text-display text-lg font-semibold mt-0.5">
+                  {shortId(selected.id).toUpperCase()}
+                </div>
               </div>
-              <button onClick={() => setSelected(null)} className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent ml-1">
+              <button
+                onClick={() => setSelected(null)}
+                className="h-8 w-8 grid place-items-center rounded-md hover:bg-accent ml-1"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -315,14 +459,21 @@ function Approvals() {
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="h-4 w-4 text-warning-foreground mt-0.5 shrink-0" />
                   <div>
-                    <div className="text-sm font-semibold text-warning-foreground">Approval route: {routeLabel(selected)}</div>
-                    <div className="text-xs text-muted-foreground mt-1 leading-relaxed">Review the line items, total amount, and supplier before approving or rejecting.</div>
+                    <div className="text-sm font-semibold text-warning-foreground">
+                      Approval route: {routeLabel(selected)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      Review the line items, total amount, and supplier before approving or
+                      rejecting.
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-md border border-border p-4">
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Review signal</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Review signal
+                </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-xs text-muted-foreground">Primary trigger</div>
@@ -330,16 +481,23 @@ function Approvals() {
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground">Fallback guardrail</div>
-                    <div className="font-medium">{restrictedCategories.length ? `${restrictedCategories.length} groups` : "None configured"}</div>
+                    <div className="font-medium">
+                      {restrictedCategories.length
+                        ? `${restrictedCategories.length} groups`
+                        : "None configured"}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 text-xs text-muted-foreground">
-                  Statistically normal C-item requests auto-pass; only anomalies or hard guardrails remain in this queue.
+                  Statistically normal C-item requests auto-pass; only anomalies or hard guardrails
+                  remain in this queue.
                 </div>
               </div>
 
               <div className="rounded-md border border-border p-4 text-sm">
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Suggested checks</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Suggested checks
+                </div>
                 <ul className="mt-3 space-y-2 text-muted-foreground">
                   {reviewChecklist(selected).map((item) => (
                     <li key={item}>• {item}</li>
@@ -349,11 +507,17 @@ function Approvals() {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Project</div>
-                  <div className="font-medium">{projectMap.get(selected.project_id ?? "") ?? shortId(selected.project_id)}</div>
+                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+                    Project
+                  </div>
+                  <div className="font-medium">
+                    {projectMap.get(selected.project_id ?? "") ?? shortId(selected.project_id)}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Submitted</div>
+                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+                    Submitted
+                  </div>
                   <div>{formatDate(selected.created_at)}</div>
                 </div>
               </div>
@@ -361,64 +525,116 @@ function Approvals() {
               <div className="rounded-md border border-border p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">From · Requester</div>
+                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    From · Requester
+                  </div>
                 </div>
-                <div className="font-semibold text-base">{selected.foreman_name?.trim() || shortId(selected.foreman_id).toUpperCase()}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">Live order owner from the order service</div>
+                <div className="font-semibold text-base">
+                  {selected.foreman_name?.trim() || shortId(selected.foreman_id).toUpperCase()}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Live order owner from the order service
+                </div>
               </div>
 
               <div className="rounded-md border border-border p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Building2 className="h-4 w-4 text-muted-foreground" />
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">To · Supplier</div>
+                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    To · Supplier
+                  </div>
                 </div>
-                <div className="font-semibold text-base">{selected.supplier_name ?? selected.items?.[0]?.product_snapshot?.supplier_name ?? "Unknown supplier"}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">Order currency: {normalizeCurrency(selected.currency)}</div>
+                <div className="font-semibold text-base">
+                  {selected.supplier_name ??
+                    selected.items?.[0]?.product_snapshot?.supplier_name ??
+                    "Unknown supplier"}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Order currency: {normalizeCurrency(selected.currency)}
+                </div>
               </div>
 
               <div className="rounded-md border border-border p-4 text-sm">
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Ranked supplier choices</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Ranked supplier choices
+                </div>
                 <div className="mt-3 space-y-3">
-                  {selected.items?.some((item) => (item.product_snapshot?.supplier_recommendations?.length ?? 0) > 0) ? selected.items?.map((item) => {
-                    const options = (item.product_snapshot?.supplier_recommendations ?? []) as ProductRecommendationChoice[];
-                    if (!options.length) return null;
+                  {selected.items?.some(
+                    (item) => (item.product_snapshot?.supplier_recommendations?.length ?? 0) > 0,
+                  ) ? (
+                    selected.items?.map((item) => {
+                      const options = (item.product_snapshot?.supplier_recommendations ??
+                        []) as ProductRecommendationChoice[];
+                      if (!options.length) return null;
 
-                    return (
-                      <div key={`recommend-${item.id}`} className="rounded-md border border-border/70 p-3">
-                        <div className="font-medium">{item.product_snapshot?.name ?? item.product_snapshot?.sku ?? "Material item"}</div>
-                        <div className="mt-2 space-y-2">
-                          {options.slice(0, 6).map((option) => {
-                            const isCurrent = String(option.id) === item.product_id;
-                            return (
-                              <div key={`${item.id}-${option.id}`} className={["rounded-md border px-3 py-2", isCurrent ? "border-primary/40 bg-primary/5" : "border-border bg-secondary/20"].join(" ")}>
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <div className="font-medium">{option.supplier_name ?? option.name}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                      {formatRecommendationLabel(option.recommendation_bucket)} · {formatCurrency(Number(option.effective_unit_price ?? 0), selected.currency)} · ETA {formatEta(option.expected_delivery_days)}
+                      return (
+                        <div
+                          key={`recommend-${item.id}`}
+                          className="rounded-md border border-border/70 p-3"
+                        >
+                          <div className="font-medium">
+                            {item.product_snapshot?.name ??
+                              item.product_snapshot?.sku ??
+                              "Material item"}
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {options.slice(0, 6).map((option) => {
+                              const isCurrent = String(option.id) === item.product_id;
+                              return (
+                                <div
+                                  key={`${item.id}-${option.id}`}
+                                  className={[
+                                    "rounded-md border px-3 py-2",
+                                    isCurrent
+                                      ? "border-primary/40 bg-primary/5"
+                                      : "border-border bg-secondary/20",
+                                  ].join(" ")}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-medium">
+                                        {option.supplier_name ?? option.name}
+                                      </div>
+                                      <div className="mt-1 text-xs text-muted-foreground">
+                                        {formatRecommendationLabel(option.recommendation_bucket)} ·{" "}
+                                        {formatCurrency(
+                                          Number(option.effective_unit_price ?? 0),
+                                          selected.currency,
+                                        )}{" "}
+                                        · ETA {formatEta(option.expected_delivery_days)}
+                                      </div>
+                                      <div className="mt-1 text-xs text-muted-foreground">
+                                        Score {Number(option.overall_score ?? 0).toFixed(1)} / 100
+                                        {option.must_order ? " · must-order standard" : ""}
+                                      </div>
                                     </div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                      Score {Number(option.overall_score ?? 0).toFixed(1)} / 100{option.must_order ? " · must-order standard" : ""}
-                                    </div>
+                                    {["pending", "pending_approval"].includes(
+                                      normalizeStatus(selected.status),
+                                    ) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          selectSupplierMutation.mutate({
+                                            orderId: selected.id,
+                                            orderItemId: item.id,
+                                            productId: option.id,
+                                          })
+                                        }
+                                        disabled={selectSupplierMutation.isPending || isCurrent}
+                                        className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
+                                      >
+                                        {isCurrent ? "Selected" : "Use"}
+                                      </button>
+                                    ) : null}
                                   </div>
-                                  {(["pending", "pending_approval"].includes(normalizeStatus(selected.status))) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => selectSupplierMutation.mutate({ orderId: selected.id, orderItemId: item.id, productId: option.id })}
-                                      disabled={selectSupplierMutation.isPending || isCurrent}
-                                      className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
-                                    >
-                                      {isCurrent ? "Selected" : "Use"}
-                                    </button>
-                                  ) : null}
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  }) : (
+                      );
+                    })
+                  ) : (
                     <div className="rounded-md border border-border px-3 py-2 text-muted-foreground">
                       No ranked alternatives are available for this order yet.
                     </div>
@@ -429,7 +645,9 @@ function Approvals() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Line items · {selected.items?.length ?? 0} positions</div>
+                  <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Line items · {selected.items?.length ?? 0} positions
+                  </div>
                 </div>
                 <div className="rounded-md border border-border overflow-hidden">
                   <table className="w-full text-xs">
@@ -444,15 +662,27 @@ function Approvals() {
                     <tbody>
                       {selected.items?.map((item) => (
                         <tr key={item.id} className="border-t border-border">
-                          <td className="px-3 py-2 font-mono">{item.product_snapshot?.sku ?? shortId(item.id)}</td>
-                          <td className="px-3 py-2">{item.product_snapshot?.name ?? item.product_snapshot?.sku ?? "Material item"}</td>
+                          <td className="px-3 py-2 font-mono">
+                            {item.product_snapshot?.sku ?? shortId(item.id)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {item.product_snapshot?.name ??
+                              item.product_snapshot?.sku ??
+                              "Material item"}
+                          </td>
                           <td className="px-3 py-2 text-right tabular">{item.quantity ?? "—"}</td>
-                          <td className="px-3 py-2 text-right tabular font-medium">{formatCurrency(Number(item.line_total ?? 0), selected.currency)}</td>
+                          <td className="px-3 py-2 text-right tabular font-medium">
+                            {formatCurrency(Number(item.line_total ?? 0), selected.currency)}
+                          </td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-border bg-secondary/50 font-semibold text-sm">
-                        <td colSpan={3} className="px-3 py-2.5 text-right">Order total</td>
-                        <td className="px-3 py-2.5 text-right tabular">{formatCurrency(Number(selected.total_amount ?? 0), selected.currency)}</td>
+                        <td colSpan={3} className="px-3 py-2.5 text-right">
+                          Order total
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular">
+                          {formatCurrency(Number(selected.total_amount ?? 0), selected.currency)}
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -460,46 +690,91 @@ function Approvals() {
               </div>
 
               <div className="rounded-md border border-border p-4 text-sm">
-                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Audit context</div>
+                <div className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Audit context
+                </div>
                 <ul className="mt-3 space-y-2 text-muted-foreground">
                   <li>Submitted on {formatDate(selected.created_at)}</li>
-                  <li>Current status: <span className="font-medium text-foreground">{selected.status}</span></li>
+                  <li>
+                    Current status:{" "}
+                    <span className="font-medium text-foreground">{selected.status}</span>
+                  </li>
                   {selected.notes ? <li>Requester note: {selected.notes}</li> : null}
-                  {selected.rejection_reason ? <li>Last rejection reason: {selected.rejection_reason}</li> : null}
+                  {selected.rejection_reason ? (
+                    <li>Last rejection reason: {selected.rejection_reason}</li>
+                  ) : null}
                 </ul>
               </div>
 
-              {(["pending", "pending_approval"].includes(normalizeStatus(selected.status))) && (
+              {["pending", "pending_approval"].includes(normalizeStatus(selected.status)) && (
                 <div>
-                  <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">Decision note</label>
-                  <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add context for the requester or procurement log…" rows={3} className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none" />
+                  <label className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Decision note
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="Add context for the requester or procurement log…"
+                    rows={3}
+                    className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
+                  />
                   <div className="mt-2 flex flex-wrap gap-2">
                     {[
                       "Please split this into the normal weekly quantity.",
                       "Please consolidate duplicate supplier options before resubmitting.",
                       "Please confirm why this higher quantity is needed today.",
                     ].map((template) => (
-                      <button key={template} type="button" onClick={() => setNote(template)} className="rounded-full border border-border px-3 py-1 text-xs hover:bg-accent">
+                      <button
+                        key={template}
+                        type="button"
+                        onClick={() => setNote(template)}
+                        className="rounded-full border border-border px-3 py-1 text-xs hover:bg-accent"
+                      >
                         Use note
                       </button>
                     ))}
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">This note will be used as the rejection reason if you decline the order.</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    This note will be used as the rejection reason if you decline the order.
+                  </div>
                 </div>
               )}
             </div>
 
-            {(["pending", "pending_approval"].includes(normalizeStatus(selected.status))) ? (
+            {["pending", "pending_approval"].includes(normalizeStatus(selected.status)) ? (
               <div className="px-6 py-4 border-t border-border flex gap-3 shrink-0 bg-background">
-                <button onClick={() => approveMutation.mutate(selected.id)} disabled={approveMutation.isPending || rejectMutation.isPending || selectSupplierMutation.isPending} className="flex-1 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-60">
+                <button
+                  onClick={() => approveMutation.mutate(selected.id)}
+                  disabled={
+                    approveMutation.isPending ||
+                    rejectMutation.isPending ||
+                    selectSupplierMutation.isPending
+                  }
+                  className="flex-1 h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 flex items-center justify-center gap-2 disabled:opacity-60"
+                >
                   <Check className="h-4 w-4" /> Approve
                 </button>
-                <button onClick={() => rejectMutation.mutate({ orderId: selected.id, reason: note.trim() || "Rejected during approval review" })} disabled={approveMutation.isPending || rejectMutation.isPending || selectSupplierMutation.isPending} className="flex-1 h-10 rounded-md border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 flex items-center justify-center gap-2 disabled:opacity-60">
+                <button
+                  onClick={() =>
+                    rejectMutation.mutate({
+                      orderId: selected.id,
+                      reason: note.trim() || "Rejected during approval review",
+                    })
+                  }
+                  disabled={
+                    approveMutation.isPending ||
+                    rejectMutation.isPending ||
+                    selectSupplierMutation.isPending
+                  }
+                  className="flex-1 h-10 rounded-md border border-destructive text-destructive text-sm font-medium hover:bg-destructive/10 flex items-center justify-center gap-2 disabled:opacity-60"
+                >
                   <X className="h-4 w-4" /> Reject
                 </button>
               </div>
             ) : (
-              <div className="px-6 py-4 border-t border-border text-center text-sm text-muted-foreground shrink-0">This order has already moved to <strong>{selected.status}</strong>.</div>
+              <div className="px-6 py-4 border-t border-border text-center text-sm text-muted-foreground shrink-0">
+                This order has already moved to <strong>{selected.status}</strong>.
+              </div>
             )}
           </div>
         </div>

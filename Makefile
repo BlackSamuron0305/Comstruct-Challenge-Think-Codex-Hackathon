@@ -1,5 +1,8 @@
 .PHONY: help up down restart logs ps seed migrate test lint gen-keys flutter-gen api-types clean deploy-init deploy-update deploy-logs deploy-status mobile-web-build mobile-web-publish
 
+# Compose invocation — always runs from repo root so relative volume paths resolve correctly
+COMPOSE = docker compose --project-directory . -f infra/compose/docker-compose.yml
+
 help:
 	@echo "comstruct dev shortcuts"
 	@echo "  make up           - bring up full local stack"
@@ -24,20 +27,20 @@ help:
 up:
 	@if [ ! -f .env ]; then cp .env.example .env; echo ">> Created .env from template. Edit it and re-run."; exit 1; fi
 	@if [ ! -f infra/keys/jwt_private.pem ]; then $(MAKE) gen-keys; fi
-	docker compose up --build -d
+	$(COMPOSE) up --build -d
 	@echo ">> Stack up. Gateway: http://localhost:8001  Web: http://localhost:8080  MinIO: http://localhost:9001"
 
 down:
-	docker compose down -v
+	$(COMPOSE) down -v
 
 restart:
-	docker compose restart
+	$(COMPOSE) restart
 
 logs:
-	docker compose logs -f --tail=100
+	$(COMPOSE) logs -f --tail=100
 
 ps:
-	docker compose ps
+	$(COMPOSE) ps
 
 gen-keys:
 	@mkdir -p infra/keys
@@ -50,12 +53,12 @@ gen-keys:
 	fi
 
 migrate:
-	docker compose exec order-service alembic upgrade head
-	docker compose exec catalog-service alembic upgrade head
+	$(COMPOSE) exec order-service alembic upgrade head
+	$(COMPOSE) exec catalog-service alembic upgrade head
 
 seed:
-	docker compose exec catalog-service python -m src.scripts.seed_dev
-	docker compose exec order-service python -m src.scripts.seed_dev
+	$(COMPOSE) exec catalog-service python -m src.scripts.seed_dev
+	$(COMPOSE) exec order-service python -m src.scripts.seed_dev
 
 test:
 	cd services/ai-service && pytest tests/ -v
@@ -77,7 +80,7 @@ flutter-gen:
 	cd apps/mobile && flutter pub run build_runner build --delete-conflicting-outputs
 
 clean:
-	docker compose down -v --remove-orphans
+	$(COMPOSE) down -v --remove-orphans
 	rm -rf node_modules apps/*/node_modules services/*/node_modules
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name .pytest_cache -prune -exec rm -rf {} +

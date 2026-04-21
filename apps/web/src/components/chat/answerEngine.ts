@@ -15,7 +15,9 @@ function currencyOf(context: AssistantContext): string {
 }
 
 function pendingSummary(context: AssistantContext): string {
-  const pending = context.orders.filter((order) => ["pending", "pending_approval"].includes(order.status));
+  const pending = context.orders.filter((order) =>
+    ["pending", "pending_approval"].includes(order.status),
+  );
   const pendingValue = pending.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
 
   if (pending.length === 0) {
@@ -26,7 +28,10 @@ function pendingSummary(context: AssistantContext): string {
 }
 
 function spendSummary(context: AssistantContext): string {
-  const totalSpend = context.orders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
+  const totalSpend = context.orders.reduce(
+    (sum, order) => sum + Number(order.total_amount ?? 0),
+    0,
+  );
   return `The current live order total is ${formatCurrency(totalSpend, currencyOf(context))} across ${context.orders.length} orders.`;
 }
 
@@ -37,7 +42,10 @@ function supplierSummary(context: AssistantContext): string {
 
   const spendBySupplier = new Map<string, number>();
   context.orders.forEach((order) => {
-    const name = order.supplier_name ?? order.items?.[0]?.product_snapshot?.supplier_name ?? "Unknown supplier";
+    const name =
+      order.supplier_name ??
+      order.items?.[0]?.product_snapshot?.supplier_name ??
+      "Unknown supplier";
     spendBySupplier.set(name, (spendBySupplier.get(name) ?? 0) + Number(order.total_amount ?? 0));
   });
 
@@ -53,7 +61,10 @@ function projectSummary(context: AssistantContext): string {
   const spendByProject = new Map<string, number>();
   context.orders.forEach((order) => {
     const projectName = context.projectMap.get(order.project_id ?? "") ?? shortId(order.project_id);
-    spendByProject.set(projectName, (spendByProject.get(projectName) ?? 0) + Number(order.total_amount ?? 0));
+    spendByProject.set(
+      projectName,
+      (spendByProject.get(projectName) ?? 0) + Number(order.total_amount ?? 0),
+    );
   });
 
   const topProject = [...spendByProject.entries()].sort((left, right) => right[1] - left[1])[0];
@@ -88,5 +99,7 @@ export function answerQuestion(raw: string, context: AssistantContext): string {
     return projectSummary(context);
   }
 
-  return [pendingSummary(context), spendSummary(context), supplierSummary(context)].join("\n\n---\n\n");
+  return [pendingSummary(context), spendSummary(context), supplierSummary(context)].join(
+    "\n\n---\n\n",
+  );
 }

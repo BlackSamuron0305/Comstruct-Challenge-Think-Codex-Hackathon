@@ -1,28 +1,29 @@
 function normalizeBaseUrl(value: string): string {
-  return value.replace(/\/$/, '').replace(/\/api$/, '');
+  return value.replace(/\/$/, "").replace(/\/api$/, "");
 }
 
 function getDefaultBrowserApiBaseUrl(): string {
-  if (typeof window === 'undefined') {
-    return 'http://localhost:8001';
+  if (typeof window === "undefined") {
+    return "http://localhost:8001";
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  const hostname = window.location.hostname || 'localhost';
+  const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+  const hostname = window.location.hostname || "localhost";
   return `${protocol}//${hostname}:8001`;
 }
 
-const BROWSER_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL || getDefaultBrowserApiBaseUrl());
-const SERVER_API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL_SERVER || 'http://api-gateway:8001');
-const ACCESS_KEY = 'comstruct-access-token';
-const REFRESH_KEY = 'comstruct-refresh-token';
-const USER_KEY = 'comstruct-user';
-const LEGACY_USER_KEYS = [USER_KEY, 'comstruct_auth_user'];
-const SESSION_EVENT = 'comstruct-auth-changed';
+const BROWSER_API_BASE_URL = normalizeBaseUrl(
+  import.meta.env.VITE_API_BASE_URL || getDefaultBrowserApiBaseUrl(),
+);
+const SERVER_API_BASE_URL = normalizeBaseUrl(
+  import.meta.env.VITE_API_BASE_URL_SERVER || "http://api-gateway:8001",
+);
+// User profile stored in sessionStorage (not sensitive — only name/email/role).
+const USER_KEY = "comstruct-user";
+const LEGACY_USER_KEYS = [USER_KEY, "comstruct_auth_user"];
+const SESSION_EVENT = "comstruct-auth-changed";
 
 let authPromise: Promise<void> | null = null;
-let serverAccessToken: string | null = null;
-let serverRefreshToken: string | null = null;
 let serverUser: AuthUser | null = null;
 
 export type AuthUser = {
@@ -157,18 +158,11 @@ export type SupplierRecord = {
 type QueryValue = string | number | boolean | null | undefined;
 
 function isBrowser(): boolean {
-  return typeof window !== 'undefined';
+  return typeof window !== "undefined";
 }
 
 function getApiBaseUrl(): string {
   return isBrowser() ? BROWSER_API_BASE_URL : SERVER_API_BASE_URL;
-}
-
-function getStoredToken(key: string): string | null {
-  if (!isBrowser()) {
-    return key === ACCESS_KEY ? serverAccessToken : serverRefreshToken;
-  }
-  return window.localStorage.getItem(key);
 }
 
 function notifySessionChange(): void {
@@ -176,61 +170,26 @@ function notifySessionChange(): void {
   window.dispatchEvent(new Event(SESSION_EVENT));
 }
 
-function storeTokens(accessToken?: string | null, refreshToken?: string | null): void {
-  if (!isBrowser()) {
-    if (accessToken) serverAccessToken = accessToken;
-    if (refreshToken) serverRefreshToken = refreshToken;
-    return;
-  }
-
-  if (accessToken) window.localStorage.setItem(ACCESS_KEY, accessToken);
-  if (refreshToken) window.localStorage.setItem(REFRESH_KEY, refreshToken);
-  notifySessionChange();
-}
-
-function parseUserFromToken(token: string): AuthUser | null {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return null;
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = window.atob(normalized);
-    const data = JSON.parse(decoded) as Record<string, unknown>;
-    return {
-      id: data.sub?.toString(),
-      company_id: data.company_id?.toString(),
-      email: data.email?.toString() ?? 'procurement@comstruct.com',
-      role: data.role?.toString(),
-      name: data.name?.toString(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function getStoredUser(): AuthUser | null {
   if (!isBrowser()) return serverUser;
 
+  // Check sessionStorage (preferred) then legacy localStorage keys
   for (const key of LEGACY_USER_KEYS) {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.sessionStorage.getItem(key) ?? window.localStorage.getItem(key);
     if (!raw) continue;
     try {
       const parsed = JSON.parse(raw) as AuthUser;
-      if (key !== USER_KEY) {
-        window.localStorage.setItem(USER_KEY, raw);
+      // Migrate to sessionStorage if found in localStorage
+      if (window.localStorage.getItem(key)) {
+        window.sessionStorage.setItem(USER_KEY, raw);
+        window.localStorage.removeItem(key);
       }
       return parsed;
     } catch {
-      // Keep checking the next key.
+      // Keep checking.
     }
   }
-
-  const token = window.localStorage.getItem(ACCESS_KEY);
-  if (!token) return null;
-  const derivedUser = parseUserFromToken(token);
-  if (derivedUser) {
-    window.localStorage.setItem(USER_KEY, JSON.stringify(derivedUser));
-  }
-  return derivedUser;
+  return null;
 }
 
 function storeUser(user?: AuthUser | null): void {
@@ -239,7 +198,8 @@ function storeUser(user?: AuthUser | null): void {
     serverUser = user;
     return;
   }
-  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  // User profile goes in sessionStorage (cleared when browser tab closes).
+  window.sessionStorage.setItem(USER_KEY, JSON.stringify(user));
   notifySessionChange();
 }
 
@@ -248,19 +208,29 @@ export function getCurrentUser(): AuthUser | null {
 }
 
 export function hasStoredSession(): boolean {
-  return Boolean(getStoredToken(ACCESS_KEY));
+  // We can't check httpOnly cookies from JS — assume a session might exist if we have a user profile.
+  return Boolean(getStoredUser());
 }
 
-export function clearSession(): void {
-  serverAccessToken = null;
-  serverRefreshToken = null;
+export async function clearSession(): Promise<void> {
   serverUser = null;
 
-  if (!isBrowser()) return;
-  window.localStorage.removeItem(ACCESS_KEY);
-  window.localStorage.removeItem(REFRESH_KEY);
-  window.localStorage.removeItem(USER_KEY);
-  window.localStorage.removeItem('comstruct_auth_user');
+  if (isBrowser()) {
+    window.sessionStorage.removeItem(USER_KEY);
+    // Remove any legacy localStorage tokens that may exist.
+    window.localStorage.removeItem("comstruct-access-token");
+    window.localStorage.removeItem("comstruct-refresh-token");
+    window.localStorage.removeItem(USER_KEY);
+    window.localStorage.removeItem("comstruct_auth_user");
+  }
+
+  // Ask the server to clear auth cookies.
+  try {
+    await fetch(`${getApiBaseUrl()}/auth/logout`, { method: "POST", credentials: "include" });
+  } catch {
+    // Best-effort; cookies will expire naturally.
+  }
+
   notifySessionChange();
 }
 
@@ -269,7 +239,7 @@ function withParams(path: string, params?: Record<string, QueryValue>): string {
   if (!params) return `${baseUrl}${path}`;
   const url = new URL(`${baseUrl}${path}`);
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
     }
   });
@@ -277,7 +247,7 @@ function withParams(path: string, params?: Record<string, QueryValue>): string {
 }
 
 function formatErrorDetail(detail: unknown): string | null {
-  if (typeof detail === 'string') {
+  if (typeof detail === "string") {
     const trimmed = detail.trim();
     if (!trimmed) return null;
 
@@ -291,19 +261,19 @@ function formatErrorDetail(detail: unknown): string | null {
   if (Array.isArray(detail)) {
     const parts = detail
       .map((item) => {
-        if (typeof item === 'string') return item.trim();
-        if (item && typeof item === 'object' && 'message' in item) {
+        if (typeof item === "string") return item.trim();
+        if (item && typeof item === "object" && "message" in item) {
           const message = (item as { message?: unknown }).message;
-          return typeof message === 'string' ? message.trim() : '';
+          return typeof message === "string" ? message.trim() : "";
         }
-        return '';
+        return "";
       })
       .filter(Boolean);
 
-    return parts.length ? parts.join(' ') : null;
+    return parts.length ? parts.join(" ") : null;
   }
 
-  if (detail && typeof detail === 'object' && 'message' in detail) {
+  if (detail && typeof detail === "object" && "message" in detail) {
     return formatErrorDetail((detail as { message?: unknown }).message);
   }
 
@@ -311,18 +281,19 @@ function formatErrorDetail(detail: unknown): string | null {
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
-  const fallback = response.status >= 500
-    ? 'The live service is temporarily unavailable. Please retry in a few seconds.'
-    : response.status === 401
-      ? 'Your session has expired. Please sign in again.'
-      : response.status === 403
-        ? 'You do not have permission for this action.'
-        : `Request failed with status ${response.status}`;
+  const fallback =
+    response.status >= 500
+      ? "The live service is temporarily unavailable. Please retry in a few seconds."
+      : response.status === 401
+        ? "Your session has expired. Please sign in again."
+        : response.status === 403
+          ? "You do not have permission for this action."
+          : `Request failed with status ${response.status}`;
 
   try {
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const payload = await response.json() as Record<string, unknown>;
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as Record<string, unknown>;
       const detail = formatErrorDetail(payload.detail ?? payload.message ?? payload.error);
       if (detail) {
         return detail;
@@ -351,8 +322,9 @@ async function readErrorMessage(response: Response): Promise<string> {
 export async function loginWithCredentials(email: string, password: string): Promise<AuthUser> {
   authPromise = (async () => {
     const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include", // receive httpOnly cookies
       body: JSON.stringify({ email, password }),
     });
 
@@ -362,7 +334,6 @@ export async function loginWithCredentials(email: string, password: string): Pro
 
     const data = await response.json();
     const user = (data.user ?? { email }) as AuthUser;
-    storeTokens(data.access_token, data.refresh_token);
     storeUser(user);
   })();
 
@@ -370,7 +341,7 @@ export async function loginWithCredentials(email: string, password: string): Pro
     await authPromise;
     const user = getStoredUser();
     if (!user) {
-      throw new Error('No user returned from login');
+      throw new Error("No user returned from login");
     }
     return user;
   } finally {
@@ -379,25 +350,25 @@ export async function loginWithCredentials(email: string, password: string): Pro
 }
 
 async function refreshSession(): Promise<boolean> {
-  const refreshToken = getStoredToken(REFRESH_KEY);
-  if (!refreshToken) return false;
-
+  // Cookie-based refresh: the refresh_token cookie is sent automatically.
   const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
   });
 
   if (!response.ok) return false;
 
   const data = await response.json();
-  storeTokens(data.access_token, refreshToken);
+  if (data.user) storeUser(data.user as AuthUser);
   return true;
 }
 
 async function ensureSession(): Promise<void> {
-  if (!getStoredToken(ACCESS_KEY)) {
-    throw new Error('Not authenticated');
+  // With cookie auth we can't check the token from JS. If the user object exists,
+  // assume a valid session; a 401 from the server will trigger a refresh.
+  if (!getStoredUser()) {
+    throw new Error("Not authenticated");
   }
 }
 
@@ -418,22 +389,19 @@ async function request<T>(
   }
 
   const headers = new Headers();
-  const accessToken = getStoredToken(ACCESS_KEY);
-  if (auth && accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
-  }
 
   let payload: BodyInit | undefined;
   if (body instanceof FormData) {
     payload = body;
   } else if (body !== undefined && body !== null) {
-    headers.set('Content-Type', 'application/json');
+    headers.set("Content-Type", "application/json");
     payload = JSON.stringify(body);
   }
 
   const response = await fetch(withParams(path, params), {
     method,
     headers,
+    credentials: "include", // send httpOnly auth cookies automatically
     body: payload,
   });
 
@@ -441,7 +409,7 @@ async function request<T>(
     const refreshed = await refreshSession().catch(() => false);
     if (!refreshed) {
       clearSession();
-      throw new Error('Session expired');
+      throw new Error("Session expired");
     }
     return request<T>(method, path, options, false);
   }
@@ -450,8 +418,8 @@ async function request<T>(
     throw new Error(await readErrorMessage(response));
   }
 
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
     return response.json() as Promise<T>;
   }
 
@@ -460,35 +428,46 @@ async function request<T>(
 
 export const api = {
   get: <T>(path: string, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
-    request<T>('GET', path, options),
-  post: <T>(path: string, body?: BodyInit | FormData | Record<string, unknown> | null, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
-    request<T>('POST', path, { ...options, body }),
-  put: <T>(path: string, body?: BodyInit | FormData | Record<string, unknown> | null, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
-    request<T>('PUT', path, { ...options, body }),
-  patch: <T>(path: string, body?: BodyInit | FormData | Record<string, unknown> | null, options?: { params?: Record<string, QueryValue>; auth?: boolean }) =>
-    request<T>('PATCH', path, { ...options, body }),
+    request<T>("GET", path, options),
+  post: <T>(
+    path: string,
+    body?: BodyInit | FormData | Record<string, unknown> | null,
+    options?: { params?: Record<string, QueryValue>; auth?: boolean },
+  ) => request<T>("POST", path, { ...options, body }),
+  put: <T>(
+    path: string,
+    body?: BodyInit | FormData | Record<string, unknown> | null,
+    options?: { params?: Record<string, QueryValue>; auth?: boolean },
+  ) => request<T>("PUT", path, { ...options, body }),
+  patch: <T>(
+    path: string,
+    body?: BodyInit | FormData | Record<string, unknown> | null,
+    options?: { params?: Record<string, QueryValue>; auth?: boolean },
+  ) => request<T>("PATCH", path, { ...options, body }),
 };
 
 export function normalizeCurrency(currency: string | null | undefined): string {
-  const code = (currency ?? 'EUR').toUpperCase();
-  return code === 'CHF' ? 'EUR' : code;
+  const code = (currency ?? "EUR").toUpperCase();
+  return code === "CHF" ? "EUR" : code;
 }
 
-export function formatCurrency(value: number | string | null | undefined, currency = 'EUR'): string {
+export function formatCurrency(
+  value: number | string | null | undefined,
+  currency = "EUR",
+): string {
   const amount = Number(value ?? 0);
-  return new Intl.NumberFormat('de-DE', {
-    style: 'currency',
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
     currency: normalizeCurrency(currency),
     maximumFractionDigits: 0,
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 
 export function shortId(value: string | null | undefined): string {
-  return value ? value.slice(0, 8) : '—';
+  return value ? value.slice(0, 8) : "—";
 }
 
 export function sentenceCaseStatus(status: string | null | undefined): string {
-  if (!status) return 'Unknown';
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (match) => match.toUpperCase());
+  if (!status) return "Unknown";
+  return status.replace(/_/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
-

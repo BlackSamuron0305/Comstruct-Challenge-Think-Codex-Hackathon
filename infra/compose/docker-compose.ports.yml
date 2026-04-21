@@ -1,0 +1,7 @@
+# Port-remap override — use when default host ports are already allocated.
+# Postgres is remapped to 5433 on the host (internal container port stays 5432).
+# All other services connect via Docker network and are unaffected.
+services:
+  postgres:
+    ports:
+      - "5433:5432"

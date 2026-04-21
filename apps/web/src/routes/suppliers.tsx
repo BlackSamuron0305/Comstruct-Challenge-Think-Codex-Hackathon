@@ -45,7 +45,9 @@ const sourceBadgeStyles = {
   both: "border-primary/30 bg-primary/10 text-primary",
 } as const;
 
-function getSourceMode(supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">): SupplierSourceMode {
+function getSourceMode(
+  supplier: Pick<SupplierRecord, "supports_api" | "supports_documents">,
+): SupplierSourceMode {
   const supportsApi = Boolean(supplier.supports_api);
   const supportsDocuments = supplier.supports_documents !== false;
 
@@ -143,7 +145,9 @@ function Suppliers() {
       void queryClient.invalidateQueries({ queryKey: ["catalog-suppliers"] });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Supplier settings could not be updated.");
+      toast.error(
+        error instanceof Error ? error.message : "Supplier settings could not be updated.",
+      );
     },
   });
 
@@ -196,7 +200,9 @@ function Suppliers() {
   }, [products, suppliers]);
 
   const apiSupplierCount = suppliersList.filter((supplier) => supplier.supportsApi).length;
-  const documentSupplierCount = suppliersList.filter((supplier) => supplier.supportsDocuments).length;
+  const documentSupplierCount = suppliersList.filter(
+    (supplier) => supplier.supportsDocuments,
+  ).length;
   const bothSourceCount = suppliersList.filter((supplier) => supplier.sourceMode === "both").length;
 
   function resetDraft() {
@@ -300,7 +306,8 @@ function Suppliers() {
             File uploads only accept document-enabled suppliers.
           </div>
           <div className="mt-1 text-muted-foreground">
-            API-only suppliers can sync through integrations, while document-enabled or dual-mode suppliers can receive uploaded files.
+            API-only suppliers can sync through integrations, while document-enabled or dual-mode
+            suppliers can receive uploaded files.
           </div>
         </div>
 
@@ -487,7 +494,9 @@ function Suppliers() {
                 <div className="font-medium mb-1">Source mode</div>
                 <select
                   value={settingsSourceMode}
-                  onChange={(event) => setSettingsSourceMode(event.target.value as SupplierSourceMode)}
+                  onChange={(event) =>
+                    setSettingsSourceMode(event.target.value as SupplierSourceMode)
+                  }
                   className="w-full rounded-md border border-border bg-background px-3 py-2"
                 >
                   <option value="document">Document only</option>
@@ -506,7 +515,9 @@ function Suppliers() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => updateSupplierMutation.mutate(getSourcePayload(settingsSourceMode))}
+                  onClick={() =>
+                    updateSupplierMutation.mutate(getSourcePayload(settingsSourceMode))
+                  }
                   disabled={updateSupplierMutation.isPending}
                   className="rounded-md bg-primary px-3 py-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >

@@ -27,7 +27,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendClarificationReply(String baseQuery, String option) async {
     final sourceMessage = _messages.lastWhere(
       (msg) => msg.baseQuery == baseQuery && msg.options.isNotEmpty,
-      orElse: () => _Msg(role: 'assistant', text: '', items: const []),
+      orElse: () => const _Msg(role: 'assistant', text: ''),
     );
     final resolved = applyClarificationSelection(
       option: option,

@@ -125,10 +125,8 @@ GoRouter _buildRouter(BuildContext context) {
         },
       ),
 
-      // ── Legacy routes ─────────────────────────────────────────────
-      GoRoute(path: '/catalog',       builder: (_, __) => const CCatalogScreen()),
+      // ── Utility / support routes ──────────────────────────────────
       GoRoute(path: '/cart',          builder: (_, __) => const CartScreen()),
-      GoRoute(path: '/orders',        builder: (_, __) => const MyOrdersScreen()),
       GoRoute(path: '/smart-add',     builder: (_, __) => const SmartAddScreen()),
       GoRoute(path: '/image-order',   builder: (_, __) => const ImageOrderScreen()),
       GoRoute(path: '/voice-order',   builder: (_, __) => const VoiceOrderScreen()),

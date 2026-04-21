@@ -18,7 +18,12 @@ function statusLabel(status: string) {
 export function StatusBadge({ status }: { status: OrderStatus }) {
   const style = styles[status] ?? "bg-muted text-muted-foreground";
   return (
-    <span className={["inline-flex items-center gap-1.5 text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded", style].join(" ")}>
+    <span
+      className={[
+        "inline-flex items-center gap-1.5 text-mono text-[10px] uppercase tracking-wider px-2 py-1 rounded",
+        style,
+      ].join(" ")}
+    >
       <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
       {statusLabel(status)}
     </span>

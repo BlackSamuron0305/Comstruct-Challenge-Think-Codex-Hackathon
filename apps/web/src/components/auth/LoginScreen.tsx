@@ -13,8 +13,11 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setEmail(PROCUREMENT_DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
+    // Only prefill demo credentials when explicitly enabled (e.g. local/demo environments).
+    if (import.meta.env.VITE_DEMO_MODE === "true") {
+      setEmail(PROCUREMENT_DEMO_EMAIL);
+      setPassword(DEMO_PASSWORD);
+    }
   }, []);
 
   const onSubmit = async (e: FormEvent) => {
@@ -24,7 +27,9 @@ export function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed. Check your work email and password.");
+      setError(
+        err instanceof Error ? err.message : "Sign-in failed. Check your work email and password.",
+      );
     } finally {
       setLoading(false);
     }

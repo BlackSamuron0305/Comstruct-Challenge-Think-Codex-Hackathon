@@ -45,6 +45,7 @@ const UPSTREAMS: UpstreamSpec[] = [
   { prefix: '/api/orders', upstream: config.upstream.order, rewritePrefix: '/orders', requireAuth: true },
   { prefix: '/api/projects', upstream: config.upstream.order, rewritePrefix: '/projects', requireAuth: true },
   { prefix: '/api/approvals', upstream: config.upstream.order, rewritePrefix: '/approvals', requireAuth: true },
+  { prefix: '/api/users/me', upstream: config.upstream.order, rewritePrefix: '/users/me', requireAuth: true },
 
   // ai
   { prefix: '/api/ai', upstream: config.upstream.ai, rewritePrefix: '/ai', requireAuth: true },

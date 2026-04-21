@@ -49,7 +49,9 @@ export function Sidebar() {
 
     return {
       pendingApprovals: pending.length,
-      anomalousRequests: pending.filter((order) => order.requires_approval || (order.notes ?? "").includes("[approval]")).length,
+      anomalousRequests: pending.filter(
+        (order) => order.requires_approval || (order.notes ?? "").includes("[approval]"),
+      ).length,
     };
   }, [orders]);
 
@@ -111,7 +113,9 @@ export function Sidebar() {
         </div>
         <div className="rounded-md bg-warning/20 border border-warning/30 px-2 py-1.5 flex items-center gap-2">
           <ShieldAlert className="h-3.5 w-3.5 text-warning-foreground" />
-          <span className="text-xs">{anomalousRequests} anomalous request{anomalousRequests === 1 ? "" : "s"} pending</span>
+          <span className="text-xs">
+            {anomalousRequests} anomalous request{anomalousRequests === 1 ? "" : "s"} pending
+          </span>
         </div>
         <button
           onClick={logout}

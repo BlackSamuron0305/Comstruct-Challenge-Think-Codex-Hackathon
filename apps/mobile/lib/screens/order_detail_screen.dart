@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../api_client.dart';
 import '../translations.dart';
+import '../utils/order_status.dart';
 import 'c_home_screen.dart' show CColors;
 
 class OrderDetailScreen extends StatefulWidget {
@@ -26,28 +27,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     'stepDraft', 'stepPending', 'statusApproved', 'stepOrdered', 'statusInTransit', 'stepDelivered',
   ];
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'approved':         return const Color(0xFF1F8A4C);
-      case 'delivered':        return const Color(0xFF1D6FA4);
-      case 'rejected':         return const Color(0xFFB0210C);
-      case 'pending_approval': return const Color(0xFFD97706);
-      default:                 return Colors.black45;
-    }
-  }
-
-  String _statusLabel(BuildContext context, String s) {
-    switch (s) {
-      case 'draft':            return t(context, 'statusDraft');
-      case 'pending_approval': return t(context, 'statusPending');
-      case 'approved':         return t(context, 'statusApproved');
-      case 'ordered':          return t(context, 'statusOrdered');
-      case 'in_transit':       return t(context, 'statusInTransit');
-      case 'delivered':        return t(context, 'statusDelivered');
-      case 'rejected':         return t(context, 'statusRejected');
-      default:                 return s;
-    }
-  }
 
   Future<void> _pickPhoto(ImageSource source) async {
     final img = await _picker.pickImage(source: source, imageQuality: 80);
@@ -112,12 +91,12 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _statusColor(status).withValues(alpha: 0.1),
+                      color: orderStatusColor(status).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _statusColor(status).withValues(alpha: 0.3)),
+                      border: Border.all(color: orderStatusColor(status).withValues(alpha: 0.3)),
                     ),
-                    child: Text(_statusLabel(context, status),
-                        style: TextStyle(color: _statusColor(status), fontWeight: FontWeight.w600, fontSize: 13)),
+                    child: Text(orderStatusLabel(context, status),
+                        style: TextStyle(color: orderStatusColor(status), fontWeight: FontWeight.w600, fontSize: 13)),
                   ),
                   const Spacer(),
                   Text('$total $currency',

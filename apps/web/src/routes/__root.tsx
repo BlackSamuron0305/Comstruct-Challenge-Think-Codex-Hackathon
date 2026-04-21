@@ -36,10 +36,18 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "comstruct C-Materials" },
-      { name: "description", content: "Procurement workflows for live C-material ordering, approvals, suppliers, and demand intelligence." },
+      {
+        name: "description",
+        content:
+          "Procurement workflows for live C-material ordering, approvals, suppliers, and demand intelligence.",
+      },
       { name: "author", content: "comstruct" },
       { property: "og:title", content: "comstruct C-Materials" },
-      { property: "og:description", content: "Procurement workflows for live C-material ordering, approvals, suppliers, and demand intelligence." },
+      {
+        property: "og:description",
+        content:
+          "Procurement workflows for live C-material ordering, approvals, suppliers, and demand intelligence.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },

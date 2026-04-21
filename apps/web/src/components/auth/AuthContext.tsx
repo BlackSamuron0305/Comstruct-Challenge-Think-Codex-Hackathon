@@ -42,8 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    clearSession();
-    setUser(null);
+    clearSession().then(() => setUser(null)).catch(() => setUser(null));
   };
 
   if (!ready) {
@@ -56,7 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             </div>
             <div>
               <div className="font-medium">Restoring your workspace</div>
-              <p className="mt-1 text-muted-foreground">Your last session and saved view are being reconnected now.</p>
+              <p className="mt-1 text-muted-foreground">
+                Your last session and saved view are being reconnected now.
+              </p>
             </div>
           </div>
         </div>

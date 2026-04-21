@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import sensible from '@fastify/sensible';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
@@ -56,27 +57,26 @@ await app.register(helmet, {
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
-      connectSrc: ["'self'", 'ws:', 'wss:', 'http://localhost:*', 'http://127.0.0.1:*'],
+      // connectSrc only allows configured origins — no wildcard localhost in production
+      connectSrc: config.isDev
+        ? ["'self'", 'ws:', 'wss:', 'http://localhost:*', 'http://127.0.0.1:*']
+        : ["'self'", 'wss:'],
     },
+  },
+  // HSTS: 1 year, apply to subdomains. Omit in dev (HTTP-only).
+  strictTransportSecurity: config.isDev ? false : {
+    maxAge: 31536000,
+    includeSubDomains: true,
   },
   crossOriginEmbedderPolicy: false,
 });
 
-const loopbackOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
-const demoFrontendOriginPattern = /^https?:\/\/(?:(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9.-]+):(8080|8090)$/i;
-
 await app.register(cors, {
   origin: (origin, cb) => {
-    if (
-      !origin ||
-      config.corsOrigin.includes(origin) ||
-      loopbackOriginPattern.test(origin) ||
-      demoFrontendOriginPattern.test(origin)
-    ) {
-      cb(null, true);
-      return;
-    }
-
+    // Non-browser or same-origin requests (no Origin header).
+    if (!origin) { cb(null, true); return; }
+    // Explicit allowlist — no wildcard patterns.
+    if (config.corsOrigin.includes(origin)) { cb(null, true); return; }
     cb(null, false);
   },
   credentials: true,
@@ -96,6 +96,8 @@ await app.register(rateLimit, {
 });
 
 await app.register(authPlugin);
+
+await app.register(cookie, { secret: config.internalSecret });
 
 // Strict rate limit on auth endpoints
 app.get('/health', async () => ({ status: 'ok', service: 'api-gateway' }));

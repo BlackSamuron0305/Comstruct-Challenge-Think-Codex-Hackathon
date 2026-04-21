@@ -11,7 +11,10 @@ export const Route = createFileRoute("/orders")({
   head: () => ({
     meta: [
       { title: "Orders · comstruct C-Materials" },
-      { name: "description", content: "All C-material orders across projects, suppliers and statuses." },
+      {
+        name: "description",
+        content: "All C-material orders across projects, suppliers and statuses.",
+      },
     ],
   }),
   component: Orders,
@@ -34,11 +37,17 @@ function describeItems(order: Pick<OrderSummary, "items">) {
   const items = order.items ?? [];
   if (!items.length) return "No line items captured";
 
-  const preview = items.slice(0, 2).map((item) => {
-    const label = item.product_snapshot?.name?.trim() || item.product_snapshot?.sku?.trim() || "Material item";
-    const qty = formatQty(item.quantity);
-    return qty ? `${label} × ${qty}` : label;
-  }).join(" · ");
+  const preview = items
+    .slice(0, 2)
+    .map((item) => {
+      const label =
+        item.product_snapshot?.name?.trim() ||
+        item.product_snapshot?.sku?.trim() ||
+        "Material item";
+      const qty = formatQty(item.quantity);
+      return qty ? `${label} × ${qty}` : label;
+    })
+    .join(" · ");
 
   const remaining = items.length - 2;
   return remaining > 0 ? `${preview} +${remaining} more` : preview;
@@ -50,7 +59,12 @@ function normalizeStatus(status?: string | null) {
 
 function Orders() {
   const { project } = useProject();
-  const { data: orders = [], isLoading, isError, refetch } = useQuery({
+  const {
+    data: orders = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["orders", "list"],
     queryFn: () => api.get<OrderSummary[]>("/api/orders", { params: { limit: 200 } }),
   });
@@ -79,26 +93,49 @@ function Orders() {
     }))
     .filter((row) => project === ALL_PROJECTS || row.project === project);
 
-  const pendingCount = rows.filter((row) => ["pending", "pending_approval"].includes(normalizeStatus(row.status))).length;
-  const deliveredCount = rows.filter((row) => ["delivered", "completed", "received"].includes(normalizeStatus(row.status))).length;
-  const rejectedCount = rows.filter((row) => ["rejected", "cancelled", "canceled"].includes(normalizeStatus(row.status))).length;
+  const pendingCount = rows.filter((row) =>
+    ["pending", "pending_approval"].includes(normalizeStatus(row.status)),
+  ).length;
+  const deliveredCount = rows.filter((row) =>
+    ["delivered", "completed", "received"].includes(normalizeStatus(row.status)),
+  ).length;
+  const rejectedCount = rows.filter((row) =>
+    ["rejected", "cancelled", "canceled"].includes(normalizeStatus(row.status)),
+  ).length;
   const inFlightCount = Math.max(rows.length - pendingCount - deliveredCount - rejectedCount, 0);
 
   return (
     <DashboardLayout
       title="Orders"
-      subtitle={project === ALL_PROJECTS ? "Every live C-material order, end-to-end" : `Orders for ${project}`}
+      subtitle={
+        project === ALL_PROJECTS
+          ? "Every live C-material order, end-to-end"
+          : `Orders for ${project}`
+      }
     >
       {isLoading ? (
-        <QueryState kind="loading" title="Loading live orders" description="The full requester and delivery timeline is being refreshed now." />
+        <QueryState
+          kind="loading"
+          title="Loading live orders"
+          description="The full requester and delivery timeline is being refreshed now."
+        />
       ) : isError ? (
-        <QueryState kind="error" title="Orders could not be loaded" description="The live order timeline is temporarily unavailable." onRetry={() => void refetch()} />
+        <QueryState
+          kind="error"
+          title="Orders could not be loaded"
+          description="The live order timeline is temporarily unavailable."
+          onRetry={() => void refetch()}
+        />
       ) : (
         <>
           <div className="mb-4 rounded-lg border border-border bg-card p-4 text-sm">
             <div className="font-medium">Live order timeline</div>
             <p className="mt-1 text-muted-foreground">
-              Use this view to answer requesters quickly and spot orders that still need approval. <Link to="/approvals" className="text-primary hover:underline">Open the approval queue</Link> if something is blocked.
+              Use this view to answer requesters quickly and spot orders that still need approval.{" "}
+              <Link to="/approvals" className="text-primary hover:underline">
+                Open the approval queue
+              </Link>{" "}
+              if something is blocked.
             </p>
           </div>
 
@@ -122,41 +159,52 @@ function Orders() {
           </div>
 
           <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
-              <tr>
-                <th className="text-left font-normal px-5 py-3">Ref</th>
-                <th className="text-left font-normal px-5 py-3">Date</th>
-                <th className="text-left font-normal px-5 py-3">Project</th>
-                <th className="text-left font-normal px-5 py-3">Requester</th>
-                <th className="text-left font-normal px-5 py-3">Supplier</th>
-                <th className="text-left font-normal px-5 py-3">Ordered items</th>
-                <th className="text-right font-normal px-5 py-3">Items</th>
-                <th className="text-right font-normal px-5 py-3">Total</th>
-                <th className="text-left font-normal px-5 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-t border-border hover:bg-secondary/60">
-                  <td className="px-5 py-3 text-mono text-xs">{row.ref}</td>
-                  <td className="px-5 py-3 text-muted-foreground text-xs">{row.date}</td>
-                  <td className="px-5 py-3">{row.project}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{row.requester}</td>
-                  <td className="px-5 py-3">{row.supplier}</td>
-                  <td className="px-5 py-3 max-w-[24rem] text-xs text-muted-foreground">{row.itemPreview}</td>
-                  <td className="px-5 py-3 text-right tabular">{row.items}</td>
-                  <td className="px-5 py-3 text-right tabular font-medium">{formatCurrency(row.total, row.currency)}</td>
-                  <td className="px-5 py-3"><StatusBadge status={row.status} /></td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+            <table className="w-full text-sm">
+              <thead className="text-mono text-[10px] uppercase tracking-widest text-muted-foreground bg-secondary">
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-muted-foreground">No live orders match the current filter.</td>
+                  <th className="text-left font-normal px-5 py-3">Ref</th>
+                  <th className="text-left font-normal px-5 py-3">Date</th>
+                  <th className="text-left font-normal px-5 py-3">Project</th>
+                  <th className="text-left font-normal px-5 py-3">Requester</th>
+                  <th className="text-left font-normal px-5 py-3">Supplier</th>
+                  <th className="text-left font-normal px-5 py-3">Ordered items</th>
+                  <th className="text-right font-normal px-5 py-3">Items</th>
+                  <th className="text-right font-normal px-5 py-3">Total</th>
+                  <th className="text-left font-normal px-5 py-3">Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-t border-border hover:bg-secondary/60">
+                    <td className="px-5 py-3 text-mono text-xs">{row.ref}</td>
+                    <td className="px-5 py-3 text-muted-foreground text-xs">{row.date}</td>
+                    <td className="px-5 py-3">{row.project}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{row.requester}</td>
+                    <td className="px-5 py-3">{row.supplier}</td>
+                    <td className="px-5 py-3 max-w-[24rem] text-xs text-muted-foreground">
+                      {row.itemPreview}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular">{row.items}</td>
+                    <td className="px-5 py-3 text-right tabular font-medium">
+                      {formatCurrency(row.total, row.currency)}
+                    </td>
+                    <td className="px-5 py-3">
+                      <StatusBadge status={row.status} />
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-5 py-10 text-center text-sm text-muted-foreground"
+                    >
+                      No live orders match the current filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </>
       )}

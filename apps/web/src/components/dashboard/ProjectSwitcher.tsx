@@ -44,16 +44,23 @@ export function ProjectSwitcher() {
               return (
                 <button
                   key={opt}
-                  onClick={() => { setProject(opt); setOpen(false); }}
+                  onClick={() => {
+                    setProject(opt);
+                    setOpen(false);
+                  }}
                   className={[
                     "w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent",
                     active ? "bg-accent" : "",
                   ].join(" ")}
                 >
-                  <Check className={["h-4 w-4 shrink-0", active ? "opacity-100" : "opacity-0"].join(" ")} />
+                  <Check
+                    className={["h-4 w-4 shrink-0", active ? "opacity-100" : "opacity-0"].join(" ")}
+                  />
                   <span className="flex-1 truncate">{opt}</span>
                   {opt === "All projects" && (
-                    <span className="text-mono text-[9px] uppercase tracking-wider text-muted-foreground">Default</span>
+                    <span className="text-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                      Default
+                    </span>
                   )}
                 </button>
               );

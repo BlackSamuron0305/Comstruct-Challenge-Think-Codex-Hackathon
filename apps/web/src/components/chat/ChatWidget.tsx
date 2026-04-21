@@ -32,7 +32,7 @@ function renderMarkdown(text: string) {
           {list.map((l, i) => (
             <li key={i} dangerouslySetInnerHTML={{ __html: inline(l) }} />
           ))}
-        </ul>
+        </ul>,
       );
       list = [];
     }
@@ -44,7 +44,10 @@ function renderMarkdown(text: string) {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, '<code class="text-mono text-[11px] px-1 py-0.5 rounded bg-muted">$1</code>')
+      .replace(
+        /`([^`]+)`/g,
+        '<code class="text-mono text-[11px] px-1 py-0.5 rounded bg-muted">$1</code>',
+      )
       .replace(/\*(.+?)\*/g, "<em>$1</em>");
   }
 
@@ -60,7 +63,7 @@ function renderMarkdown(text: string) {
     } else {
       flushList();
       out.push(
-        <p key={`p-${i}`} className="my-1" dangerouslySetInnerHTML={{ __html: inline(trimmed) }} />
+        <p key={`p-${i}`} className="my-1" dangerouslySetInnerHTML={{ __html: inline(trimmed) }} />,
       );
     }
   });
@@ -94,21 +97,27 @@ export function ChatWidget() {
     queryFn: () => api.get<ProjectRecord[]>("/api/projects"),
   });
 
-  const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects]);
-  const assistantContext = useMemo(() => ({
-    pending_approval_count: orders.filter((order) => order.status === "pending_approval").length,
-    supplier_count: suppliers.length,
-    project_names: projects.slice(0, 12).map((project) => project.name),
-    recent_orders: orders.slice(0, 8).map((order) => ({
-      id: order.id,
-      project: order.project_id ? (projectMap.get(order.project_id) ?? order.project_id) : null,
-      supplier: order.supplier_name ?? null,
-      total_amount: order.total_amount,
-      currency: order.currency,
-      status: order.status,
-      requires_approval: order.requires_approval ?? false,
-    })),
-  }), [orders, suppliers, projects, projectMap]);
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
+  const assistantContext = useMemo(
+    () => ({
+      pending_approval_count: orders.filter((order) => order.status === "pending_approval").length,
+      supplier_count: suppliers.length,
+      project_names: projects.slice(0, 12).map((project) => project.name),
+      recent_orders: orders.slice(0, 8).map((order) => ({
+        id: order.id,
+        project: order.project_id ? (projectMap.get(order.project_id) ?? order.project_id) : null,
+        supplier: order.supplier_name ?? null,
+        total_amount: order.total_amount,
+        currency: order.currency,
+        status: order.status,
+        requires_approval: order.requires_approval ?? false,
+      })),
+    }),
+    [orders, suppliers, projects, projectMap],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -123,9 +132,10 @@ export function ChatWidget() {
     setBusy(true);
 
     try {
-      const language = typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("de")
-        ? "de"
-        : "en";
+      const language =
+        typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("de")
+          ? "de"
+          : "en";
       const response = await api.post<ChatApiResponse>("/api/ai/chat", {
         message: q,
         language,
@@ -231,7 +241,12 @@ export function ChatWidget() {
               className="flex-1"
               disabled={busy}
             />
-            <Button type="submit" size="icon" className="bg-hivis text-hivis-foreground hover:bg-hivis/90" disabled={busy}>
+            <Button
+              type="submit"
+              size="icon"
+              className="bg-hivis text-hivis-foreground hover:bg-hivis/90"
+              disabled={busy}
+            >
               <Send className="h-4 w-4" />
             </Button>
           </form>

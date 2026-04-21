@@ -58,3 +58,10 @@ docker-volumes/
 packages/dart-api-client/lib/src/generated/
 **/*.g.dart
 **/*.freezed.dart
+
+# Test fixtures — generated LLM outputs (can be large / contain sensitive content)
+tests/fixtures/*.json
+
+# Hackathon design assets — large binaries, tracked by git-lfs or excluded
+docs/assets/*.pdf
+docs/assets/*.pptx

@@ -36,7 +36,10 @@ export function createLocalSupplierDraft(input: {
   channel: SupplierChannel;
 }): LocalSupplierDraft {
   return {
-    id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `local-${Date.now()}`,
+    id:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `local-${Date.now()}`,
     name: input.name.trim(),
     email: input.email?.trim() || undefined,
     phone: input.phone?.trim() || undefined,

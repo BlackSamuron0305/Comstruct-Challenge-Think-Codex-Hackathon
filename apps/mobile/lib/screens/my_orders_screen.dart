@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../app_scope.dart';
 import '../order_events.dart';
 import '../translations.dart';
+import '../utils/order_status.dart';
 import 'c_home_screen.dart' show CColors;
 import 'order_detail_screen.dart';
 
@@ -58,26 +59,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     super.dispose();
   }
 
-  String _statusLabel(BuildContext context, String value) {
-    switch (value) {
-      case 'draft':
-        return t(context, 'statusDraft');
-      case 'pending_approval':
-        return t(context, 'statusPending');
-      case 'approved':
-        return t(context, 'statusApproved');
-      case 'ordered':
-        return t(context, 'statusOrdered');
-      case 'in_transit':
-        return t(context, 'statusInTransit');
-      case 'delivered':
-        return t(context, 'statusDelivered');
-      case 'rejected':
-        return t(context, 'statusRejected');
-      default:
-        return value;
-    }
-  }
+
 
   String _filterLabel(BuildContext context, String key) {
     switch (key) {
@@ -98,41 +80,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     }
   }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'approved':
-        return const Color(0xFF0E8D57);
-      case 'delivered':
-        return const Color(0xFF2563EB);
-      case 'rejected':
-        return const Color(0xFFB42318);
-      case 'pending_approval':
-        return const Color(0xFFB7791F);
-      case 'ordered':
-      case 'in_transit':
-        return CColors.teal;
-      default:
-        return const Color(0xFF475467);
-    }
-  }
 
-  IconData _statusIcon(String status) {
-    switch (status) {
-      case 'approved':
-        return Icons.verified_outlined;
-      case 'delivered':
-        return Icons.local_shipping_outlined;
-      case 'rejected':
-        return Icons.cancel_outlined;
-      case 'pending_approval':
-        return Icons.hourglass_top_rounded;
-      case 'ordered':
-      case 'in_transit':
-        return Icons.sync_alt_rounded;
-      default:
-        return Icons.receipt_long_outlined;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -296,9 +244,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) => _StatusCard(
                         order: orders[i],
-                        statusLabel: _statusLabel(context, orders[i]['status'] as String? ?? ''),
-                        statusColor: _statusColor(orders[i]['status'] as String? ?? ''),
-                        statusIcon: _statusIcon(orders[i]['status'] as String? ?? ''),
+                        statusLabel: orderStatusLabel(context, orders[i]['status'] as String? ?? ''),
+                        statusColor: orderStatusColor(orders[i]['status'] as String? ?? ''),
+                        statusIcon: orderStatusIcon(orders[i]['status'] as String? ?? ''),
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => OrderDetailScreen(order: orders[i])),
                         ),

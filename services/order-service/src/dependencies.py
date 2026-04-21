@@ -19,11 +19,7 @@ class CurrentUser:
 
 def require_internal_secret(x_internal_secret: str | None = Header(default=None)) -> None:
     expected = get_settings().INTERNAL_SHARED_SECRET
-    accepted = {expected}
-    if expected == "dev-internal-secret":
-        accepted.add("dev-secret")
-
-    if not x_internal_secret or x_internal_secret not in accepted:
+    if not x_internal_secret or x_internal_secret != expected:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-Internal-Secret",

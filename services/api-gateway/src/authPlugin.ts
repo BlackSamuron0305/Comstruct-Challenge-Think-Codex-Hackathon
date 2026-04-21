@@ -13,10 +13,13 @@ declare module 'fastify' {
 
 async function plugin(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', async (req) => {
+    // Prefer httpOnly cookie (web clients), fall back to Bearer header (mobile/API clients).
+    const cookieToken = (req.cookies as Record<string, string | undefined>)?.access_token;
     const auth = req.headers.authorization;
-    if (!auth?.startsWith('Bearer ')) return;
+    const rawToken = cookieToken ?? (auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
+    if (!rawToken) return;
     try {
-      req.user = await verifyToken(auth.slice(7));
+      req.user = await verifyToken(rawToken);
     } catch {
       // leave req.user undefined; route guards will reject
     }
